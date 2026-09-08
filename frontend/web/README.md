@@ -5,7 +5,7 @@ Premium environmental intelligence frontend demo for Punjab–Haryana–Delhi NC
 ## Run
 
 ```bash
-cd web
+cd frontend/web
 npm install
 npm run dev
 ```
