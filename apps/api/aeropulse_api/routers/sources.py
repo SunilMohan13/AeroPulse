@@ -1,0 +1,135 @@
+"""Source registry API (LLD §25.3)."""
+
+from __future__ import annotations
+
+from aeropulse_auth.jwt import Role, TokenClaims
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, Field
+
+from aeropulse_api.deps import get_claims, require
+
+router = APIRouter(prefix="/api/v1/sources", tags=["sources"])
+
+_SOURCES: dict[str, dict] = {
+    "cpcb": {
+        "source_id": "cpcb",
+        "provider": "CPCB",
+        "connector_id": "cpcb_caaqms",
+        "display_name": "CPCB CAAQMS",
+        "data_type": "air_quality",
+        "enabled": True,
+        "status": "replay",
+        "schema_version": "observation.v1",
+    },
+    "firms": {
+        "source_id": "firms",
+        "provider": "NASA",
+        "connector_id": "firms_viirs",
+        "display_name": "NASA FIRMS VIIRS",
+        "data_type": "active_fire",
+        "enabled": True,
+        "status": "replay",
+        "schema_version": "fire_observation.v1",
+    },
+    "imd": {
+        "source_id": "imd",
+        "provider": "IMD",
+        "connector_id": "imd_weather",
+        "display_name": "IMD Weather",
+        "data_type": "weather",
+        "enabled": True,
+        "status": "replay",
+        "schema_version": "meteo.v1",
+    },
+}
+
+
+class SourceWrite(BaseModel):
+    """Payload for creating or updating a source (no secrets)."""
+
+    source_id: str
+    provider: str
+    connector_id: str
+    display_name: str
+    data_type: str
+    enabled: bool = True
+    auth_ref: str | None = Field(default=None, description="Secret name, never the value")
+
+
+class BackfillRequest(BaseModel):
+    """Historical replay window (LLD §38)."""
+
+    start: str
+    end: str
+    bbox: list[float] | None = None
+
+
+@router.get("")
+def list_sources(_claims: TokenClaims = Depends(get_claims)) -> dict:
+    """List registered data sources."""
+    return {"items": list(_SOURCES.values())}
+
+
+@router.get("/{source_id}")
+def get_source(source_id: str, _claims: TokenClaims = Depends(get_claims)) -> dict:
+    """Return a single source or 404."""
+    source = _SOURCES.get(source_id)
+    if not source:
+        raise HTTPException(status_code=404, detail="Source not found")
+    return source
+
+
+@router.post("", status_code=201)
+def create_source(
+    body: SourceWrite,
+    _claims: TokenClaims = Depends(require(Role.ADMIN)),
+) -> dict:
+    """Register a source. Secrets must be referenced by ``auth_ref`` only."""
+    record = body.model_dump()
+    record["status"] = "registered"
+    _SOURCES[body.source_id] = record
+    return record
+
+
+@router.put("/{source_id}")
+def update_source(
+    source_id: str,
+    body: SourceWrite,
+    _claims: TokenClaims = Depends(require(Role.ADMIN)),
+) -> dict:
+    """Update source configuration."""
+    if source_id not in _SOURCES:
+        raise HTTPException(status_code=404, detail="Source not found")
+    record = body.model_dump()
+    record["status"] = "updated"
+    _SOURCES[source_id] = record
+    return record
+
+
+@router.post("/{source_id}/test")
+def test_source(
+    source_id: str,
+    _claims: TokenClaims = Depends(require(Role.ADMIN, Role.OPERATOR)),
+) -> dict:
+    """Run a connector health check (replay-mode stub)."""
+    if source_id not in _SOURCES:
+        raise HTTPException(status_code=404, detail="Source not found")
+    return {"source_id": source_id, "healthy": True, "mode": "replay"}
+
+
+@router.post("/{source_id}/backfill")
+def backfill_source(
+    source_id: str,
+    body: BackfillRequest,
+    _claims: TokenClaims = Depends(require(Role.ADMIN, Role.OPERATOR)),
+) -> dict:
+    """Enqueue a backfill. Processing_mode=BACKFILL is set by the connector."""
+    if source_id not in _SOURCES:
+        raise HTTPException(status_code=404, detail="Source not found")
+    return {
+        "source_id": source_id,
+        "accepted": True,
+        "processing_mode": "BACKFILL",
+        "start": body.start,
+        "end": body.end,
+    }

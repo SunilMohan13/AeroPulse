@@ -1,0 +1,16 @@
+sources:
+  - id: cpcb
+    connector: cpcb_caaqms
+    enabled: true
+    schedule: "*/15 * * * *"
+    fixture: fixtures/cpcb/stations.json
+  - id: firms
+    connector: nasa_firms
+    enabled: true
+    schedule: "*/15 * * * *"
+    fixture: fixtures/firms/fires.json
+  - id: imd
+    connector: imd_weather
+    enabled: true
+    schedule: "0 * * * *"
+    fixture: fixtures/imd/weather.json

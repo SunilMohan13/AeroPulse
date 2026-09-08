@@ -1,0 +1,25 @@
+# syntax=docker/dockerfile:1
+FROM python:3.12-slim AS base
+
+RUN useradd --create-home --uid 10001 aeropulse
+WORKDIR /app
+
+COPY --from=ghcr.io/astral-sh/uv:0.8.15 /uv /usr/local/bin/uv
+
+ENV UV_COMPILE_BYTECODE=1 \
+    UV_LINK_MODE=copy \
+    PATH="/app/.venv/bin:$PATH"
+
+COPY pyproject.toml uv.lock ./
+COPY libs ./libs
+COPY apps ./apps
+COPY connectors ./connectors
+COPY fixtures ./fixtures
+COPY config ./config
+COPY infrastructure/db ./infrastructure/db
+
+RUN uv sync --frozen --no-dev --no-install-project \
+    && uv sync --frozen --no-dev
+
+USER aeropulse
+EXPOSE 8000

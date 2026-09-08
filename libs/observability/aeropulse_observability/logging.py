@@ -1,0 +1,81 @@
+"""JSON structured logging using structlog.
+
+Every log line includes service.name, service.version, and correlation.id when bound.
+Never log secrets, credentials, or raw citizen PII.
+"""
+
+from __future__ import annotations
+
+import logging
+import sys
+from typing import Any
+
+import structlog
+from aeropulse_common.settings import Settings, get_settings
+
+_CONFIGURED = False
+
+
+def configure_logging(settings: Settings | None = None) -> None:
+    """Configure process-wide JSON logging.
+
+    Args:
+        settings: Optional settings override. Defaults to ``get_settings()``.
+    """
+    global _CONFIGURED
+    cfg = settings or get_settings()
+    level = getattr(logging, cfg.log_level.upper(), logging.INFO)
+
+    logging.basicConfig(
+        format="%(message)s",
+        stream=sys.stdout,
+        level=level,
+        force=True,
+    )
+
+    structlog.configure(
+        processors=[
+            structlog.contextvars.merge_contextvars,
+            structlog.processors.add_log_level,
+            structlog.processors.TimeStamper(fmt="iso", utc=True, key="timestamp"),
+            _add_service_fields(cfg),
+            structlog.processors.StackInfoRenderer(),
+            structlog.processors.format_exc_info,
+            structlog.processors.JSONRenderer(),
+        ],
+        wrapper_class=structlog.make_filtering_bound_logger(level),
+        context_class=dict,
+        logger_factory=structlog.PrintLoggerFactory(),
+        cache_logger_on_first_use=True,
+    )
+    _CONFIGURED = True
+
+
+def _add_service_fields(settings: Settings):
+    def processor(_logger: Any, _method: str, event_dict: Any) -> Any:
+        event_dict.setdefault("service.name", settings.service_name)
+        event_dict.setdefault("service.version", settings.service_version)
+        event_dict.setdefault("deployment.environment", settings.environment)
+        event_dict.setdefault("logger", _logger)
+        return event_dict
+
+    return processor
+
+
+def get_logger(name: str | None = None) -> structlog.stdlib.BoundLogger:
+    """Return a bound structlog logger.
+
+    Args:
+        name: Optional logger name stored as ``logger``.
+    """
+    if not _CONFIGURED:
+        configure_logging()
+    logger = structlog.get_logger()
+    if name:
+        return logger.bind(logger=name)
+    return logger
+
+
+def bind_context(**kwargs: Any) -> None:
+    """Bind request-scoped fields such as ``correlation.id`` into log context."""
+    structlog.contextvars.bind_contextvars(**kwargs)

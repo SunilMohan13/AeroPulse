@@ -1,0 +1,77 @@
+[project]
+name = "aeropulse"
+version = "0.1.0"
+description = "AeroPulse India — hyper-local pollution intelligence platform"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "aeropulse-common",
+    "aeropulse-observability",
+    "aeropulse-auth",
+    "aeropulse-contracts",
+    "aeropulse-connector-sdk",
+    "aeropulse-geospatial",
+    "aeropulse-intelligence",
+    "aeropulse-api",
+    "aeropulse-worker",
+    "aeropulse-connector-app",
+    "aeropulse-connector-cpcb",
+    "aeropulse-connector-firms",
+    "aeropulse-connector-imd",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3.0",
+    "pytest-asyncio>=0.24.0",
+    "ruff>=0.8.0",
+    "pyright>=1.1.390",
+    "httpx>=0.27.0",
+]
+
+[tool.uv.workspace]
+members = [
+    "libs/common",
+    "libs/observability",
+    "libs/auth",
+    "libs/contracts",
+    "libs/connector_sdk",
+    "libs/geospatial",
+    "libs/intelligence",
+    "apps/api",
+    "apps/worker",
+    "apps/connector",
+    "connectors/cpcb",
+    "connectors/firms",
+    "connectors/imd",
+]
+
+[tool.uv.sources]
+aeropulse-common = { workspace = true }
+aeropulse-observability = { workspace = true }
+aeropulse-auth = { workspace = true }
+aeropulse-contracts = { workspace = true }
+aeropulse-connector-sdk = { workspace = true }
+aeropulse-geospatial = { workspace = true }
+aeropulse-intelligence = { workspace = true }
+aeropulse-api = { workspace = true }
+aeropulse-worker = { workspace = true }
+aeropulse-connector-app = { workspace = true }
+aeropulse-connector-cpcb = { workspace = true }
+aeropulse-connector-firms = { workspace = true }
+aeropulse-connector-imd = { workspace = true }
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+pythonpath = []
+markers = [
+    "integration: requires docker compose services",
+]
+
+[tool.uv]
+package = false
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100

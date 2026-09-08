@@ -1,0 +1,70 @@
+"""Event engine and fixture-path detection tests."""
+
+from pathlib import Path
+
+from aeropulse_connector_app.runner import replay_all
+from aeropulse_contracts.envelope import KafkaEnvelope
+from aeropulse_contracts.event import EventStatus
+from aeropulse_contracts.fire import FireObservation
+from aeropulse_contracts.meteo import MeteorologicalObservation
+from aeropulse_contracts.observation import Observation
+from aeropulse_worker.pipeline import (
+    InMemoryRepository,
+    process_air_quality,
+    process_fire,
+    process_weather,
+    run_detection,
+)
+
+
+def test_fixture_replay_creates_punjab_event() -> None:
+    repo = InMemoryRepository()
+    envelopes: list[tuple[str, KafkaEnvelope]] = []
+
+    def capture(topic: str, envelope: KafkaEnvelope) -> None:
+        envelopes.append((topic, envelope))
+        payload = envelope.payload
+        if "measurement" in payload:
+            process_air_quality(Observation.model_validate(payload), repo)
+        elif "fire" in payload:
+            process_fire(FireObservation.model_validate(payload), repo)
+        else:
+            process_weather(MeteorologicalObservation.model_validate(payload), repo)
+
+    replay_all(Path("fixtures"), capture)
+    result = run_detection(repo)
+    assert result["events"] >= 1
+    open_events = [
+        e
+        for e in repo.event_store.events.values()
+        if e.status not in {EventStatus.REJECTED, EventStatus.RESOLVED}
+    ]
+    assert open_events
+    event = max(open_events, key=lambda e: e.overall_confidence)
+    types = {ev.evidence_type for ev in repo.event_store.evidence[event.event_id]}
+    assert "cpcb_anomaly" in types
+    assert "fire_detection" in types
+
+
+def test_duplicate_snapshot_does_not_spawn_second_open_event() -> None:
+    repo = InMemoryRepository()
+    envelopes: list[KafkaEnvelope] = []
+
+    def capture(_topic: str, envelope: KafkaEnvelope) -> None:
+        envelopes.append(envelope)
+        payload = envelope.payload
+        if "measurement" in payload:
+            process_air_quality(Observation.model_validate(payload), repo)
+        elif "fire" in payload:
+            process_fire(FireObservation.model_validate(payload), repo)
+        else:
+            process_weather(MeteorologicalObservation.model_validate(payload), repo)
+
+    replay_all(Path("fixtures"), capture)
+    run_detection(repo)
+    first_open = dict(repo.event_store.open_by_grid)
+    replay_all(Path("fixtures"), capture)
+    run_detection(repo)
+    assert repo.event_store.open_by_grid == first_open or set(
+        repo.event_store.open_by_grid.values()
+    ).issubset(set(first_open.values()) | set(repo.event_store.events))

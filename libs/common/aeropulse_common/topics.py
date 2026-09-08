@@ -1,0 +1,22 @@
+"""Kafka topic names (LLD §10.1)."""
+
+RAW_PREFIX = "aero.raw"
+OBSERVATION_AQ = "aero.observation.air_quality"
+OBSERVATION_FIRE = "aero.observation.fire"
+OBSERVATION_WEATHER = "aero.observation.weather"
+QUALITY_AQ = "aero.quality.air_quality"
+QUALITY_FIRE = "aero.quality.fire"
+QUALITY_WEATHER = "aero.quality.weather"
+NORMALIZED_AQ = "aero.normalized.air_quality"
+NORMALIZED_FIRE = "aero.normalized.fire"
+NORMALIZED_WEATHER = "aero.normalized.weather"
+GRID_FEATURES = "aero.grid.features"
+EVENTS_DETECTED = "aero.events.detected"
+EVENTS_UPDATED = "aero.events.updated"
+DLQ_WORKER = "aero.dlq.worker"
+DLQ_CONNECTOR = "aero.dlq.connector"
+
+
+def raw_topic(source_id: str) -> str:
+    """Return the raw topic for a source, e.g. ``aero.raw.cpcb``."""
+    return f"{RAW_PREFIX}.{source_id}"

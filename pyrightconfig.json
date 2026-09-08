@@ -1,0 +1,10 @@
+{
+  "include": ["libs", "apps", "connectors", "tests"],
+  "exclude": ["**/__pycache__", ".venv", "frontend"],
+  "pythonVersion": "3.12",
+  "typeCheckingMode": "basic",
+  "venvPath": ".",
+  "venv": ".venv",
+  "reportMissingImports": true,
+  "reportUnusedImport": true
+}
