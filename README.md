@@ -2,18 +2,22 @@
 
 Evidence-fused environmental intelligence for the Punjab–Haryana–Delhi NCR corridor.
 
-This repository is a **Phase 1–3** implementation of `AeroPulse_India_Low_Level_Design.md`: platform foundation, CPCB / FIRMS / IMD replay connectors, and a **deterministic event engine**. Docker Compose is the only local runtime. The MapLibre shell is unchanged in Phase 3.
+This repository implements **Phases 1–4 of the LLD (backend only)** plus a trained ML layer: connectors, quality, H3 grid, event engine, evidence lineage, OpenAPI 3, and four models trained on live data with a gated model registry. The MapLibre UI is owned separately.
 
 ## Architecture (this pass)
 
-```
-Connector replay (CPCB, FIRMS, IMD)
-        → canonical contracts
+```text
+Connector replay (CPCB, FIRMS, IMD)  +  LIVE Open-Meteo (no credential)
+        → canonical contracts (observation.v1 / meteo.v1 / raster.v1)
         → quality + H3 grid
-        → grid features + IDW PM2.5 + anomaly + source likelihood
-        → pollution events (event.v1)
-FastAPI /api/v1/events  (forecast/graph still 501)
+        → grid features (shared feature spec, point-in-time safe)
+        → trained models: PM2.5 estimator · anomaly · source likelihood · forecast
+        → model registry with an enforced promotion gate
+        → pollution events (event.v1) → forecast.v1 + graph.v1
+FastAPI /api/v1  (OpenAPI at /openapi.json)
 ```
+
+Read `docs/AeroPulse_Architecture_Review.md` for the full state of play, including what does **not** work.
 
 Logical services are Python packages; they pack into `api`, `worker`, and `connector` containers.
 
@@ -60,10 +64,10 @@ docker compose -f infrastructure/docker/compose.yaml up --build
 Published on localhost only:
 
 | Service | URL |
-|---|---|
-| API | http://127.0.0.1:8000/docs |
-| Web | http://127.0.0.1:5173 |
-| MinIO console | http://127.0.0.1:9001 |
+| --- | --- |
+| API | <http://127.0.0.1:8000/docs> |
+| Web | <http://127.0.0.1:5173> |
+| MinIO console | <http://127.0.0.1:9001> |
 
 Optional connector profile: `--profile connectors`.
 
@@ -79,6 +83,41 @@ Optional connector profile: `--profile connectors`.
 
 JSON logs via structlog. Required fields: `timestamp`, `level`, `service.name`, `event`, `correlation.id` (when bound). Do not log credentials or citizen PII.
 
+## Machine learning
+
+Four models train on **live, credential-free** Open-Meteo data and register with full provenance:
+
+```bash
+# Offline, from the committed fixture (no network)
+uv run aeropulse-ml train --model all
+
+# Live: 90 days across 5 Indo-Gangetic corridor cells
+AEROPULSE_CONNECTOR_MODE=live uv run aeropulse-ml train --model all --live --days 90 --promote
+
+uv run aeropulse-ml models          # registry and stages
+uv run aeropulse-ml predict --live  # champion inference, JSON on stdout
+```
+
+Evaluation uses temporal, spatial and seasonal holdouts only — LLD §19 forbids random splits on
+spatially and temporally correlated data, and no random split is reachable in this codebase.
+
+A **promotion gate** blocks any model that fails its own metrics. On the 2026-09-08 run only the
+PM2.5 estimator earned `PRODUCTION` (temporal MAE 3.90 µg/m³, R² 0.975, skill +0.435 vs
+persistence); the other three were held at `VALIDATION` with reasons recorded. That is the intended
+behaviour — see `docs/AeroPulse_ML_Architecture.md` for every metric and caveat.
+
+> **Scientific caveat.** Open-Meteo air quality is CAMS-derived **model output, not ground
+> measurement**. It validates the pipeline end to end; it does not validate accuracy against CPCB
+> stations. Retrain on CPCB before any operational claim.
+
 ## Out of scope (later phases)
 
-Satellite connectors, LightGBM/MLflow, forecast/plume, Copilot, citizen reports, ArangoDB graph, SigNoz UI, OIDC, Kubernetes. Event detection uses `baseline-idw-0.1` (ADR-0004).
+Live satellite HTTP (Sentinel-5P/MODIS/CAMS are **replay fixtures**), MLflow, live LLM Copilot,
+citizen CV models, ArangoDB client, SigNoz, OIDC, Kubernetes. CAMS blend is optional `cams_applied`.
+
+**Known not working:** the API reads a process-local store, not the database the worker writes to, so
+`/api/v1/events` is empty under Compose; and the frontend uses mock data and never calls the API.
+Both are scoped in `docs/AeroPulse_Production_Readiness.md`.
+
+Docs: `docs/architecture.md`, `docs/api.md`, `docs/openapi/openapi.v1.json`, and the six review
+documents under `docs/AeroPulse_*.md`.

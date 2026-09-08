@@ -13,11 +13,13 @@ from aeropulse_common.settings import get_settings
 from aeropulse_common.topics import (
     OBSERVATION_AQ,
     OBSERVATION_FIRE,
+    OBSERVATION_RASTER,
     OBSERVATION_WEATHER,
 )
 from aeropulse_contracts.fire import FireObservation
 from aeropulse_contracts.meteo import MeteorologicalObservation
 from aeropulse_contracts.observation import Observation
+from aeropulse_contracts.raster import RasterObservation
 from aeropulse_observability.logging import bind_context, configure_logging, get_logger
 from aeropulse_observability.telemetry import configure_telemetry
 
@@ -41,6 +43,8 @@ def _repository() -> ObservationRepository:
 
         from aeropulse_worker.db import TimescaleRepository
 
+        if not settings.database_url:
+            return InMemoryRepository()
         conn = psycopg.connect(settings.database_url)
         logger.info("worker.db.connected")
         return TimescaleRepository(conn)
@@ -68,6 +72,7 @@ async def _run() -> None:
         OBSERVATION_AQ,
         OBSERVATION_FIRE,
         OBSERVATION_WEATHER,
+        OBSERVATION_RASTER,
         bootstrap_servers=settings.kafka_bootstrap_servers,
         group_id="aeropulse-worker",
         enable_auto_commit=True,
@@ -79,12 +84,12 @@ async def _run() -> None:
         async for msg in consumer:
             if not isinstance(msg.value, dict):
                 continue
-            await _handle(msg.topic, msg.value, persist, snapshot_repo)
+            _handle(msg.topic, msg.value, persist, snapshot_repo)
     finally:
         await consumer.stop()
 
 
-async def _handle(
+def _handle(
     topic: str,
     value: dict[str, Any],
     persist: ObservationRepository,
@@ -105,6 +110,10 @@ async def _handle(
             result = process_fire(obs_f, persist)
             if dual:
                 process_fire(obs_f, snapshot_repo)
+        elif topic == OBSERVATION_RASTER:
+            raster = RasterObservation.model_validate(payload)
+            snapshot_repo.add_raster(raster)
+            result = {"status": "persisted", "grid_id": None}
         else:
             obs_w = MeteorologicalObservation.model_validate(payload)
             result = process_weather(obs_w, persist)
@@ -114,8 +123,31 @@ async def _handle(
         if result.get("status") == "persisted":
             detection = run_detection(snapshot_repo)
             logger.info("worker.detection", **detection)
+            _persist_intelligence(persist, snapshot_repo)
     except Exception:
         logger.exception("worker.failed", topic=topic)
+
+
+def _persist_intelligence(persist: ObservationRepository, snapshot: InMemoryRepository) -> None:
+    """Best-effort Timescale write for events, graphs, forecasts, and health."""
+    writer = getattr(persist, "upsert_event", None)
+    if writer is None:
+        return
+    store = snapshot.event_store
+    try:
+        for event in store.events.values():
+            persist.upsert_event(event)  # type: ignore[attr-defined]
+            persist.insert_evidence(event.event_id, store.evidence.get(event.event_id, []))  # type: ignore[attr-defined]
+            graph = store.graphs.get(event.event_id)
+            if graph is not None:
+                persist.insert_graph(graph)  # type: ignore[attr-defined]
+            forecast = store.forecasts.get(event.event_id)
+            if forecast is not None:
+                persist.insert_forecast(forecast)  # type: ignore[attr-defined]
+        if hasattr(persist, "upsert_source_health"):
+            persist.upsert_source_health("cpcb", len(snapshot.air_quality))  # type: ignore[attr-defined]
+    except Exception:
+        logger.exception("worker.intelligence_persist_failed")
 
 
 def main() -> None:

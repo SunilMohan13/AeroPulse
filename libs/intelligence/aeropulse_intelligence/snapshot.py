@@ -1,13 +1,29 @@
-"""In-memory observation snapshot used to build grid features without a database."""
+"""In-memory observation snapshot used to build grid features without a database.
+
+The snapshot indexes itself on first use. Without an index the feature builder
+rescans every observation for every grid-hour, which is unnoticeable for the
+single-hour snapshots the live path produces but quadratic for the multi-hour
+windows that backfill, replay and training use: a 90-day, 5-site window is
+roughly 10k grid-hours against 65k observations, which does not complete in a
+usable time.
+"""
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import UTC, datetime
 
 from aeropulse_contracts.fire import FireObservation
 from aeropulse_contracts.meteo import MeteorologicalObservation
 from aeropulse_contracts.observation import Observation
+from aeropulse_contracts.raster import RasterObservation
+from aeropulse_geospatial.grid import to_grid_id
+
+
+def _hour(ts: datetime) -> datetime:
+    """Floor a timestamp to the UTC hour."""
+    aware = ts if ts.tzinfo else ts.replace(tzinfo=UTC)
+    return aware.replace(minute=0, second=0, microsecond=0)
 
 
 @dataclass
@@ -17,4 +33,114 @@ class FeatureSnapshot:
     air_quality: list[Observation] = field(default_factory=list)
     fires: list[FireObservation] = field(default_factory=list)
     weather: list[MeteorologicalObservation] = field(default_factory=list)
+    rasters: list[RasterObservation] = field(default_factory=list)
     generated_at: datetime | None = None
+
+    _aq_by_cell_hour: dict[tuple[str, datetime], list[Observation]] | None = field(
+        default=None, repr=False, compare=False
+    )
+    _pm25_by_cell: dict[str, dict[datetime, float]] | None = field(
+        default=None, repr=False, compare=False
+    )
+    _weather_by_hour: dict[datetime, list[MeteorologicalObservation]] | None = field(
+        default=None, repr=False, compare=False
+    )
+    _rasters_by_hour: dict[datetime, list[RasterObservation]] | None = field(
+        default=None, repr=False, compare=False
+    )
+    _indexed_sizes: tuple[int, int, int] | None = field(default=None, repr=False, compare=False)
+
+    def _sizes(self) -> tuple[int, int, int]:
+        return (len(self.air_quality), len(self.weather), len(self.rasters))
+
+    def _ensure_index(self) -> None:
+        """Build the lookup indices, rebuilding if the lists were mutated."""
+        if self._aq_by_cell_hour is not None and self._indexed_sizes == self._sizes():
+            return
+
+        aq_index: dict[tuple[str, datetime], list[Observation]] = {}
+        pm25_index: dict[str, dict[datetime, float]] = {}
+        for obs in self.air_quality:
+            cell = obs.grid_id or to_grid_id(obs.location.lat, obs.location.lon)
+            # Cache the resolved cell so repeated H3 lookups are avoided.
+            obs.grid_id = cell
+            bucket = _hour(obs.observed_at)
+            aq_index.setdefault((cell, bucket), []).append(obs)
+            if obs.measurement.parameter == "pm25":
+                pm25_index.setdefault(cell, {})[bucket] = obs.measurement.value
+
+        weather_index: dict[datetime, list[MeteorologicalObservation]] = {}
+        for wx in self.weather:
+            weather_index.setdefault(_hour(wx.observed_at), []).append(wx)
+
+        raster_index: dict[datetime, list[RasterObservation]] = {}
+        for raster in self.rasters:
+            raster_index.setdefault(_hour(raster.acquisition_time), []).append(raster)
+
+        self._aq_by_cell_hour = aq_index
+        self._pm25_by_cell = pm25_index
+        self._weather_by_hour = weather_index
+        self._rasters_by_hour = raster_index
+        self._indexed_sizes = self._sizes()
+
+    def air_quality_at(self, grid_id: str, hour: datetime) -> list[Observation]:
+        """Return this cell's observations for one hour.
+
+        Args:
+            grid_id: H3 cell.
+            hour: Hour-floored timestamp.
+
+        Returns:
+            Matching observations, empty when the cell-hour was not observed.
+        """
+        self._ensure_index()
+        assert self._aq_by_cell_hour is not None
+        return self._aq_by_cell_hour.get((grid_id, _hour(hour)), [])
+
+    def pm25_history(self, grid_id: str) -> dict[datetime, float]:
+        """Return this cell's PM2.5 by hour bucket.
+
+        Args:
+            grid_id: H3 cell.
+
+        Returns:
+            Hour bucket to value. Callers must apply their own time cut-off.
+        """
+        self._ensure_index()
+        assert self._pm25_by_cell is not None
+        return self._pm25_by_cell.get(grid_id, {})
+
+    def weather_within(
+        self, hour: datetime, max_age_hours: float
+    ) -> list[MeteorologicalObservation]:
+        """Return weather observations within a time tolerance of an hour.
+
+        Args:
+            hour: Hour-floored target timestamp.
+            max_age_hours: Inclusive tolerance in hours.
+
+        Returns:
+            Candidate observations.
+        """
+        self._ensure_index()
+        assert self._weather_by_hour is not None
+        target = _hour(hour)
+        span = int(max_age_hours)
+        found: list[MeteorologicalObservation] = []
+        for offset in range(-span, span + 1):
+            key = target.fromtimestamp(target.timestamp() + offset * 3600, tz=UTC)
+            found.extend(self._weather_by_hour.get(key, []))
+        return found
+
+    def rasters_at(self, hour: datetime) -> list[RasterObservation]:
+        """Return raster samples acquired in one hour.
+
+        Args:
+            hour: Hour-floored timestamp.
+
+        Returns:
+            Matching raster observations.
+        """
+        self._ensure_index()
+        assert self._rasters_by_hour is not None
+        return self._rasters_by_hour.get(_hour(hour), [])

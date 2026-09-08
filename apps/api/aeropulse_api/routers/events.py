@@ -1,4 +1,4 @@
-"""Event APIs (LLD §25.2). Forecast/graph remain Phase 4/5."""
+"""Event APIs (LLD section 25.2) including forecast and evidence graph."""
 
 from aeropulse_auth.jwt import TokenClaims
 from aeropulse_contracts.event import EventStatus
@@ -15,7 +15,7 @@ def list_events(
     _claims: TokenClaims = Depends(get_claims),
     status: str | None = Query(default=None),
 ) -> dict:
-    """List pollution events from the in-process store (Timescale when wired)."""
+    """List pollution events from the in-process store."""
     items = list(EVENT_STORE.events.values())
     if status:
         try:
@@ -47,11 +47,23 @@ def get_evidence(event_id: str, _claims: TokenClaims = Depends(get_claims)) -> d
 
 @router.get("/{event_id}/forecast")
 def get_forecast(event_id: str, _claims: TokenClaims = Depends(get_claims)) -> dict:
-    """Event forecast is Phase 4."""
-    raise HTTPException(status_code=501, detail="Forecast is not enabled in this stack")
+    """Return wind-advection forecast.v1 for an event."""
+    if event_id not in EVENT_STORE.events:
+        raise HTTPException(status_code=404, detail=f"Event {event_id} not found")
+    forecast = EVENT_STORE.forecasts.get(event_id)
+    if forecast is None:
+        raise HTTPException(status_code=404, detail="Forecast not generated")
+    payload = forecast.model_dump(mode="json")
+    payload["horizon_hours"] = 12
+    return payload
 
 
 @router.get("/{event_id}/graph")
 def get_graph(event_id: str, _claims: TokenClaims = Depends(get_claims)) -> dict:
-    """ArangoDB graph is out of scope. Returns 501."""
-    raise HTTPException(status_code=501, detail="Evidence graph is not enabled in this stack")
+    """Return Timescale-shaped evidence lineage (graph.v1), not Arango."""
+    if event_id not in EVENT_STORE.events:
+        raise HTTPException(status_code=404, detail=f"Event {event_id} not found")
+    graph = EVENT_STORE.graphs.get(event_id)
+    if graph is None:
+        raise HTTPException(status_code=404, detail="Graph not generated")
+    return graph.model_dump(mode="json")

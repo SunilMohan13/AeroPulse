@@ -22,6 +22,7 @@ services:
       - timescale-data:/home/postgres/pgdata/data
       - ../db/migrations/0001_init.sql:/docker-entrypoint-initdb.d/0001_init.sql:ro
       - ../db/migrations/0002_phase3.sql:/docker-entrypoint-initdb.d/0002_phase3.sql:ro
+      - ../db/migrations/0003_phase4.sql:/docker-entrypoint-initdb.d/0003_phase4.sql:ro
     ports:
       - "127.0.0.1:5432:5432"
     networks: [aeropulse-backend]

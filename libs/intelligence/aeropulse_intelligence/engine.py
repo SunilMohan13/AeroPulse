@@ -6,6 +6,8 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
 from aeropulse_common.ids import new_ulid
+from aeropulse_contracts.alert import Alert
+from aeropulse_contracts.citizen import CitizenReport
 from aeropulse_contracts.event import (
     EventEvidence,
     EventSeverity,
@@ -13,6 +15,8 @@ from aeropulse_contracts.event import (
     PollutionEvent,
 )
 from aeropulse_contracts.feature import FEATURE_VERSION, GridFeature, SourceLikelihood
+from aeropulse_contracts.forecast import ForecastResult
+from aeropulse_contracts.lineage import EvidenceGraph
 from aeropulse_contracts.prediction import AnomalyResult, GridPrediction
 
 from aeropulse_intelligence.anomaly import ANOMALY_VERSION
@@ -31,6 +35,11 @@ class EventStore:
     events: dict[str, PollutionEvent] = field(default_factory=dict)
     evidence: dict[str, list[EventEvidence]] = field(default_factory=dict)
     open_by_grid: dict[str, str] = field(default_factory=dict)
+    forecasts: dict[str, ForecastResult] = field(default_factory=dict)
+    graphs: dict[str, EvidenceGraph] = field(default_factory=dict)
+    features: dict[str, GridFeature] = field(default_factory=dict)
+    alerts: dict[str, Alert] = field(default_factory=dict)
+    citizen_reports: dict[str, CitizenReport] = field(default_factory=dict)
 
 
 def evaluate_cell(

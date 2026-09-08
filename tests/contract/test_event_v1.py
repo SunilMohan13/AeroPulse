@@ -24,7 +24,7 @@ GOLDEN = {
     "overall_confidence": 0.89,
     "evidence_ids": ["evd_1"],
     "model_versions": ["baseline-idw-0.1"],
-    "feature_version": "grid-features-0.3.0",
+    "feature_version": "grid-features-0.4.0",
     "evidence_freshness": 1.0,
     "sensor_coverage": 0.66,
 }

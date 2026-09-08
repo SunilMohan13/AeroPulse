@@ -28,18 +28,26 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     jwt_issuer: str = "aeropulse"
 
-    database_url: str = "postgresql://aeropulse:aeropulse@127.0.0.1:5432/aeropulse"
+    # Local Compose defaults only. Override via AEROPULSE_* in every non-dev env.
+    database_url: str | None = Field(
+        default=None,
+        description="Set AEROPULSE_DATABASE_URL (include password). Compose injects it.",
+    )
     redis_url: str = "redis://127.0.0.1:6379/0"
     kafka_bootstrap_servers: str = "127.0.0.1:19092"
     minio_endpoint: str = "127.0.0.1:9000"
-    minio_access_key: SecretStr = Field(default=SecretStr("aeropulse"))
-    minio_secret_key: SecretStr = Field(default=SecretStr("aeropulse_secret"))
+    minio_access_key: SecretStr | None = None
+    minio_secret_key: SecretStr | None = None
     minio_bucket: str = "aeropulse"
     minio_secure: bool = False
 
     otel_exporter_otlp_endpoint: str | None = None
     connector_mode: Literal["replay", "live"] = "replay"
     default_h3_resolution: int = 8
+    openai_api_key: SecretStr | None = None
+    oidc_jwks_url: str | None = None
+    arangodb_url: str | None = None
+    mlflow_tracking_uri: str | None = None
 
 
 @lru_cache(maxsize=1)

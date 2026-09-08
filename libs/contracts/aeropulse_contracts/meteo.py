@@ -26,6 +26,7 @@ class MeteorologicalObservation(BaseModel):
     temperature: float | None = None
     humidity: float | None = None
     pressure: float | None = None
+    rainfall: float | None = None
     boundary_layer_height: float | None = None
     quality: Quality
     provenance: Provenance

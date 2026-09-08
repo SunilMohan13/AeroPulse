@@ -18,6 +18,16 @@ dependencies = [
     "aeropulse-connector-cpcb",
     "aeropulse-connector-firms",
     "aeropulse-connector-imd",
+    "aeropulse-connector-sentinel5p",
+    "aeropulse-connector-modis",
+    "aeropulse-connector-cams",
+    "aeropulse-connector-insat",
+    "aeropulse-connector-bhuvan",
+    "aeropulse-connector-icar",
+    "aeropulse-connector-industry",
+    "aeropulse-connector-osm",
+    "aeropulse-connector-openmeteo",
+    "aeropulse-ml",
 ]
 
 [dependency-groups]
@@ -38,12 +48,22 @@ members = [
     "libs/connector_sdk",
     "libs/geospatial",
     "libs/intelligence",
+    "libs/ml",
     "apps/api",
     "apps/worker",
     "apps/connector",
     "connectors/cpcb",
     "connectors/firms",
     "connectors/imd",
+    "connectors/sentinel5p",
+    "connectors/modis",
+    "connectors/cams",
+    "connectors/insat",
+    "connectors/bhuvan",
+    "connectors/icar",
+    "connectors/industry",
+    "connectors/osm",
+    "connectors/openmeteo",
 ]
 
 [tool.uv.sources]
@@ -54,16 +74,26 @@ aeropulse-contracts = { workspace = true }
 aeropulse-connector-sdk = { workspace = true }
 aeropulse-geospatial = { workspace = true }
 aeropulse-intelligence = { workspace = true }
+aeropulse-ml = { workspace = true }
 aeropulse-api = { workspace = true }
 aeropulse-worker = { workspace = true }
 aeropulse-connector-app = { workspace = true }
 aeropulse-connector-cpcb = { workspace = true }
 aeropulse-connector-firms = { workspace = true }
 aeropulse-connector-imd = { workspace = true }
+aeropulse-connector-sentinel5p = { workspace = true }
+aeropulse-connector-modis = { workspace = true }
+aeropulse-connector-cams = { workspace = true }
+aeropulse-connector-insat = { workspace = true }
+aeropulse-connector-bhuvan = { workspace = true }
+aeropulse-connector-icar = { workspace = true }
+aeropulse-connector-industry = { workspace = true }
+aeropulse-connector-osm = { workspace = true }
+aeropulse-connector-openmeteo = { workspace = true }
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
-testpaths = ["tests"]
+testpaths = ["tests/unit", "tests/contract", "tests/load"]
 pythonpath = []
 markers = [
     "integration: requires docker compose services",

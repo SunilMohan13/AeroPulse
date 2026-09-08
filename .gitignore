@@ -35,3 +35,13 @@ frontend/web/dist/
 
 # uv
 .python-version-local
+
+# ML artifacts and datasets.
+# Model bundles are pickle-based and environment-specific, and the registry index
+# records absolute paths; both are reproduced by `aeropulse-ml train`. Committing
+# them would also put executable pickles in version control.
+models/
+data/
+
+# Knowledge-graph build output (regenerable)
+graphify-out/

@@ -4,15 +4,19 @@ from __future__ import annotations
 
 import h3
 from aeropulse_contracts.event import PollutionEvent
+from aeropulse_contracts.raster import RasterObservation
 from aeropulse_geospatial.grid import neighbors, to_grid_id
 from aeropulse_observability.logging import get_logger
 
+from aeropulse_intelligence.alerts import alert_from_event
 from aeropulse_intelligence.anomaly import detect_anomaly
 from aeropulse_intelligence.engine import EventStore, evaluate_cell
 from aeropulse_intelligence.estimator import estimate_pm25
 from aeropulse_intelligence.features import build_features
+from aeropulse_intelligence.forecast import forecast_event
 from aeropulse_intelligence.geometry import haversine_km
 from aeropulse_intelligence.likelihood import score_sources
+from aeropulse_intelligence.lineage import build_graph
 from aeropulse_intelligence.snapshot import FeatureSnapshot
 
 logger = get_logger("aeropulse.intelligence")
@@ -89,6 +93,27 @@ def process_snapshot(
             extra_station=extra,
         )
         if event is not None:
+            store.features[event.event_id] = feature
+            if feature.pm25 is not None:
+                store.forecasts[event.event_id] = forecast_event(
+                    event,
+                    origin_grid_id=grid_id,
+                    origin_lat=center_lat,
+                    origin_lon=center_lon,
+                    pm25=feature.pm25,
+                    wind_u=feature.wind_u,
+                    wind_v=feature.wind_v,
+                    boundary_layer_height=feature.boundary_layer_height,
+                    cams_pm25=_cams_pm25(snapshot),
+                )
+            store.graphs[event.event_id] = build_graph(
+                event,
+                store.evidence.get(event.event_id, []),
+                origin_grid_id=grid_id,
+            )
+            alert = alert_from_event(event, store.evidence.get(event.event_id, []))
+            if alert is not None:
+                store.alerts[alert.alert_id] = alert
             logger.info(
                 "event.transitioned",
                 **{"event.id": event.event_id, "grid.id": grid_id, "status": event.status.value},
@@ -105,3 +130,11 @@ def _has_nearby_station(lat: float, lon: float, snapshot: FeatureSnapshot, grid_
         and (o.grid_id or to_grid_id(o.location.lat, o.location.lon)) != grid_id
     }
     return any(haversine_km(lat, lon, slat, slon) <= NEARBY_STATION_KM for slat, slon in stations)
+
+
+def _cams_pm25(snapshot: FeatureSnapshot) -> float | None:
+    rasters: list[RasterObservation] = getattr(snapshot, "rasters", [])
+    values = [r.sample_pm25 for r in rasters if r.source_id == "cams" and r.sample_pm25 is not None]
+    if not values:
+        return None
+    return values[-1]

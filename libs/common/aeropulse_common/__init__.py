@@ -9,6 +9,7 @@ from aeropulse_common.errors import (
 )
 from aeropulse_common.hashing import dedup_key
 from aeropulse_common.ids import new_ulid
+from aeropulse_common.objects import put_raw_json, raw_object_uri
 from aeropulse_common.settings import Settings, get_settings
 
 __all__ = [
@@ -21,4 +22,6 @@ __all__ = [
     "dedup_key",
     "get_settings",
     "new_ulid",
+    "put_raw_json",
+    "raw_object_uri",
 ]

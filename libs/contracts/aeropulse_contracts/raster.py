@@ -33,3 +33,6 @@ class RasterObservation(BaseModel):
     cloud_fraction: float | None = Field(default=None, ge=0.0, le=1.0)
     quality: Quality
     provenance: Provenance
+    sample_aod: float | None = None
+    sample_no2: float | None = None
+    sample_pm25: float | None = None

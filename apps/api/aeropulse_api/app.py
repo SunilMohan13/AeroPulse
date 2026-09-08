@@ -9,7 +9,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from aeropulse_api.routers import events, health, sources
+from aeropulse_api.routers import alerts, citizen, copilot, events, health, models, risk, sources
 from aeropulse_api.routers import map as map_router
 
 
@@ -23,7 +23,17 @@ def create_app() -> FastAPI:
     app = FastAPI(
         title="AeroPulse API",
         version=settings.service_version,
-        description="Phase 1-3 BFF: sources, map, events. Forecast/graph stubbed.",
+        description="AeroPulse India API v1: map, sources, events, forecast, evidence graph.",
+        openapi_tags=[
+            {"name": "health", "description": "Liveness and readiness"},
+            {"name": "sources", "description": "Data source registry and backfill"},
+            {"name": "map", "description": "GeoJSON layers for the operational map"},
+            {"name": "events", "description": "Pollution events, evidence, forecast, lineage"},
+            {"name": "copilot", "description": "Evidence-grounded reasoning (no LLM invention)"},
+            {"name": "citizen", "description": "Citizen reports (corroborative, no CV)"},
+            {"name": "alerts", "description": "Canonical alerts (log channel)"},
+            {"name": "risk", "description": "Exposure vs pollution severity"},
+        ],
     )
     app.add_middleware(
         CORSMiddleware,
@@ -36,6 +46,11 @@ def create_app() -> FastAPI:
     app.include_router(sources.router)
     app.include_router(map_router.router)
     app.include_router(events.router)
+    app.include_router(copilot.router)
+    app.include_router(citizen.router)
+    app.include_router(alerts.router)
+    app.include_router(risk.router)
+    app.include_router(models.router)
 
     buckets: dict[str, list[float]] = {}
 

@@ -7,9 +7,15 @@ from collections.abc import Callable
 from aeropulse_auth.jwt import Role, TokenClaims, decode_token, require_roles
 from aeropulse_common.errors import AuthError
 from fastapi import Depends, Header, HTTPException
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+
+bearer_scheme = HTTPBearer(auto_error=False)
 
 
-def get_claims(authorization: str | None = Header(default=None)) -> TokenClaims:
+def get_claims(
+    authorization: str | None = Header(default=None),
+    credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
+) -> TokenClaims:
     """Extract and validate a Bearer JWT from the Authorization header.
 
     Args:
@@ -21,9 +27,13 @@ def get_claims(authorization: str | None = Header(default=None)) -> TokenClaims:
     Raises:
         HTTPException: 401 if the token is missing or invalid.
     """
-    if not authorization or not authorization.lower().startswith("bearer "):
+    token = None
+    if credentials is not None:
+        token = credentials.credentials
+    elif authorization and authorization.lower().startswith("bearer "):
+        token = authorization.split(" ", 1)[1]
+    if not token:
         raise HTTPException(status_code=401, detail="Missing bearer token")
-    token = authorization.split(" ", 1)[1]
     try:
         return decode_token(token)
     except AuthError as exc:

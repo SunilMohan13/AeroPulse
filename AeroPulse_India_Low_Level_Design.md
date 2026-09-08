@@ -3402,63 +3402,63 @@ Infrastructure:
 
 ## Platform
 
-- [ ] Docker Compose
-- [ ] Redpanda (Kafka API) + Schema Registry
-- [ ] TimescaleDB + PostGIS
-- [ ] ArangoDB
-- [ ] Redis
-- [ ] MinIO/S3
-- [ ] SigNoz (observability profile)
-- [ ] OpenTelemetry
+- [x] Docker Compose
+- [x] Redpanda (Kafka API) + Schema Registry
+- [x] TimescaleDB + PostGIS
+- [x] ArangoDB
+- [x] Redis
+- [x] MinIO/S3
+- [x] SigNoz (observability profile) (Compose overlay; collector debug exporter)
+- [x] OpenTelemetry
 
 ## Integration
 
-- [ ] Connector SDK
-- [ ] Source Registry
-- [ ] CPCB connector
-- [ ] IMD connector
-- [ ] FIRMS connector
-- [ ] Sentinel-5P connector
-- [ ] MODIS connector
-- [ ] CAMS connector
-- [ ] INSAT/MOSDAC connector
-- [ ] Bhuvan connector
-- [ ] ICAR connector
-- [ ] Industry connector
-- [ ] OSM ingestion
-- [ ] Citizen API
+- [x] Connector SDK
+- [x] Source Registry
+- [x] CPCB connector
+- [x] IMD connector
+- [x] FIRMS connector
+- [x] Sentinel-5P connector
+- [x] MODIS connector
+- [x] CAMS connector
+- [x] INSAT/MOSDAC connector
+- [x] Bhuvan connector
+- [x] ICAR connector
+- [x] Industry connector
+- [x] OSM ingestion
+- [x] Citizen API
 
 ## Data
 
-- [ ] Raw data layer
-- [ ] Canonical contracts
-- [ ] Quality engine
-- [ ] Spatial mapping
-- [ ] Temporal alignment
-- [ ] 1 km grid
-- [ ] Feature pipeline
-- [ ] Provenance
+- [x] Raw data layer
+- [x] Canonical contracts
+- [x] Quality engine
+- [x] Spatial mapping
+- [x] Temporal alignment
+- [x] 1 km grid
+- [x] Feature pipeline
+- [x] Provenance
 
 ## AI
 
-- [ ] PM2.5 estimator
-- [ ] Anomaly detector
-- [ ] Source likelihood
-- [ ] Forecast
-- [ ] Exposure
-- [ ] Risk
-- [ ] Model registry
+- [x] PM2.5 estimator
+- [x] Anomaly detector
+- [x] Source likelihood
+- [x] Forecast
+- [x] Exposure
+- [x] Risk
+- [x] Model registry
 - [ ] Model monitoring
 
 ## Intelligence
 
-- [ ] Event engine
-- [ ] Event state machine
-- [ ] ArangoDB graph
-- [ ] Evidence lineage
-- [ ] Confidence engine
-- [ ] Alert engine
-- [ ] Copilot
+- [x] Event engine
+- [x] Event state machine
+- [x] ArangoDB graph
+- [x] Evidence lineage
+- [x] Confidence engine
+- [x] Alert engine
+- [x] Copilot
 
 ## UI
 
@@ -3477,15 +3477,15 @@ Infrastructure:
 
 ## Production
 
-- [ ] RBAC
-- [ ] Secrets
-- [ ] Rate limiting
-- [ ] Backfill
-- [ ] Replay
-- [ ] DLQ
-- [ ] Compose replica scaling
-- [ ] Disaster recovery
-- [ ] Load testing
+- [x] RBAC
+- [x] Secrets
+- [x] Rate limiting
+- [x] Backfill
+- [x] Replay
+- [x] DLQ
+- [x] Compose replica scaling
+- [x] Disaster recovery
+- [x] Load testing
 - [ ] Security testing
 - [ ] Scientific validation
 - [ ] SLO monitoring

@@ -8,6 +8,7 @@ from aeropulse_contracts.event import EventStatus
 from aeropulse_contracts.fire import FireObservation
 from aeropulse_contracts.meteo import MeteorologicalObservation
 from aeropulse_contracts.observation import Observation
+from aeropulse_contracts.raster import RasterObservation
 from aeropulse_worker.pipeline import (
     InMemoryRepository,
     process_air_quality,
@@ -17,19 +18,24 @@ from aeropulse_worker.pipeline import (
 )
 
 
+def _ingest(repo: InMemoryRepository, payload: dict) -> None:
+    if "measurement" in payload:
+        process_air_quality(Observation.model_validate(payload), repo)
+    elif "fire" in payload:
+        process_fire(FireObservation.model_validate(payload), repo)
+    elif payload.get("schema_version") == "raster.v1":
+        repo.add_raster(RasterObservation.model_validate(payload))
+    else:
+        process_weather(MeteorologicalObservation.model_validate(payload), repo)
+
+
 def test_fixture_replay_creates_punjab_event() -> None:
     repo = InMemoryRepository()
     envelopes: list[tuple[str, KafkaEnvelope]] = []
 
     def capture(topic: str, envelope: KafkaEnvelope) -> None:
         envelopes.append((topic, envelope))
-        payload = envelope.payload
-        if "measurement" in payload:
-            process_air_quality(Observation.model_validate(payload), repo)
-        elif "fire" in payload:
-            process_fire(FireObservation.model_validate(payload), repo)
-        else:
-            process_weather(MeteorologicalObservation.model_validate(payload), repo)
+        _ingest(repo, envelope.payload)
 
     replay_all(Path("fixtures"), capture)
     result = run_detection(repo)
@@ -52,13 +58,7 @@ def test_duplicate_snapshot_does_not_spawn_second_open_event() -> None:
 
     def capture(_topic: str, envelope: KafkaEnvelope) -> None:
         envelopes.append(envelope)
-        payload = envelope.payload
-        if "measurement" in payload:
-            process_air_quality(Observation.model_validate(payload), repo)
-        elif "fire" in payload:
-            process_fire(FireObservation.model_validate(payload), repo)
-        else:
-            process_weather(MeteorologicalObservation.model_validate(payload), repo)
+        _ingest(repo, envelope.payload)
 
     replay_all(Path("fixtures"), capture)
     run_detection(repo)

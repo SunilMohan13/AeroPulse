@@ -8,6 +8,7 @@ from aeropulse_auth.jwt import TokenClaims
 from fastapi import APIRouter, Depends, Query
 
 from aeropulse_api.deps import get_claims
+from aeropulse_api.event_store import EVENT_STORE
 
 router = APIRouter(prefix="/api/v1/map", tags=["map"])
 
@@ -111,14 +112,55 @@ def weather(
 
 @router.get("/satellite")
 def satellite(_claims: TokenClaims = Depends(get_claims)) -> dict:
-    """Satellite layers are out of scope for Phase 2. Empty collection."""
-    return _collection([], None)
+    """Return fixture satellite product footprints (metadata only, not AOD-as-PM2.5)."""
+    features = [
+        {
+            "type": "Feature",
+            "geometry": {"type": "Point", "coordinates": [76.0, 30.0]},
+            "properties": {
+                "source_id": "modis",
+                "product": "MCD19A2 AOD metadata",
+                "note": "AOD is not surface PM2.5",
+            },
+        },
+        {
+            "type": "Feature",
+            "geometry": {"type": "Point", "coordinates": [76.5, 29.5]},
+            "properties": {
+                "source_id": "sentinel5p",
+                "product": "S5P NO2 metadata",
+            },
+        },
+    ]
+    return _collection(features, None)
 
 
 @router.get("/forecast")
 def forecast(_claims: TokenClaims = Depends(get_claims)) -> dict:
-    """Forecast layers are out of scope for Phase 2. Empty collection."""
-    return _collection([], None)
+    """Return advection forecast points as GeoJSON."""
+    features: list[dict] = []
+    for forecast in EVENT_STORE.forecasts.values():
+        for cell in forecast.grid_predictions:
+            if cell.center_lon is None or cell.center_lat is None:
+                continue
+            features.append(
+                {
+                    "type": "Feature",
+                    "geometry": {
+                        "type": "Point",
+                        "coordinates": [cell.center_lon, cell.center_lat],
+                    },
+                    "properties": {
+                        "grid_id": cell.grid_id,
+                        "pm25": cell.pm25,
+                        "confidence": cell.confidence,
+                        "event_id": forecast.event_id,
+                        "model_version": forecast.model_version,
+                        "cams_applied": forecast.cams_applied,
+                    },
+                }
+            )
+    return _collection(features, None)
 
 
 @router.get("/grid")

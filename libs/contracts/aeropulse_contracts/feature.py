@@ -5,7 +5,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-FEATURE_VERSION = "grid-features-0.3.0"
+FEATURE_VERSION = "grid-features-0.4.0"
 
 
 class SourceLikelihood(BaseModel):
@@ -72,6 +72,13 @@ class GridFeature(BaseModel):
 
     pm25_lag_1h: float | None = None
     pm25_lag_3h: float | None = None
+    pm25_lag_6h: float | None = None
+    pm25_lag_24h: float | None = None
+
+    # Trailing windows exclude the current hour so the vector stays point-in-time
+    # safe for both training and online inference (LLD §17.2).
+    pm25_roll_6h: float | None = None
+    pm25_roll_24h: float | None = None
 
     pm25_estimate: float | None = None
     estimate_confidence: float | None = Field(default=None, ge=0.0, le=1.0)

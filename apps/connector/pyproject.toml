@@ -11,6 +11,14 @@ dependencies = [
     "aeropulse-connector-cpcb",
     "aeropulse-connector-firms",
     "aeropulse-connector-imd",
+    "aeropulse-connector-sentinel5p",
+    "aeropulse-connector-modis",
+    "aeropulse-connector-cams",
+    "aeropulse-connector-insat",
+    "aeropulse-connector-bhuvan",
+    "aeropulse-connector-icar",
+    "aeropulse-connector-industry",
+    "aeropulse-connector-osm",
     "aiokafka>=0.11.0",
     "apscheduler>=3.10.4",
     "pyyaml>=6.0.2",
@@ -32,3 +40,11 @@ aeropulse-observability = { workspace = true }
 aeropulse-connector-cpcb = { workspace = true }
 aeropulse-connector-firms = { workspace = true }
 aeropulse-connector-imd = { workspace = true }
+aeropulse-connector-sentinel5p = { workspace = true }
+aeropulse-connector-modis = { workspace = true }
+aeropulse-connector-cams = { workspace = true }
+aeropulse-connector-insat = { workspace = true }
+aeropulse-connector-bhuvan = { workspace = true }
+aeropulse-connector-icar = { workspace = true }
+aeropulse-connector-industry = { workspace = true }
+aeropulse-connector-osm = { workspace = true }

@@ -41,6 +41,36 @@ _SOURCES: dict[str, dict] = {
         "status": "replay",
         "schema_version": "meteo.v1",
     },
+    "sentinel5p": {
+        "source_id": "sentinel5p",
+        "provider": "Copernicus",
+        "connector_id": "sentinel5p",
+        "display_name": "Sentinel-5P",
+        "data_type": "satellite_gas",
+        "enabled": True,
+        "status": "replay",
+        "schema_version": "raster.v1",
+    },
+    "modis": {
+        "source_id": "modis",
+        "provider": "NASA",
+        "connector_id": "modis_maiac",
+        "display_name": "MODIS MAIAC AOD",
+        "data_type": "aod",
+        "enabled": True,
+        "status": "replay",
+        "schema_version": "raster.v1",
+    },
+    "cams": {
+        "source_id": "cams",
+        "provider": "ECMWF",
+        "connector_id": "cams",
+        "display_name": "CAMS composition",
+        "data_type": "composition_forecast",
+        "enabled": True,
+        "status": "replay",
+        "schema_version": "raster.v1",
+    },
 }
 
 
@@ -123,13 +153,29 @@ def backfill_source(
     body: BackfillRequest,
     _claims: TokenClaims = Depends(require(Role.ADMIN, Role.OPERATOR)),
 ) -> dict:
-    """Enqueue a backfill. Processing_mode=BACKFILL is set by the connector."""
+    """Run fixture replay for a source with processing_mode=BACKFILL."""
     if source_id not in _SOURCES:
         raise HTTPException(status_code=404, detail="Source not found")
+    from pathlib import Path
+
+    from aeropulse_connector_app.runner import replay_all
+    from aeropulse_contracts.envelope import KafkaEnvelope, ProcessingMode
+
+    published = 0
+
+    def _count(_topic: str, envelope: KafkaEnvelope) -> None:
+        nonlocal published
+        if envelope.source_id == source_id:
+            published += 1
+
+    root = Path("/app/fixtures") if Path("/app/fixtures").exists() else Path("fixtures")
+    if root.exists():
+        replay_all(root, _count, processing_mode=ProcessingMode.BACKFILL)
     return {
         "source_id": source_id,
         "accepted": True,
         "processing_mode": "BACKFILL",
         "start": body.start,
         "end": body.end,
+        "records": published,
     }

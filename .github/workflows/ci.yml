@@ -17,7 +17,52 @@ jobs:
       - run: uv run ruff check .
       - run: uv run ruff format --check .
       - run: uv run pyright
-      - run: uv run pytest tests/unit tests/contract -q
+      - run: uv run pytest tests/unit tests/contract tests/load -q
+      - run: uv run python scripts/export_openapi.py
+
+  # Trains from the committed fixture with no network and no credential. This
+  # guards the pieces that silently rot: the shared train/serve feature spec,
+  # the leakage assertions, and the promotion gate. The gate is EXPECTED to
+  # refuse this model -- three days of fixture data cannot beat persistence --
+  # so the assertion is that a bad model is blocked, not that one is promoted.
+  ml:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v4
+        with:
+          python-version: "3.12"
+      - run: uv sync --frozen
+      - name: Train from fixture and assert the gate blocks a weak model
+        run: |
+          uv run aeropulse-ml --model-dir /tmp/ci-models train --model pm25_estimator --promote
+          uv run aeropulse-ml --model-dir /tmp/ci-models models
+          uv run python - <<'PY'
+          import json, sys
+          from pathlib import Path
+          report = json.loads(Path("/tmp/ci-models/training_report.json").read_text())
+          model = report["models"]["pm25_estimator"]
+          assert model["trained"], "training did not run"
+          assert model["metrics"]["temporal"]["evaluated"], "temporal holdout not evaluated"
+          assert model["promotion_gate_passed"] is False, (
+              "the fixture window must NOT pass the gate; if it now does, the gate "
+              "or the fixture changed and both need review"
+          )
+          assert model["stage"] == "VALIDATION", model["stage"]
+          print("gate correctly blocked promotion:", model["promotion_gate_failures"])
+          PY
+      - name: Inference must degrade rather than fail when nothing is promoted
+        run: |
+          uv run aeropulse-ml --model-dir /tmp/ci-models predict > /tmp/pred.json
+          uv run python - <<'PY'
+          import json
+          from pathlib import Path
+          out = json.loads(Path("/tmp/pred.json").read_text())
+          assert out["cells"], "no cells scored"
+          assert out["degraded_models"], "expected degraded models to be reported"
+          assert out["cells"][0]["pm25_estimate"]["available"] is False
+          print("graceful degradation verified")
+          PY
 
   frontend:
     runs-on: ubuntu-latest

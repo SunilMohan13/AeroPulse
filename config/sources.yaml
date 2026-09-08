@@ -14,3 +14,25 @@ sources:
     enabled: true
     schedule: "0 * * * *"
     fixture: fixtures/imd/weather.json
+  - id: sentinel5p
+    connector: sentinel5p
+    enabled: true
+    schedule: "0 */6 * * *"
+    fixture: fixtures/sentinel5p/products.json
+  - id: modis
+    connector: modis_maiac
+    enabled: true
+    schedule: "0 6 * * *"
+    fixture: fixtures/modis/products.json
+  - id: cams
+    connector: cams
+    enabled: true
+    schedule: "0 */6 * * *"
+    fixture: fixtures/cams/products.json
+  - id: openmeteo
+    connector: openmeteo
+    enabled: true
+    schedule: "0 * * * *"
+    fixture: fixtures/openmeteo/observations.json
+    live_capable: true
+    auth_ref: none

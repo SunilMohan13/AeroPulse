@@ -14,6 +14,7 @@ from aeropulse_connector_sdk.quality import evaluate_observation
 from aeropulse_contracts.fire import FireObservation
 from aeropulse_contracts.meteo import MeteorologicalObservation
 from aeropulse_contracts.observation import Observation
+from aeropulse_contracts.raster import RasterObservation
 from aeropulse_geospatial.grid import to_grid_id
 from aeropulse_intelligence.detect import process_snapshot
 from aeropulse_intelligence.engine import EventStore
@@ -38,6 +39,10 @@ class ObservationRepository(Protocol):
         """Insert or ignore a weather row. Returns True if inserted."""
         ...
 
+    def record_dlq(self, source_id: str, payload: dict[str, Any], error: str) -> None:
+        """Record a quality-rejected payload. Optional on implementations."""
+        ...
+
 
 class InMemoryRepository:
     """Test double that enforces dedup_key uniqueness."""
@@ -46,6 +51,8 @@ class InMemoryRepository:
         self.air_quality: dict[str, Observation] = {}
         self.fires: dict[str, FireObservation] = {}
         self.weather: dict[str, MeteorologicalObservation] = {}
+        self.rasters: list[RasterObservation] = []
+        self.dlq: list[dict[str, Any]] = []
         self.event_store = EventStore()
 
     def upsert_air_quality(self, observation: Observation) -> bool:
@@ -71,6 +78,14 @@ class InMemoryRepository:
             return False
         self.weather[key] = observation
         return True
+
+    def record_dlq(self, source_id: str, payload: dict[str, Any], error: str) -> None:
+        """Keep rejected payloads for operator replay."""
+        self.dlq.append({"source_id": source_id, "error": error, "payload": payload})
+
+    def add_raster(self, raster: RasterObservation) -> None:
+        """Keep raster metadata in the snapshot."""
+        self.rasters.append(raster)
 
 
 def process_air_quality(
@@ -102,6 +117,12 @@ def process_air_quality(
             source_id=observation.source_id,
             reasons=qc.reasons,
         )
+        if hasattr(repository, "record_dlq"):
+            repository.record_dlq(
+                observation.source_id,
+                observation.model_dump(mode="json"),
+                ",".join(qc.reasons),
+            )
         return {"status": "rejected", "reasons": qc.reasons}
 
     observation.grid_id = to_grid_id(observation.location.lat, observation.location.lon)
@@ -131,6 +152,12 @@ def process_fire(
     observation.quality.quality_flag = qc.quality_flag
     observation.quality.quality_score = qc.quality_score
     if qc.quality_flag == "invalid":
+        if hasattr(repository, "record_dlq"):
+            repository.record_dlq(
+                observation.source_id,
+                observation.model_dump(mode="json"),
+                ",".join(qc.reasons),
+            )
         return {"status": "rejected", "reasons": qc.reasons}
     observation.grid_id = to_grid_id(observation.location.lat, observation.location.lon)
     observation.dedup_key = dedup_key(
@@ -160,6 +187,12 @@ def process_weather(
     observation.quality.quality_flag = qc.quality_flag
     observation.quality.quality_score = qc.quality_score
     if qc.quality_flag == "invalid":
+        if hasattr(repository, "record_dlq"):
+            repository.record_dlq(
+                observation.source_id,
+                observation.model_dump(mode="json"),
+                ",".join(qc.reasons),
+            )
         return {"status": "rejected", "reasons": qc.reasons}
     observation.grid_id = to_grid_id(observation.location.lat, observation.location.lon)
     observation.dedup_key = dedup_key(
@@ -178,6 +211,7 @@ def run_detection(repository: InMemoryRepository) -> dict[str, Any]:
         air_quality=list(repository.air_quality.values()),
         fires=list(repository.fires.values()),
         weather=list(repository.weather.values()),
+        rasters=list(getattr(repository, "rasters", [])),
     )
     events = process_snapshot(snapshot, repository.event_store)
     return {

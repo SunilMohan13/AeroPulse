@@ -78,6 +78,6 @@ class PollutionEvent(BaseModel):
     overall_confidence: float = Field(..., ge=0.0, le=1.0)
     evidence_ids: list[str] = Field(default_factory=list)
     model_versions: list[str] = Field(default_factory=list)
-    feature_version: str = "grid-features-0.3.0"
+    feature_version: str = "grid-features-0.4.0"
     evidence_freshness: float = Field(0.0, ge=0.0, le=1.0)
     sensor_coverage: float = Field(0.0, ge=0.0, le=1.0)
