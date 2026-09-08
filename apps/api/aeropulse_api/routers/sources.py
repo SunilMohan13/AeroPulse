@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from aeropulse_auth.jwt import Role, TokenClaims
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from aeropulse_api.deps import get_claims, require
@@ -95,9 +95,16 @@ class BackfillRequest(BaseModel):
 
 
 @router.get("")
-def list_sources(_claims: TokenClaims = Depends(get_claims)) -> dict:
+def list_sources(
+    _claims: TokenClaims = Depends(get_claims),
+    limit: int | None = Query(default=None, ge=1, le=500, description="Max items to return"),
+    offset: int = Query(default=0, ge=0, description="Items to skip"),
+) -> dict:
     """List registered data sources."""
-    return {"items": list(_SOURCES.values())}
+    items = list(_SOURCES.values())
+    total = len(items)
+    page = items[offset : offset + limit] if limit is not None else items[offset:]
+    return {"items": page, "total": total, "limit": limit, "offset": offset}
 
 
 @router.get("/{source_id}")

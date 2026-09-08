@@ -36,8 +36,22 @@ def test_sources_requires_auth(client: TestClient) -> None:
 def test_viewer_can_list_sources(client: TestClient, settings: Settings) -> None:
     response = client.get("/api/v1/sources", headers=_auth(settings, Role.VIEWER))
     assert response.status_code == 200
-    ids = {item["source_id"] for item in response.json()["items"]}
+    body = response.json()
+    ids = {item["source_id"] for item in body["items"]}
     assert {"cpcb", "firms", "imd", "sentinel5p", "modis", "cams"} <= ids
+    assert body["total"] == len(body["items"])
+    assert body["limit"] is None
+    assert body["offset"] == 0
+
+
+def test_sources_pagination(client: TestClient, settings: Settings) -> None:
+    headers = _auth(settings, Role.VIEWER)
+    full = client.get("/api/v1/sources", headers=headers).json()
+    paged = client.get("/api/v1/sources?limit=2&offset=1", headers=headers).json()
+    assert paged["total"] == full["total"]
+    assert paged["limit"] == 2
+    assert paged["offset"] == 1
+    assert paged["items"] == full["items"][1:3]
 
 
 def test_viewer_cannot_create_source(client: TestClient, settings: Settings) -> None:
@@ -84,7 +98,17 @@ def test_map_air_quality(client: TestClient, settings: Settings) -> None:
 def test_events_empty(client: TestClient, settings: Settings) -> None:
     response = client.get("/api/v1/events", headers=_auth(settings, Role.VIEWER))
     assert response.status_code == 200
-    assert response.json()["items"] == []
+    body = response.json()
+    assert body["items"] == []
+    assert body["total"] == 0
+    assert body["limit"] is None
+    assert body["offset"] == 0
+
+
+def test_events_rejects_invalid_pagination_params(client: TestClient, settings: Settings) -> None:
+    headers = _auth(settings, Role.VIEWER)
+    assert client.get("/api/v1/events?limit=0", headers=headers).status_code == 422
+    assert client.get("/api/v1/events?offset=-1", headers=headers).status_code == 422
 
 
 def test_missing_event_forecast_and_graph_are_404(client: TestClient, settings: Settings) -> None:

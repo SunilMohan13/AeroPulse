@@ -74,7 +74,7 @@ services:
     volumes:
       - redis-data:/data
     ports:
-      - "127.0.0.1:6379:6379"
+      - "127.0.0.1:6380:6379"
     networks: [aeropulse-backend]
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
@@ -179,4 +179,4 @@ services:
       api:
         condition: service_healthy
     networks: [aeropulse-frontend]
-    mem_limit: 256m
+    mem_limit: 1g

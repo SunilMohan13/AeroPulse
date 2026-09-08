@@ -40,6 +40,11 @@ class EventStore:
     features: dict[str, GridFeature] = field(default_factory=dict)
     alerts: dict[str, Alert] = field(default_factory=dict)
     citizen_reports: dict[str, CitizenReport] = field(default_factory=dict)
+    #: Latest materialized feature/prediction per cell, for every cell processed
+    #: this pass — regardless of whether it triggered an event (LLD §13/§20:
+    #: `grid_feature`/`grid_prediction` must be persisted independent of events).
+    latest_features: dict[str, GridFeature] = field(default_factory=dict)
+    latest_predictions: dict[str, GridPrediction] = field(default_factory=dict)
 
 
 def evaluate_cell(

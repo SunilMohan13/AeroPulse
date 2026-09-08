@@ -12,6 +12,7 @@ from typing import Any
 
 import structlog
 from aeropulse_common.settings import Settings, get_settings
+from opentelemetry import trace
 
 _CONFIGURED = False
 
@@ -39,6 +40,7 @@ def configure_logging(settings: Settings | None = None) -> None:
             structlog.processors.add_log_level,
             structlog.processors.TimeStamper(fmt="iso", utc=True, key="timestamp"),
             _add_service_fields(cfg),
+            _add_trace_context,
             structlog.processors.StackInfoRenderer(),
             structlog.processors.format_exc_info,
             structlog.processors.JSONRenderer(),
@@ -49,6 +51,20 @@ def configure_logging(settings: Settings | None = None) -> None:
         cache_logger_on_first_use=True,
     )
     _CONFIGURED = True
+
+
+def _add_trace_context(_logger: Any, _method: str, event_dict: Any) -> Any:
+    """Bind `trace_id`/`span_id` from the active OTel span, when one exists (LLD §33.1).
+
+    A no-op when telemetry is unconfigured or no span is active, so log lines
+    are unaffected outside of a traced request.
+    """
+    span = trace.get_current_span()
+    ctx = span.get_span_context()
+    if ctx.is_valid:
+        event_dict.setdefault("trace_id", format(ctx.trace_id, "032x"))
+        event_dict.setdefault("span_id", format(ctx.span_id, "016x"))
+    return event_dict
 
 
 def _add_service_fields(settings: Settings):

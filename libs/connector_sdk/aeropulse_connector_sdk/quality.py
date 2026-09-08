@@ -1,16 +1,21 @@
-"""Deterministic data-quality rules (LLD §16).
+"""Deterministic data-quality rules (LLD §16.2: configurable weighted score).
 
-Weights are constants here; a later story may load them from config.
+Weights default to the values below and can be overridden via the
+`AEROPULSE_QUALITY_WEIGHTS` environment variable (a JSON object of a subset of
+the keys, e.g. `{"range": 0.3, "freshness": 0.05}`); unknown keys are ignored
+and unparsable/absent input falls back to the defaults silently.
 """
 
 from __future__ import annotations
 
+import json
+import os
 from datetime import UTC, datetime, timedelta
 from typing import Literal
 
 from pydantic import BaseModel
 
-QUALITY_WEIGHTS = {
+_DEFAULT_QUALITY_WEIGHTS = {
     "range": 0.25,
     "temporal": 0.20,
     "sensor": 0.20,
@@ -18,6 +23,29 @@ QUALITY_WEIGHTS = {
     "source": 0.10,
     "freshness": 0.10,
 }
+
+
+def _load_quality_weights() -> dict[str, float]:
+    weights = dict(_DEFAULT_QUALITY_WEIGHTS)
+    raw = os.getenv("AEROPULSE_QUALITY_WEIGHTS")
+    if not raw:
+        return weights
+    try:
+        overrides = json.loads(raw)
+    except json.JSONDecodeError:
+        return weights
+    if not isinstance(overrides, dict):
+        return weights
+    for key, value in overrides.items():
+        if key in weights:
+            try:
+                weights[key] = float(value)
+            except (TypeError, ValueError):
+                continue
+    return weights
+
+
+QUALITY_WEIGHTS = _load_quality_weights()
 
 PM25_MAX = 2000.0
 HUMIDITY_MIN = 0.0

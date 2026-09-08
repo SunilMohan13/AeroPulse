@@ -36,3 +36,28 @@ sources:
     fixture: fixtures/openmeteo/observations.json
     live_capable: true
     auth_ref: none
+  - id: insat
+    connector: insat_3d
+    enabled: true
+    schedule: "0 */6 * * *"
+    fixture: fixtures/insat/assets.json
+  - id: bhuvan
+    connector: bhuvan
+    enabled: true
+    schedule: "0 */6 * * *"
+    fixture: fixtures/bhuvan/assets.json
+  - id: icar
+    connector: icar
+    enabled: true
+    schedule: "0 */6 * * *"
+    fixture: fixtures/icar/assets.json
+  - id: industry
+    connector: industry_ocems
+    enabled: true
+    schedule: "0 */6 * * *"
+    fixture: fixtures/industry/assets.json
+  - id: osm
+    connector: osm
+    enabled: true
+    schedule: "0 */6 * * *"
+    fixture: fixtures/osm/assets.json

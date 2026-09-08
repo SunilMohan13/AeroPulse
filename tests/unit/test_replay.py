@@ -2,6 +2,7 @@
 
 from pathlib import Path
 
+import pytest
 from aeropulse_connector_app.runner import replay_all
 from aeropulse_contracts.envelope import KafkaEnvelope, ProcessingMode
 
@@ -25,3 +26,45 @@ def test_replay_all_counts() -> None:
     assert counts["industry"] == 1
     assert counts["osm"] == 1
     assert all(e.processing_mode == ProcessingMode.BACKFILL for _, e in published)
+
+
+def test_replay_all_respects_sources_yaml_missing_file(tmp_path: Path) -> None:
+    """A missing/unreadable registry must not silently stop ingestion."""
+    published: list[tuple[str, KafkaEnvelope]] = []
+    counts = replay_all(
+        Path("fixtures"),
+        lambda topic, env: published.append((topic, env)),
+        sources_config=tmp_path / "does-not-exist.yaml",
+    )
+    assert counts["cpcb"] == 8
+    assert counts["osm"] == 1
+
+
+def test_replay_all_disables_source_via_config(tmp_path: Path) -> None:
+    """`config/sources.yaml` is now load-bearing: disabling a source skips it."""
+    config = tmp_path / "sources.yaml"
+    config.write_text(
+        "sources:\n"
+        "  - {id: cpcb, enabled: true}\n"
+        "  - {id: firms, enabled: false}\n"
+        "  - {id: imd, enabled: true}\n"
+        "  - {id: sentinel5p, enabled: true}\n"
+        "  - {id: modis, enabled: true}\n"
+        "  - {id: cams, enabled: true}\n"
+        "  - {id: insat, enabled: true}\n"
+        "  - {id: bhuvan, enabled: true}\n"
+        "  - {id: icar, enabled: true}\n"
+        "  - {id: industry, enabled: true}\n"
+        "  - {id: osm, enabled: true}\n"
+    )
+    counts = replay_all(Path("fixtures"), lambda topic, env: None, sources_config=config)
+    assert counts["firms"] == 0
+    assert counts["cpcb"] == 8
+
+
+@pytest.mark.parametrize("bad_content", ["not: a: list", "sources: not-a-list"])
+def test_replay_all_falls_back_when_config_malformed(tmp_path: Path, bad_content: str) -> None:
+    config = tmp_path / "sources.yaml"
+    config.write_text(bad_content)
+    counts = replay_all(Path("fixtures"), lambda topic, env: None, sources_config=config)
+    assert counts["cpcb"] == 8

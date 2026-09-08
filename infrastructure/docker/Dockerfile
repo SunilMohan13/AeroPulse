@@ -19,7 +19,10 @@ COPY config ./config
 COPY infrastructure/db ./infrastructure/db
 
 RUN uv sync --frozen --no-dev --no-install-project \
-    && uv sync --frozen --no-dev
+    && uv sync --frozen --no-dev \
+    && chown -R aeropulse:aeropulse /app
+
+ENV UV_FROZEN=1 UV_NO_SYNC=1
 
 USER aeropulse
 EXPOSE 8000

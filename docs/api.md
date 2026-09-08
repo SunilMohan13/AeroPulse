@@ -36,7 +36,7 @@ Query `bbox=min_lon,min_lat,max_lon,max_lat` (optional).
 
 | Path | Notes |
 | --- | --- |
-| `GET /` | `?status=ACTIVE` filter |
+| `GET /` | `?status=ACTIVE` filter; `?limit=&offset=` pagination (added 2026-09-09; `limit` omitted = no limit, response adds `total`/`limit`/`offset`) |
 | `GET /{id}` | `event.v1` |
 | `GET /{id}/evidence` | Evidence list |
 | `GET /{id}/forecast` | `forecast.v1`, `horizon_hours=12` convenience field |
@@ -46,7 +46,7 @@ Missing event → 404. Forecast/graph are **not** 501 when the event exists in t
 
 ## Sources
 
-`GET /api/v1/sources`, `GET /{id}`, `POST /` (ADMIN), `POST /{id}/backfill` (ADMIN/OPERATOR) runs fixture replay with `processing_mode=BACKFILL`.
+`GET /api/v1/sources` (`?limit=&offset=` pagination, added 2026-09-09), `GET /{id}`, `POST /` (ADMIN), `POST /{id}/backfill` (ADMIN/OPERATOR) runs fixture replay with `processing_mode=BACKFILL`.
 
 ## Copilot (`/api/v1/copilot`)
 

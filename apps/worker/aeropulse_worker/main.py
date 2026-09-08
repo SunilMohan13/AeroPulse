@@ -129,7 +129,7 @@ def _handle(
 
 
 def _persist_intelligence(persist: ObservationRepository, snapshot: InMemoryRepository) -> None:
-    """Best-effort Timescale write for events, graphs, forecasts, and health."""
+    """Best-effort Timescale write for events, graphs, forecasts, features, and health."""
     writer = getattr(persist, "upsert_event", None)
     if writer is None:
         return
@@ -144,6 +144,12 @@ def _persist_intelligence(persist: ObservationRepository, snapshot: InMemoryRepo
             forecast = store.forecasts.get(event.event_id)
             if forecast is not None:
                 persist.insert_forecast(forecast)  # type: ignore[attr-defined]
+        if hasattr(persist, "upsert_grid_feature"):
+            for feature in store.latest_features.values():
+                persist.upsert_grid_feature(feature)  # type: ignore[attr-defined]
+        if hasattr(persist, "upsert_grid_prediction"):
+            for prediction in store.latest_predictions.values():
+                persist.upsert_grid_prediction(prediction)  # type: ignore[attr-defined]
         if hasattr(persist, "upsert_source_health"):
             persist.upsert_source_health("cpcb", len(snapshot.air_quality))  # type: ignore[attr-defined]
     except Exception:

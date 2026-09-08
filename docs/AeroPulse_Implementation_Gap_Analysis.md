@@ -46,7 +46,7 @@ Conversely, one apparent strength is illusory: **LLD §64's own implementation c
 | §10 | 19 Kafka topics, DLQ, retry topics, schema registry | `libs/common/.../topics.py` defines 19; `aiokafka` producer/consumer real | PARTIAL | **Only 4 of 19 topics are produced or consumed.** DLQ is a Postgres table (`connector_dead_letter`), not the declared `aero.dlq.*` topic. Redpanda exposes a schema registry port that no code uses |
 | §11 | Immutable raw object layer | `libs/common/.../objects.py` `put_raw_json` | INCORRECT | **Silently no-ops without credentials**: returns a synthetic `s3://` URI without writing (`objects.py:32-33`), and swallows all exceptions (`:55-57`). `provenance.raw_object_uri` therefore points at nothing in the default configuration |
 | §12.2 | ~1 km grid, no lat/lon rounding | `libs/geospatial/grid.py` — H3 res 8 (~0.74 km²) | PASS | LLD §12.2 permits "H3 or an equivalent deterministic grid"; ADR-0002 records it |
-| §13 | 8 Timescale hypertables | 3 migrations create all of them | PARTIAL | **`grid_feature` and `grid_prediction` are never written to by any code.** Features and predictions were computed in memory and discarded |
+| §13 | 8 Timescale hypertables | 3 migrations create all of them | PARTIAL → **[FIXED 2026-09-09]** | ~~`grid_feature` and `grid_prediction` are never written to by any code.~~ Now written by `TimescaleRepository.upsert_grid_feature`/`upsert_grid_prediction`, called from `_persist_intelligence` for every processed cell. Verified against a live TimescaleDB container, not just unit tests |
 | §12.3 | PostGIS for boundaries, stations, geometries | Extension created; `grid_cell.geometry` column exists | DECLARED-UNUSED | No code populates or queries any geometry column |
 | §14 | ArangoDB evidence graph | Timescale `evidence_edge` + `graph.v1` | ACCEPTED-DEVIATION | ADR-0005. Edges carry confidence, evidence ids, model version |
 | §20 | Redis hot features / API cache | In compose and in `pyproject.toml` deps | DECLARED-UNUSED | **`Redis(` is never instantiated anywhere.** No caching exists |
@@ -142,23 +142,23 @@ Fixed: `LiveHttpClient` composes rate limiter → breaker → jittered retry →
 | ID | Finding | Evidence |
 |---|---|---|
 | P1-1 | Frontend never calls the API | All 8 services return `mock*` imports; `VITE_API_BASE` inert |
-| P1-2 | `grid_feature`/`grid_prediction` hypertables never written | No INSERT references them; blocks the feature store and the API read path |
-| P1-3 | `forecast_confidence` and `impact_confidence` hardcoded `0.0` | `engine.py:102,186` |
+| P1-2 | **[FIXED 2026-09-09]** `grid_feature`/`grid_prediction` hypertables never written | Was: no INSERT references them. Now: `apps/worker/aeropulse_worker/db.py` has `upsert_grid_feature`/`upsert_grid_prediction`; `detect.py::process_snapshot` records every processed cell (not only event-triggering ones, which was the actual bug in the old `store.features` dict); `main.py::_persist_intelligence` flushes both. Verified end-to-end against live Docker Compose + TimescaleDB. Still no read API consumes the data |
+| P1-3 | **[FIXED 2026-09-09]** `forecast_confidence` and `impact_confidence` hardcoded `0.0` | Was `engine.py:102,186`. Now wired in `libs/intelligence/aeropulse_intelligence/detect.py`: `forecast_confidence` reuses the forecast module's own downwind per-cell confidence; `impact_confidence` reuses the PM2.5 estimator's `estimate_confidence`. Regression test: `tests/unit/test_event_engine.py::test_forecast_and_impact_confidence_are_wired_not_hardcoded`. Not yet calibrated/validated |
 | P1-4 | No population connector; exposure rests on a constant | `risk.py:7` |
 | P1-5 | Anomaly detector misses ~95% of exceedances | Measured recall 0.046 (temporal). **Now blocked by the promotion gate** |
 | P1-6 | Forecast 24h horizon is worse than persistence | Measured skill −0.119. **Now blocked by the promotion gate** |
 | P1-7 | Source likelihood cannot predict `traffic` at all | Measured F1 = 0.000, n = 25. **Now blocked by the promotion gate** |
-| P1-8 | MinIO writes silently no-op without credentials | `objects.py:32-33,55-57` |
-| P1-9 | No custom OTel metrics; no `trace_id` in logs; traces export nowhere by default | §3 above |
+| P1-8 | **[PARTIALLY FIXED 2026-09-09]** MinIO writes silently no-op without credentials | Was `objects.py:32-33,55-57`. Now logs a structured `objects.raw_copy_not_stored` warning (reason `no_credentials`/`minio_error`) on every no-op; still returns a logical URI, so a caller not reading logs still can't tell the difference from a real object |
+| P1-9 | **[PARTIALLY FIXED 2026-09-09]** No custom OTel metrics; no `trace_id` in logs; traces export nowhere by default | §3 above. `trace_id`/`span_id` now bind onto log lines when a span is active (`libs/observability/aeropulse_observability/logging.py`); custom metrics and default exporter wiring remain absent |
 | P1-10 | 15 of 19 Kafka topics unused; DLQ is a table not the declared topic | `topics.py` vs producers/consumers |
-| P1-11 | `config/sources.yaml` ignored by the runner | Hardcoded `_RASTER_JOBS` |
+| P1-11 | **[FIXED 2026-09-09]** `config/sources.yaml` ignored by the runner | Was hardcoded `_RASTER_JOBS`. `apps/connector/aeropulse_connector_app/runner.py` now reads the file and skips any source marked `enabled: false`, falling back to "all enabled" if the file is missing/malformed. File now lists all 11 replayed sources (was 6 of 12). Regression tests in `tests/unit/test_replay.py` |
 | P1-12 | No drift monitoring | LLD §46 |
 
 ## 6. P2 / P3
 
-**P2:** quality-score weights hardcoded rather than configurable (§16.2); no pagination on list endpoints; no `checkpoint.py`, so no incremental cursors; rolling max / rate-of-change / historical percentile features absent; no Redis caching; `discover()` returns configured sites rather than fixture contents; notebooks duplicate connector code four times and remain unexecuted.
+**P2:** ~~quality-score weights hardcoded rather than configurable (§16.2)~~ **[FIXED 2026-09-09]** — now overridable via `AEROPULSE_QUALITY_WEIGHTS`; ~~no pagination on list endpoints~~ **[FIXED 2026-09-09]** — `GET /api/v1/events` and `GET /api/v1/sources` accept `limit`/`offset`; no `checkpoint.py`, so no incremental cursors; rolling max / rate-of-change / historical percentile features absent; no Redis caching; `discover()` returns configured sites rather than fixture contents; notebooks duplicate connector code four times and remain unexecuted.
 
-**P3:** `cv.py` is keyword regex on text, not a CV model (honestly documented); `sources.yaml` covers 6 of 12 connectors; `graphify-out/` build artifacts are committed; CI runs no ML job and builds no images.
+**P3:** `cv.py` is keyword regex on text, not a CV model (honestly documented); ~~`sources.yaml` covers 6 of 12 connectors~~ **[FIXED 2026-09-09]** — now covers all 11 replayed sources; `graphify-out/` build artifacts are committed; CI runs no ML job and builds no images.
 
 ---
 
@@ -166,6 +166,62 @@ Fixed: `LiveHttpClient` composes rate limiter → breaker → jittered retry →
 
 **Delivered and verified:** shared feature spec; hardened live transport; the first credential-free live connector; AOD wired into the satellite feature group; `rainfall` populated (previously dead schema); four trained models on 90 days of real data with temporal, spatial and seasonal holdouts; real metrics; a functioning model registry with an *enforced* promotion gate; champion inference with contract validation and graceful degradation; and fixes for P0-2 through P0-5.
 
-**Deliberately not changed:** P0-1 (API↔DB), P1-1 (frontend wiring) and P1-2 (feature/prediction persistence). These are the remaining work for a deployed end-to-end demo and are sequenced in `docs/AeroPulse_Production_Readiness.md`. They were left rather than rushed because each touches a service boundary that deserves its own review.
+**Deliberately not changed:** P0-1 (API↔DB) and P1-1 (frontend wiring). **[Update 2026-09-09] P1-2 (feature/prediction persistence) is now fixed — see §10.** P0-1 and P1-1 remain the work for a deployed end-to-end demo and are sequenced in `docs/AeroPulse_Production_Readiness.md`. They were left rather than rushed because each touches a service boundary that deserves its own review.
 
 **Not verifiable here:** every keyed source. There is no `.env` and no credential in this environment; OpenAQ returns `401` and FIRMS requires a `MAP_KEY`. Those connectors are marked `NOT VERIFIED — requires <credential>` rather than given fabricated latency figures.
+
+## 8. 2026-09-09 addendum — local setup and quick wiring fixes
+
+Verified fresh from `git clone` on Python 3.13 (uv provisions its own 3.12 venv; `requires-python = ">=3.12"` is satisfied) plus a full `docker compose up --build`. Three Docker-only defects (not present in the LLD gap analysis above, since they only manifest under Compose) were found and fixed:
+
+- `worker`/`connector` crash-looped with `Permission denied` deleting `.venv` files — the image built as root then switched to a non-root user without `chown`ing `/app`; `uv run` at container start tried to re-sync and failed. Fixed by chowning `/app` and setting `UV_FROZEN=1`/`UV_NO_SYNC=1` in `infrastructure/docker/Dockerfile`.
+- `web` was OOM-killed mid-Vite-bundling on `mem_limit: 256m`; raised to `1g`.
+- `redis`'s host port `6379` can collide with unrelated local containers; remapped host-side to `6380`.
+
+Additionally, three items from §5/§6 above were closed without touching the API↔DB boundary (kept out of scope, as before):
+
+- **P1-11** — `config/sources.yaml` is now read by `apps/connector/aeropulse_connector_app/runner.py` and is load-bearing (`enabled: false` skips a source); the file now lists all 11 replayed sources instead of 6.
+- **P1-3** — `forecast_confidence`/`impact_confidence` are wired from already-computed values (forecast module's downwind confidence; PM2.5 estimator's `estimate_confidence`) instead of hardcoded `0.0`.
+- **P1-8** — MinIO's silent no-op now logs a structured warning (`objects.raw_copy_not_stored`) instead of swallowing the failure; the function's return value is unchanged (still a logical URI either way), so this is observability only, not a behavior fix.
+
+`uv run ruff check .`, `uv run pyright`, and `uv run pytest tests/unit tests/contract -q` all pass — 183 tests, up from 178 (5 new regression tests for the above). P0-1 (API↔DB), P1-1 (frontend wiring) and P1-2 (feature/prediction persistence) remain open; see `docs/AeroPulse_Production_Readiness.md`.
+
+## 9. 2026-09-09 addendum (2) — a second round of low-effort fixes
+
+Four more items closed the same way: small, test-covered, no behavior change to defaults.
+
+- **P1-9 (partial)** — `libs/observability/aeropulse_observability/logging.py` now binds `trace_id`/`span_id` from the active OTel span onto every log line (a no-op outside a traced request). Custom metrics and default OTLP exporter wiring are still absent; this only closes the log-correlation half. Tests: `tests/unit/test_logging_trace_context.py`.
+- **P2** — `GET /api/v1/events` and `GET /api/v1/sources` gained `limit`/`offset` query params and `total`/`limit`/`offset` in the response; omitting both reproduces the previous response exactly. Verified over live HTTP (`curl .../api/v1/sources?limit=2&offset=1`) and in `tests/unit/test_api.py`.
+- **P2** — `QUALITY_WEIGHTS` (LLD §16.2) is now overridable via `AEROPULSE_QUALITY_WEIGHTS` (JSON), falling back to the documented defaults on missing/malformed input. Tests: `tests/unit/test_quality.py`.
+- **P3** — `config/sources.yaml` completeness fold-in from §8 above already covers this; no further action.
+
+Deliberately still not attempted: the ML calibration items (P1-5/6/7) require an operator-agreed false-alert budget or real ground truth — changing a threshold constant without that would be exactly the kind of unvalidated tuning `AGENTS.md` warns against, not a quick fix.
+
+`uv run ruff check .`, `uv run pyright` (0 errors), and `uv run pytest tests/unit tests/contract -q` all pass — **189 tests**, up from 183.
+
+## 10. 2026-09-09 addendum (3) — P1-2 fixed: `grid_feature`/`grid_prediction` persistence
+
+The repeatedly-flagged highest-leverage item (§3 §13, §5 P1-2, and the Architecture Review §5.1) is
+closed. Root cause once investigated: it was not missing infrastructure — `TimescaleRepository`
+already persisted observations, events, evidence, graphs and forecasts — it was that
+`libs/intelligence/aeropulse_intelligence/detect.py::process_snapshot` only ever populated
+`store.features` *inside* the `if event is not None:` branch, so a cell's feature/prediction was
+discarded unless that cell happened to trigger a `PollutionEvent`.
+
+Fix: `EventStore` gained `latest_features`/`latest_predictions` dicts populated unconditionally for
+every processed cell; `TimescaleRepository` gained `upsert_grid_feature`/`upsert_grid_prediction`
+matching the existing hypertable schemas with `ON CONFLICT ... DO UPDATE`; `_persist_intelligence`
+flushes both after every detection pass.
+
+**Verified against a running system, not only unit tests:** `docker compose up --build`, then
+`SELECT count(*) FROM grid_feature` / `grid_prediction` directly against the TimescaleDB container
+— both returned real rows (previously always zero) with sane values. Tests:
+`tests/unit/test_event_engine.py::test_latest_features_populated_for_every_cell_not_just_events`,
+`tests/unit/test_worker_db_grid_persistence.py`, `tests/unit/test_worker_persist_intelligence.py`.
+
+`uv run ruff check .`, `uv run pyright` (0 errors), `uv run pytest tests/unit tests/contract -q` —
+**194 tests**, up from 189.
+
+Still open: no read API queries `grid_feature`/`grid_prediction` back out (that's P0-1, the API↔DB
+boundary), and no drift job consumes the now-populated feature history.
+

@@ -68,8 +68,14 @@ Published on localhost only:
 | API | <http://127.0.0.1:8000/docs> |
 | Web | <http://127.0.0.1:5173> |
 | MinIO console | <http://127.0.0.1:9001> |
+| Redis | `127.0.0.1:6380` (mapped off the default 6379 to avoid host conflicts) |
 
 Optional connector profile: `--profile connectors`.
+
+Verified 2026-09-09: all 7 services (`timescaledb`, `redpanda`, `redis`, `minio`, `api`, `worker`,
+`web`) come up healthy from a clean `up --build`. `connector` is a one-shot replay job — it exits 0
+after each cycle and `restart: unless-stopped` relaunches it; that is expected, not a crash. See
+`docs/AeroPulse_Production_Readiness.md` for the container fixes that made this true.
 
 ## Adding a source
 
