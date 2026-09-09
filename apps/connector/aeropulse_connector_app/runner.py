@@ -7,6 +7,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+import yaml
 from aeropulse_common.ids import new_ulid
 from aeropulse_common.objects import put_raw_json
 from aeropulse_common.topics import (
@@ -40,6 +41,7 @@ PublishFn = Callable[[str, KafkaEnvelope], None]
 STATIONS_JSON = "stations.json"
 PRODUCTS_JSON = "products.json"
 ASSETS_JSON = "assets.json"
+DEFAULT_SOURCES_CONFIG = Path("config/sources.yaml")
 
 _RASTER_JOBS: list[tuple[str, Any, str]] = [
     ("sentinel5p", Sentinel5PConnector, f"sentinel5p/{PRODUCTS_JSON}"),
@@ -53,11 +55,33 @@ _RASTER_JOBS: list[tuple[str, Any, str]] = [
 ]
 
 
+def _enabled_source_ids(config_path: Path) -> set[str] | None:
+    """Read `config/sources.yaml` and return the set of enabled source ids.
+
+    Returns ``None`` (meaning "treat everything as enabled") if the file is
+    missing or malformed, so a misconfigured/absent registry never silently
+    stops ingestion.
+    """
+    try:
+        raw = yaml.safe_load(config_path.read_text())
+    except (OSError, yaml.YAMLError) as exc:
+        logger.warning("connector.sources_config.unreadable", path=str(config_path), error=str(exc))
+        return None
+    sources = (raw or {}).get("sources")
+    if not isinstance(sources, list):
+        logger.warning("connector.sources_config.invalid", path=str(config_path))
+        return None
+    return {
+        s["id"] for s in sources if isinstance(s, dict) and s.get("enabled", True) and "id" in s
+    }
+
+
 def replay_all(
     fixtures_root: Path,
     publish: PublishFn,
     *,
     processing_mode: ProcessingMode = ProcessingMode.BACKFILL,
+    sources_config: Path = DEFAULT_SOURCES_CONFIG,
 ) -> dict[str, int]:
     """Run all replay connectors and publish canonical envelopes.
 
@@ -65,32 +89,40 @@ def replay_all(
         fixtures_root: Directory containing per-source fixture folders.
         publish: Callback ``(topic, envelope)``.
         processing_mode: LIVE or BACKFILL.
+        sources_config: Path to `config/sources.yaml`; a source id absent or
+            marked ``enabled: false`` there is skipped (LLD §7.2).
 
     Returns:
-        Counts of published observations per source.
+        Counts of published observations per source (skipped sources read 0).
     """
+    enabled = _enabled_source_ids(sources_config)
     request = FetchRequest(processing_mode=processing_mode.value)
     counts = dict.fromkeys(
         ["cpcb", "firms", "imd", *[key for key, _, _ in _RASTER_JOBS]],
         0,
     )
 
-    counts["cpcb"] = _replay_cpcb(fixtures_root, request, publish, processing_mode)
-    counts["firms"] = _run_connector(
-        FirmsConnector(fixtures_root / "firms" / "fires.json"),
-        request,
-        publish,
-        OBSERVATION_FIRE,
-        processing_mode,
-    )
-    counts["imd"] = _run_connector(
-        ImdConnector(fixtures_root / "imd" / "weather.json"),
-        request,
-        publish,
-        OBSERVATION_WEATHER,
-        processing_mode,
-    )
+    if enabled is None or "cpcb" in enabled:
+        counts["cpcb"] = _replay_cpcb(fixtures_root, request, publish, processing_mode)
+    if enabled is None or "firms" in enabled:
+        counts["firms"] = _run_connector(
+            FirmsConnector(fixtures_root / "firms" / "fires.json"),
+            request,
+            publish,
+            OBSERVATION_FIRE,
+            processing_mode,
+        )
+    if enabled is None or "imd" in enabled:
+        counts["imd"] = _run_connector(
+            ImdConnector(fixtures_root / "imd" / "weather.json"),
+            request,
+            publish,
+            OBSERVATION_WEATHER,
+            processing_mode,
+        )
     for key, cls, rel in _RASTER_JOBS:
+        if enabled is not None and key not in enabled:
+            continue
         counts[key] = _run_connector(
             cls(fixtures_root / rel),
             request,

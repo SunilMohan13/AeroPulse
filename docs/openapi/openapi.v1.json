@@ -73,6 +73,39 @@
         ],
         "parameters": [
           {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "maximum": 500,
+                  "minimum": 1
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Max items to return",
+              "title": "Limit"
+            },
+            "description": "Max items to return"
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Items to skip",
+              "default": 0,
+              "title": "Offset"
+            },
+            "description": "Items to skip"
+          },
+          {
             "name": "authorization",
             "in": "header",
             "required": false,
@@ -860,7 +893,7 @@
           "events"
         ],
         "summary": "List Events",
-        "description": "List pollution events from the in-process store.",
+        "description": "List pollution events from the in-process store, newest-updated first.",
         "operationId": "list_events_api_v1_events_get",
         "security": [
           {
@@ -883,6 +916,39 @@
               ],
               "title": "Status"
             }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "maximum": 500,
+                  "minimum": 1
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Max items to return",
+              "title": "Limit"
+            },
+            "description": "Max items to return"
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Items to skip, oldest-updated first",
+              "default": 0,
+              "title": "Offset"
+            },
+            "description": "Items to skip, oldest-updated first"
           },
           {
             "name": "authorization",

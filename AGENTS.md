@@ -27,13 +27,14 @@ uv run python -c "from aeropulse_auth import encode_token, Role; print(encode_to
 ## Conventions
 
 - Google-style docstrings on public functions.
-- structlog JSON; never log secrets or raw PII. Bind `correlation.id`.
+- structlog JSON; never log secrets or raw PII. Bind `correlation.id`; `trace_id`/`span_id` bind automatically from the active OTel span (`libs/observability/aeropulse_observability/logging.py`), no manual wiring needed.
 - Canonical contracts live in `libs/contracts`. Connectors must not leak source shapes past `normalize()`.
-- New sources: implement `DataConnector`, add fixture + contract test, register in `config/sources.yaml`. Do not change the event engine or UI unless the data type is new.
+- New sources: implement `DataConnector`, add fixture + contract test, register in `config/sources.yaml` (`enabled: false` actually skips replay — the runner reads this file). Do not change the event engine or UI unless the data type is new.
 - Auth: HS256 JWT in development (`AEROPULSE_JWT_SECRET`). OIDC later.
 - H3 resolution 8 is the 1 km grid.
 - Phase 3 scoring is deterministic (`libs/intelligence`). Do not call an LLM from the event path.
 - Source likelihoods are independent, not a softmax.
+- List endpoints (`GET /api/v1/events`, `GET /api/v1/sources`) take `limit`/`offset`; keep new list endpoints consistent with that shape (`items`, `total`, `limit`, `offset`).
 
 ## ML rules
 

@@ -31,7 +31,7 @@ Derived, not impressionistic. Each dimension is the fraction of the LLD requirem
 | Dimension | Before | After | Notes |
 |---|---|---|---|
 | Architecture & contracts | 85% | 88% | Strongest area throughout; contract-first design held up |
-| Data pipeline | 60% | 75% | P0 hour-filter bug fixed; AOD and rainfall wired; persistence still missing |
+| Data pipeline | 60% | 75% → **82% (2026-09-09)** | P0 hour-filter bug fixed; AOD and rainfall wired; `grid_feature`/`grid_prediction` persistence fixed 2026-09-09 (verified against a live TimescaleDB container) |
 | Connectors | 35% | 55% | First live source; primitives wired; 3 sources still absent, 11 still fixture-only |
 | ML | 10% | 70% | From zero trained models and zero metrics to four models, real holdouts, real metrics |
 | MLOps | 5% | 65% | From a hardcoded list to an enforced lifecycle; no drift monitoring |
@@ -75,7 +75,7 @@ LLD §5.4 says to use deterministic calculation for geometry, alignment and thre
 
 ### Evidence-first intelligence — largely delivered
 
-LLD §5.3 requires every AI output to reference observation ids, source ids, timestamps, model version, feature version, scope, confidence and lineage. `event.v1` carries all of it, and predictions now carry `model_version` and `feature_version` from the registry. Two of the four confidence dimensions of §21.3, however, are hardcoded `0.0` (`forecast_confidence`, `impact_confidence`) despite the forecast module computing its own per-cell confidence — a wiring gap, not a design one.
+LLD §5.3 requires every AI output to reference observation ids, source ids, timestamps, model version, feature version, scope, confidence and lineage. `event.v1` carries all of it, and predictions now carry `model_version` and `feature_version` from the registry. **[Update 2026-09-09]** All four confidence dimensions of §21.3 are now populated: `forecast_confidence`/`impact_confidence` were hardcoded `0.0` despite the forecast module computing its own per-cell confidence; they now reuse that computed value and the PM2.5 estimator's `estimate_confidence` respectively (`libs/intelligence/aeropulse_intelligence/detect.py`). This closes the wiring gap; it does not validate the confidence values are well-calibrated.
 
 ---
 
@@ -102,10 +102,10 @@ Two leakage defects were fixed structurally rather than by convention: the anoma
 
 Four items, in dependency order. Each is scoped in `AeroPulse_Production_Readiness.md`.
 
-1. **Persist `grid_feature` and `grid_prediction`.** One change unblocks four gaps: the feature store, the API read path, post-hoc error measurement once ground truth arrives, and drift detection.
-2. **Give the API a database read path.** Until then the HTTP and UI demo cannot work regardless of how good the models are.
+1. ~~**Persist `grid_feature` and `grid_prediction`.**~~ **[FIXED 2026-09-09]** One change unblocked two of the four gaps below outright: the feature store now has data, and post-hoc error measurement/drift detection have something to read once a job is written to read it. See `docs/AeroPulse_Production_Readiness.md` for what changed and how it was verified end-to-end.
+2. **Give the API a database read path.** Still open. Until then the HTTP and UI demo cannot work regardless of how good the models are — this is now the single most valuable remaining item, since the data it would read (`grid_feature`/`grid_prediction`, events, forecasts) already exists in Timescale.
 3. **Obtain CPCB ground truth.** No modelling work raises confidence in accuracy without it; everything currently trains on model output.
-4. **Observability.** Traces export nowhere by default, there are zero custom metrics, and no `trace_id` reaches logs — so none of the LLD §33.2 SLOs can be measured, let alone met.
+4. **Observability.** Traces export nowhere by default and there are zero custom metrics; `trace_id` now reaches logs when a span is active (2026-09-09) — so LLD §33.2 SLOs remain unmeasurable, but log correlation during an incident is now possible.
 
 Calibration work sits alongside these: the anomaly alert threshold is one residual standard deviation and misses ~95% of standard exceedances, and the forecast needs per-horizon promotion so 3–12 h can ship while 24 h is withheld.
 

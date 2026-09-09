@@ -4,7 +4,11 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
+import structlog
+
 from aeropulse_common.settings import Settings, get_settings
+
+logger = structlog.get_logger("aeropulse.common.objects")
 
 
 def raw_object_uri(source_id: str, name: str, *, now: datetime | None = None) -> str:
@@ -18,6 +22,11 @@ def put_raw_json(
 ) -> str:
     """Upload raw JSON to MinIO. Soft-fails to a logical URI if the store is down.
 
+    Note: on failure the returned ``s3://`` URI is logical only — nothing was
+    written, so `provenance.raw_object_uri` will not resolve. Callers must not
+    assume the returned URI is fetchable; check the logs for
+    ``objects.raw_copy_not_stored`` to know when that happened.
+
     Args:
         source_id: Connector source.
         name: Object basename.
@@ -30,6 +39,12 @@ def put_raw_json(
     cfg = settings or get_settings()
     uri = raw_object_uri(source_id, name)
     if cfg.minio_access_key is None or cfg.minio_secret_key is None:
+        logger.warning(
+            "objects.raw_copy_not_stored",
+            reason="no_credentials",
+            source_id=source_id,
+            uri=uri,
+        )
         return uri
     try:
         from minio import Minio
@@ -52,6 +67,13 @@ def put_raw_json(
             length=len(payload),
             content_type="application/json",
         )
-    except Exception:
+    except Exception as exc:
+        logger.warning(
+            "objects.raw_copy_not_stored",
+            reason="minio_error",
+            source_id=source_id,
+            uri=uri,
+            error=str(exc),
+        )
         return uri
     return uri

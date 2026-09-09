@@ -6,11 +6,13 @@ import json
 from typing import Any
 
 from aeropulse_contracts.event import EventEvidence, PollutionEvent
+from aeropulse_contracts.feature import GridFeature
 from aeropulse_contracts.fire import FireObservation
 from aeropulse_contracts.forecast import ForecastResult
 from aeropulse_contracts.lineage import EvidenceGraph
 from aeropulse_contracts.meteo import MeteorologicalObservation
 from aeropulse_contracts.observation import Observation
+from aeropulse_contracts.prediction import GridPrediction
 
 UPSERT_AQ = """
 INSERT INTO air_quality_observation (
@@ -49,6 +51,63 @@ INSERT INTO weather_observation (
     %(raw_uri)s, %(dedup_key)s
 )
 ON CONFLICT (dedup_key, time) DO NOTHING
+"""
+
+UPSERT_GRID_FEATURE = """
+INSERT INTO grid_feature (
+    time, grid_id, feature_version, center_lat, center_lon, pm25, pm10,
+    station_distance, wind_u, wind_v, wind_speed, wind_direction, temperature,
+    humidity, pressure, boundary_layer_height, fire_count, fire_frp,
+    fire_confidence, upwind_fire_score, pm25_estimate, estimate_confidence,
+    anomaly_score, quality_score, source_count, missing_feature_count, payload
+) VALUES (
+    %(time)s, %(grid_id)s, %(feature_version)s, %(center_lat)s, %(center_lon)s,
+    %(pm25)s, %(pm10)s, %(station_distance)s, %(wind_u)s, %(wind_v)s,
+    %(wind_speed)s, %(wind_direction)s, %(temperature)s, %(humidity)s,
+    %(pressure)s, %(boundary_layer_height)s, %(fire_count)s, %(fire_frp)s,
+    %(fire_confidence)s, %(upwind_fire_score)s, %(pm25_estimate)s,
+    %(estimate_confidence)s, %(anomaly_score)s, %(quality_score)s,
+    %(source_count)s, %(missing_feature_count)s, %(payload)s::jsonb
+)
+ON CONFLICT (time, grid_id) DO UPDATE SET
+    feature_version = EXCLUDED.feature_version,
+    pm25 = EXCLUDED.pm25,
+    pm10 = EXCLUDED.pm10,
+    station_distance = EXCLUDED.station_distance,
+    wind_u = EXCLUDED.wind_u,
+    wind_v = EXCLUDED.wind_v,
+    wind_speed = EXCLUDED.wind_speed,
+    wind_direction = EXCLUDED.wind_direction,
+    temperature = EXCLUDED.temperature,
+    humidity = EXCLUDED.humidity,
+    pressure = EXCLUDED.pressure,
+    boundary_layer_height = EXCLUDED.boundary_layer_height,
+    fire_count = EXCLUDED.fire_count,
+    fire_frp = EXCLUDED.fire_frp,
+    fire_confidence = EXCLUDED.fire_confidence,
+    upwind_fire_score = EXCLUDED.upwind_fire_score,
+    pm25_estimate = EXCLUDED.pm25_estimate,
+    estimate_confidence = EXCLUDED.estimate_confidence,
+    anomaly_score = EXCLUDED.anomaly_score,
+    quality_score = EXCLUDED.quality_score,
+    source_count = EXCLUDED.source_count,
+    missing_feature_count = EXCLUDED.missing_feature_count,
+    payload = EXCLUDED.payload
+"""
+
+UPSERT_GRID_PREDICTION = """
+INSERT INTO grid_prediction (
+    time, grid_id, model_version, pm25_estimate, prediction_interval_low,
+    prediction_interval_high, confidence
+) VALUES (
+    %(time)s, %(grid_id)s, %(model_version)s, %(pm25_estimate)s,
+    %(prediction_interval_low)s, %(prediction_interval_high)s, %(confidence)s
+)
+ON CONFLICT (time, grid_id, model_version) DO UPDATE SET
+    pm25_estimate = EXCLUDED.pm25_estimate,
+    prediction_interval_low = EXCLUDED.prediction_interval_low,
+    prediction_interval_high = EXCLUDED.prediction_interval_high,
+    confidence = EXCLUDED.confidence
 """
 
 UPSERT_EVENT = """
@@ -157,6 +216,60 @@ class TimescaleRepository:
             inserted = cur.rowcount == 1
         self.conn.commit()
         return inserted
+
+    def upsert_grid_feature(self, feature: GridFeature) -> None:
+        """Insert or refresh one grid-hour feature row (LLD §13/§20)."""
+        with self.conn.cursor() as cur:
+            cur.execute(
+                UPSERT_GRID_FEATURE,
+                {
+                    "time": feature.timestamp,
+                    "grid_id": feature.grid_id,
+                    "feature_version": feature.feature_version,
+                    "center_lat": feature.center_lat,
+                    "center_lon": feature.center_lon,
+                    "pm25": feature.pm25,
+                    "pm10": feature.pm10,
+                    "station_distance": feature.station_distance,
+                    "wind_u": feature.wind_u,
+                    "wind_v": feature.wind_v,
+                    "wind_speed": feature.wind_speed,
+                    "wind_direction": feature.wind_direction,
+                    "temperature": feature.temperature,
+                    "humidity": feature.humidity,
+                    "pressure": feature.pressure,
+                    "boundary_layer_height": feature.boundary_layer_height,
+                    "fire_count": feature.fire_count,
+                    "fire_frp": feature.fire_frp,
+                    "fire_confidence": feature.fire_confidence,
+                    "upwind_fire_score": feature.upwind_fire_score,
+                    "pm25_estimate": feature.pm25_estimate,
+                    "estimate_confidence": feature.estimate_confidence,
+                    "anomaly_score": feature.anomaly_score,
+                    "quality_score": feature.quality_score,
+                    "source_count": feature.source_count,
+                    "missing_feature_count": feature.missing_feature_count,
+                    "payload": json.dumps(feature.model_dump(mode="json")),
+                },
+            )
+        self.conn.commit()
+
+    def upsert_grid_prediction(self, prediction: GridPrediction) -> None:
+        """Insert or refresh one grid-hour PM2.5 prediction row (LLD §13/§20)."""
+        with self.conn.cursor() as cur:
+            cur.execute(
+                UPSERT_GRID_PREDICTION,
+                {
+                    "time": prediction.timestamp,
+                    "grid_id": prediction.grid_id,
+                    "model_version": prediction.model_version,
+                    "pm25_estimate": prediction.pm25_estimate,
+                    "prediction_interval_low": prediction.prediction_interval_low,
+                    "prediction_interval_high": prediction.prediction_interval_high,
+                    "confidence": prediction.confidence,
+                },
+            )
+        self.conn.commit()
 
     def record_dlq(self, source_id: str, payload: dict[str, Any], error: str) -> None:
         """Insert a dead-letter row."""

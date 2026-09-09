@@ -14,8 +14,10 @@ router = APIRouter(prefix="/api/v1/events", tags=["events"])
 def list_events(
     _claims: TokenClaims = Depends(get_claims),
     status: str | None = Query(default=None),
+    limit: int | None = Query(default=None, ge=1, le=500, description="Max items to return"),
+    offset: int = Query(default=0, ge=0, description="Items to skip, oldest-updated first"),
 ) -> dict:
-    """List pollution events from the in-process store."""
+    """List pollution events from the in-process store, newest-updated first."""
     items = list(EVENT_STORE.events.values())
     if status:
         try:
@@ -24,7 +26,14 @@ def list_events(
             raise HTTPException(status_code=422, detail="Invalid status") from exc
         items = [e for e in items if e.status == wanted]
     items.sort(key=lambda e: e.updated_at, reverse=True)
-    return {"items": [e.model_dump(mode="json") for e in items]}
+    total = len(items)
+    page = items[offset : offset + limit] if limit is not None else items[offset:]
+    return {
+        "items": [e.model_dump(mode="json") for e in page],
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+    }
 
 
 @router.get("/{event_id}")

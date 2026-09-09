@@ -82,6 +82,11 @@ def process_snapshot(
         feature.anomaly_score = anomaly.anomaly_score
         likelihood = score_sources(feature)
         feature.source_likelihood = likelihood
+        # Every processed cell gets its feature/prediction persisted, independent
+        # of whether it triggered an event (grid_feature/grid_prediction, LLD §13/§20).
+        store.latest_features[grid_id] = feature
+        if prediction is not None:
+            store.latest_predictions[grid_id] = prediction
         extra = _has_nearby_station(center_lat, center_lon, snapshot, grid_id)
         event = evaluate_cell(
             feature,
@@ -95,7 +100,7 @@ def process_snapshot(
         if event is not None:
             store.features[event.event_id] = feature
             if feature.pm25 is not None:
-                store.forecasts[event.event_id] = forecast_event(
+                forecast = forecast_event(
                     event,
                     origin_grid_id=grid_id,
                     origin_lat=center_lat,
@@ -106,6 +111,14 @@ def process_snapshot(
                     boundary_layer_height=feature.boundary_layer_height,
                     cams_pm25=_cams_pm25(snapshot),
                 )
+                store.forecasts[event.event_id] = forecast
+                # Reuses the forecast module's own per-cell confidence (LLD §21.3),
+                # previously computed and discarded.
+                downwind = [p.confidence for p in forecast.grid_predictions[1:]]
+                if downwind:
+                    event.forecast_confidence = round(sum(downwind) / len(downwind), 4)
+            if feature.estimate_confidence is not None:
+                event.impact_confidence = feature.estimate_confidence
             store.graphs[event.event_id] = build_graph(
                 event,
                 store.evidence.get(event.event_id, []),

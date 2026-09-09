@@ -1,7 +1,113 @@
 # AeroPulse India — Production Readiness
 
-**Date:** 2026-09-08
+**Date:** 2026-09-08 (Docker/wiring fixes added 2026-09-09)
 **Verdict: not production ready.** Suitable for a technical demonstration of the ML pipeline via the CLI. Not suitable for operational air-quality decisions.
+
+## 2026-09-09 update — Docker Compose now boots clean, four small wiring gaps closed
+
+Running `docker compose -f infrastructure/docker/compose.yaml up --build` previously crash-looped
+`worker` and `connector`, and OOM-killed `web`. Root causes and fixes:
+
+- **`worker`/`connector` crash-looped with `Permission denied` removing `.venv` files.** The image
+  is built as root, then switches to a non-root user without `chown`ing `/app`; `uv run` at container
+  start re-syncs the environment and cannot write to root-owned files. Fixed in
+  `infrastructure/docker/Dockerfile`: `chown -R aeropulse:aeropulse /app` after the build-time sync,
+  plus `UV_FROZEN=1`/`UV_NO_SYNC=1` so `uv run` never mutates the env at runtime.
+- **`web` was OOM-killed during Vite dependency bundling** (`mem_limit: 256m`). Raised to `1g` in
+  `infrastructure/docker/compose.yaml`.
+- **`redis` host port 6379 can collide with unrelated local containers.** Remapped the host side to
+  `6380` (`127.0.0.1:6380:6379`); internal `redis:6379` traffic between containers is unaffected.
+
+Also closed this pass (small, test-covered, no behavior change to the demo path):
+
+- **P1-11 fixed — `config/sources.yaml` is now load-bearing.** `apps/connector/aeropulse_connector_app/runner.py`
+  reads it and skips any source marked `enabled: false`; a missing/malformed file falls back to
+  "everything enabled" rather than silently stopping ingestion. The file now lists all 11 replayed
+  sources (previously only 6 of 12 appeared in it).
+- **P1-3 partially fixed — `forecast_confidence` and `impact_confidence` are no longer hardcoded `0.0`.**
+  `libs/intelligence/aeropulse_intelligence/detect.py` now reuses the per-cell confidence the
+  forecast module already computes (previously discarded) and the PM2.5 estimator's own
+  `estimate_confidence`.
+- **P1-8 partially fixed — MinIO no-op is now logged, not silent.** `libs/common/aeropulse_common/objects.py`
+  emits a structured `objects.raw_copy_not_stored` warning (reason: `no_credentials` or
+  `minio_error`) whenever a raw copy is not actually written, instead of swallowing the failure.
+  The function still returns a logical URI for backward compatibility — nothing consumes it as a
+  guarantee of a stored object yet, so this is observability, not a full fix.
+
+Verified: `uv run ruff check .`, `uv run pyright`, and `uv run pytest tests/unit tests/contract -q`
+all pass (183 tests, up from 178), and a full `docker compose up --build` brings up all 7 services
+healthy with the connector replaying the same 11-source counts as before.
+
+## 2026-09-09 update (2) — four more low-effort gaps closed
+
+- **P1-9 partially fixed — `trace_id`/`span_id` now bind onto log lines.** `libs/observability/aeropulse_observability/logging.py`
+  adds a structlog processor that reads the active OTel span context and sets `trace_id`/`span_id`
+  when a span is active; a no-op outside of a traced request. Traces still export nowhere unless
+  `AEROPULSE_OTEL_EXPORTER_OTLP_ENDPOINT` is set (unchanged) — this only fixes the log-correlation
+  half of the gap, not the missing custom metrics or exporter wiring. Tests:
+  `tests/unit/test_logging_trace_context.py`.
+- **P2 fixed — API list endpoints now support pagination.** `GET /api/v1/events` and
+  `GET /api/v1/sources` accept `limit`/`offset` query params and return `total`/`limit`/`offset`
+  alongside `items`; omitting both preserves the previous full-list response shape exactly (`limit`
+  defaults to `null`, meaning "no limit"). Verified over live HTTP and in
+  `tests/unit/test_api.py::test_sources_pagination` /
+  `test_events_rejects_invalid_pagination_params`.
+- **P2 fixed — quality-score weights are now configuration-driven (LLD §16.2).**
+  `libs/connector_sdk/aeropulse_connector_sdk/quality.py`'s `QUALITY_WEIGHTS` can be overridden via
+  the `AEROPULSE_QUALITY_WEIGHTS` env var (a JSON object of a subset of keys); malformed or absent
+  input falls back to the documented defaults. Tests: `tests/unit/test_quality.py::test_weights_configurable_via_env`,
+  `test_weights_fall_back_to_defaults_on_malformed_env`.
+
+Verified again after these four: `uv run ruff check .`, `uv run pyright` (0 errors), and
+`uv run pytest tests/unit tests/contract -q` all pass — **189 tests**, up from 183.
+
+**Still explicitly not attempted** (each is a real project, not a quick fix): P0-1 (API↔DB), P1-1
+(frontend wiring), P1-4 (population source), P1-5/P1-6/P1-7
+(ML calibration — these require an operator-agreed false-alert budget and/or real ground truth, not
+an arbitrary constant change), P1-10 (unused Kafka topics/DLQ), drift monitoring, checkpointing,
+Redis caching, OIDC.
+
+## 2026-09-09 update (3) — P1-2 fixed: `grid_feature`/`grid_prediction` are now persisted
+
+This was the single highest-leverage remaining item — repeatedly flagged in this document and in
+`AeroPulse_Architecture_Review.md` as unblocking four downstream gaps at once (feature store, API
+read path, post-hoc error measurement, drift detection). It turned out to be tractable: the worker
+already had a full `TimescaleRepository` for observations/events/forecasts/lineage; only the two
+hypertables that back grid-hour intelligence were never written to.
+
+**What changed:**
+
+- `libs/intelligence/aeropulse_intelligence/engine.py`'s `EventStore` gained `latest_features` and
+  `latest_predictions` dicts, keyed by `grid_id`.
+- `libs/intelligence/aeropulse_intelligence/detect.py`'s `process_snapshot` now records every
+  processed cell's `GridFeature`/`GridPrediction` there **unconditionally** — not only the cells
+  that happened to trigger a `PollutionEvent` as before. This was the actual bug: `store.features`
+  (the old dict) was only ever populated inside the `if event is not None:` branch.
+- `apps/worker/aeropulse_worker/db.py`'s `TimescaleRepository` gained `upsert_grid_feature` and
+  `upsert_grid_prediction`, matching the existing `grid_feature`/`grid_prediction` schema exactly
+  (`ON CONFLICT (time, grid_id[, model_version]) DO UPDATE`, so a cell reprocessed within the same
+  hour refines its row instead of erroring or silently skipping).
+- `apps/worker/aeropulse_worker/main.py`'s `_persist_intelligence` now flushes both dicts after
+  every detection pass, guarded by `hasattr` like the rest of that function (so the in-memory test
+  double is unaffected).
+
+**Verified end-to-end, not just unit-tested:** a full `docker compose up --build`, followed by
+`SELECT count(*) FROM grid_feature` / `grid_prediction` directly against the running TimescaleDB
+container, returned real rows with sane values (e.g. `pm25=142.3`, `model_version=baseline-idw-0.1`,
+`confidence=0.95`) — the tables that were empty by construction on every previous pass now hold
+data from a single replay cycle.
+
+Tests: `tests/unit/test_event_engine.py::test_latest_features_populated_for_every_cell_not_just_events`,
+`tests/unit/test_worker_db_grid_persistence.py` (fake-cursor SQL/parameter assertions for both new
+repository methods), `tests/unit/test_worker_persist_intelligence.py` (proves `_persist_intelligence`
+actually calls the new methods, and is a no-op when the writer doesn't support them).
+
+`uv run ruff check .`, `uv run pyright` (0 errors), `uv run pytest tests/unit tests/contract -q` —
+**194 tests**, up from 189.
+
+**Still open:** the feature store still has no read API (nothing queries `grid_feature` back out),
+and the API still doesn't read from Timescale at all (P0-1) — this fix makes the data exist, it
+does not yet make the API or a drift job consume it.
 
 ---
 
@@ -14,11 +120,14 @@
 | Idempotency & dedup | **Yes** | — |
 | ML training & evaluation | **Yes (methodology)** | Trained on model output, not ground truth |
 | Model registry & promotion gate | **Yes** | No shadow-traffic routing |
+| Docker Compose stack | **Yes** | Verified 2026-09-09: all 7 services boot healthy after Dockerfile/mem/port fixes |
+| Source registry (`config/sources.yaml`) | **Yes** | Now load-bearing (2026-09-09); still only covers replayed sources, not OpenAQ/ERA5/population |
 | Live ingestion | **Partial** | 1 of 15 sources live; 3 have no connector |
-| Feature pipeline | **Partial** | Features never persisted |
+| Feature pipeline | **Partial** | `grid_feature`/`grid_prediction` now persisted (2026-09-09, verified against live TimescaleDB); still no read API and no drift job consumes them |
+| Event confidences | **Partial** | `forecast_confidence`/`impact_confidence` now wired (2026-09-09); still no shadow validation |
 | API | **No** | Not database-backed |
 | UI | **No** | Mock data only |
-| Observability | **No** | No metrics, no `trace_id`, traces export nowhere |
+| Observability | **No** | No metrics; traces export nowhere by default; `trace_id`/`span_id` now bind onto logs when a span is active (2026-09-09), but nothing creates spans on the hot paths yet; raw-object-store failures are now logged (2026-09-09) but not alerted on |
 | Drift monitoring | **No** | Not implemented |
 | Security | **Partial** | Dev-only JWT by design; no OIDC |
 | Disaster recovery | **Partial** | Documented; untested |
@@ -53,12 +162,12 @@ Dependency-ordered. Each item states why it comes when it does.
 ### Stage 3 — harden
 
 **3.1 Implement drift monitoring** (LLD §46): feature drift, prediction drift, error drift, PSI/KS. Depends on 1.1.
-**3.2 Make `config/sources.yaml` load-bearing.** The runner ignores it and hardcodes its job list, so the source registry of LLD §7.2 is decorative.
-**3.3 Fix the MinIO silent no-op.** `put_raw_json` returns a synthetic `s3://` URI without writing when credentials are absent, and swallows all exceptions, so `provenance.raw_object_uri` points at nothing. Either fail loudly or record that no raw copy was retained.
+**3.2 [DONE 2026-09-09] Make `config/sources.yaml` load-bearing.** `apps/connector/aeropulse_connector_app/runner.py` now reads it and skips `enabled: false` sources; falls back to "all enabled" if the file is missing/malformed. All 11 replayed sources are now listed (previously 6 of 12).
+**3.3 [PARTIALLY DONE 2026-09-09] MinIO silent no-op now logs a warning** (`objects.raw_copy_not_stored`, reason `no_credentials`/`minio_error`) instead of swallowing the failure silently. It still returns a logical `s3://` URI either way — no caller yet treats that URI as untrustworthy, so provenance can still point at nothing without a human reading the logs. Full fix requires deciding whether unwritten raw copies should hard-fail ingestion.
 **3.4 Add checkpointing.** `FetchRequest.cursor` exists and no connector reads it, so every fetch is a full window re-pull.
 **3.5 Add an ML job to CI.** Nothing retrains or re-validates automatically; a leakage regression would not be caught.
 **3.6 Wire Redis** for the hot-feature and API-response caching of LLD §20/§32, or remove it from compose and dependencies.
-**3.7 Complete the confidence model.** `forecast_confidence` and `impact_confidence` are hardcoded `0.0` while the forecast module computes its own per-cell confidence that is discarded.
+**3.7 [PARTIALLY DONE 2026-09-09] Confidence model.** `forecast_confidence` now derives from the forecast module's own downwind per-cell confidence, and `impact_confidence` from the PM2.5 estimator's `estimate_confidence`, instead of hardcoded `0.0`. Neither has been validated for calibration — treat as wired, not as scientifically vetted.
 
 ### Stage 4 — operational
 Frontend-to-API wiring, OIDC, DR rehearsal, load testing against a populated database, security testing, then SLO monitoring.
