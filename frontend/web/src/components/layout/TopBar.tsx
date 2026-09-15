@@ -13,6 +13,7 @@ export function TopBar() {
     setNotificationsOpen,
     notifications,
     startDemo,
+    startJudgeTour,
     demoRunning,
     demoPaused,
     pauseDemo,
@@ -66,13 +67,22 @@ export function TopBar() {
         </button>
 
         {!demoRunning ? (
-          <button
-            type="button"
-            onClick={startDemo}
-            className="rounded-md bg-intel/20 px-3 py-1.5 text-xs font-medium text-intel hover:bg-intel/30"
-          >
-            Demo Mode
-          </button>
+          <div className="flex gap-1">
+            <button
+              type="button"
+              onClick={startJudgeTour}
+              className="rounded-md bg-intel/25 px-3 py-1.5 text-xs font-medium text-intel hover:bg-intel/35"
+            >
+              Judge tour
+            </button>
+            <button
+              type="button"
+              onClick={startDemo}
+              className="hidden rounded-md border border-border px-2 py-1.5 text-xs text-text-muted hover:text-text-secondary sm:inline"
+            >
+              Map demo
+            </button>
+          </div>
         ) : (
           <div className="flex gap-1">
             <button

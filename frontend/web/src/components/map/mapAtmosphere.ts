@@ -5,11 +5,11 @@ export type MapProjection = 'globe' | 'mercator'
 export type BasemapFlavor = 'intel' | 'satellite'
 
 const INTEL_FOG_NIGHT = {
-  color: 'rgb(6, 10, 22)',
-  'high-color': 'rgb(30, 58, 138)',
-  'horizon-blend': 0.08,
+  color: 'rgb(4, 8, 18)',
+  'high-color': 'rgb(22, 48, 110)',
+  'horizon-blend': 0.1,
   'space-color': 'rgb(0, 0, 0)',
-  'star-intensity': 0.85,
+  'star-intensity': 0.95,
 }
 
 const INTEL_FOG_DAY = {

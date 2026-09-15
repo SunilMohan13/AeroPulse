@@ -13,9 +13,13 @@ import {
   createGlobeArcLayer,
   createIndustryLayer,
   createMonitoringNodesLayer,
+  createOrbitalShellHaloLayer,
   createOrbitalShellLayer,
   createPlaceDotLayer,
   createPlaceLabelLayer,
+  createBaselinePlumeLayer,
+  createExposureRibbonLayer,
+  createGrapZoneLayer,
   createPlumeLayer,
   createPollutionLayer,
   createPopulationLayer,
@@ -30,6 +34,8 @@ import {
   type BasemapFlavor,
 } from './mapAtmosphere'
 import { MapGlobeBar } from './MapGlobeBar'
+import { MapIntelChrome } from './MapIntelChrome'
+import { softenBasemapLabels, syncGlobeIntelOverlays } from './globeIntelLayers'
 import { MapViewControls, type MapScene } from './MapViewControls'
 import { readViewFromMap, setMapInteraction } from './mapInteraction'
 import { useApp } from '../../context/AppContext'
@@ -40,7 +46,17 @@ import { MapControls } from './MapControls'
 import { MapToolbar } from './MapToolbar'
 import { MapTimeline } from './MapTimeline'
 import { MapLegend } from './MapLegend'
-import { CORRIDOR_LOCATIONS, PUNJAB_FIRE_CENTER, type NamedLocation } from '../../utils/geo'
+import { MapFusionStrip } from './MapFusionStrip'
+import { MapScenarioPanel } from './MapScenarioPanel'
+import { MapGrapBanner } from './MapGrapBanner'
+import { MapStoryCaption } from './MapStoryCaption'
+import {
+  buildBaselinePlumeCells,
+  buildExposureRibbonPath,
+  GRAP_NCR_RING,
+  grapPlumeIntersection,
+} from './mapScenarioGeo'
+import { CORRIDOR_LOCATIONS, PUNJAB_FIRE_CENTER, TRANSPORT_BEARING_DEG, type NamedLocation } from '../../utils/geo'
 import { attachBasemapFallback } from './basemapStyle'
 import { useAnimationClock } from '../../hooks/useAnimationClock'
 const CORRIDOR_VIEW = {
@@ -119,6 +135,8 @@ interface AeroMapProps {
   forceLayers?: Partial<MapLayerVisibility>
   /** Globe on load (Overview + Live Map). */
   initialScene?: MapScene
+  /** Tour / deep-link: switch corridor vs globe when this changes. */
+  sceneRequest?: MapScene
   /** Show Globe / Corridor bar inside compact dashboard cards. */
   showGlobeBar?: boolean
   className?: string
@@ -131,6 +149,7 @@ export function AeroMap({
   showLegend = !compact,
   forceLayers,
   initialScene = 'corridor',
+  sceneRequest,
   showGlobeBar: showGlobeBarProp,
   className,
 }: AeroMapProps) {
@@ -140,9 +159,17 @@ export function AeroMap({
   const {
     hourOffset,
     layers: globalLayers,
+    setLayers,
+    setHourOffset,
     demoIntensity,
     setSelectedFireId,
     setSelectedGridId,
+    windBearingOffset,
+    showBaselinePlume,
+    showGrapZone,
+    showExposureRibbon,
+    showFireSeasonGlobe,
+    mapStoryCaption,
   } = useApp()
   const layers = useMemo(
     () => ({ ...globalLayers, ...forceLayers }),
@@ -204,10 +231,11 @@ export function AeroMap({
   )
   const boundsKey = `${bounds.west},${bounds.east},${bounds.south},${bounds.north}`
   const resolutionKm = useMemo(() => stepToKm(resolveStep(bounds)), [bounds])
+  const transportBearing = TRANSPORT_BEARING_DEG + windBearingOffset
 
   const { data: grid = [] } = useQuery({
-    queryKey: ['airQuality', hourOffset, demoIntensity, boundsKey],
-    queryFn: () => fetchAirQuality(hourOffset, demoIntensity, bounds),
+    queryKey: ['airQuality', hourOffset, demoIntensity, boundsKey, windBearingOffset],
+    queryFn: () => fetchAirQuality(hourOffset, demoIntensity, bounds, transportBearing),
     placeholderData: (previous) => previous,
     // Each snapshot is tens of MB and every hour/viewport combination is a
     // distinct key, so the default 5-minute retention accumulated gigabytes
@@ -258,6 +286,8 @@ export function AeroMap({
         dayNightRef.current,
       )
       setMapInteraction(map, sceneRef.current)
+      softenBasemapLabels(map, sceneRef.current === 'globe')
+      syncGlobeIntelOverlays(map, sceneRef.current === 'globe', showFireSeasonGlobe)
     }
     map.on('load', onStyleReady)
     map.on('style.load', onStyleReady)
@@ -278,6 +308,17 @@ export function AeroMap({
     applyMapAtmosphere(map, scene === 'globe' ? 'globe' : 'mercator', dayNight)
     setMapInteraction(map, scene)
   }, [scene, dayNight])
+
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map) return
+    const applyIntel = () => {
+      softenBasemapLabels(map, scene === 'globe')
+      syncGlobeIntelOverlays(map, scene === 'globe' && showOrbit, showFireSeasonGlobe)
+    }
+    if (map.isStyleLoaded()) applyIntel()
+    else map.once('style.load', applyIntel)
+  }, [scene, showOrbit, expanded, basemapFlavor, showFireSeasonGlobe])
 
   useEffect(() => {
     const map = mapRef.current
@@ -383,18 +424,60 @@ export function AeroMap({
     [syncBasemap, dimension3d],
   )
 
+  useEffect(() => {
+    if (!sceneRequest || sceneRequest === scene) return
+    goToScene(sceneRequest)
+  }, [sceneRequest, scene, goToScene])
+
   const toggleScene = useCallback(() => {
     goToScene(scene === 'globe' ? 'corridor' : 'globe')
   }, [goToScene, scene])
+
+  const enterTheater = useCallback(() => {
+    goToScene('corridor')
+    setLayers({
+      pollution: true,
+      fires: true,
+      wind: true,
+      forecast: true,
+      industry: false,
+      population: false,
+    })
+    setHourOffset(6)
+    setViewState(CORRIDOR_VIEW)
+    syncBasemap(CORRIDOR_VIEW, true)
+  }, [goToScene, setLayers, setHourOffset, syncBasemap])
+
+  const exportSnapshot = useCallback(() => {
+    const map = mapRef.current
+    if (!map) return
+    const link = document.createElement('a')
+    link.download = `aeropulse-map-${Date.now()}.png`
+    link.href = map.getCanvas().toDataURL('image/png')
+    link.click()
+  }, [])
 
   // deck.gl draws in Web Mercator; on MapLibre globe that misaligns and Punjab
   // fires/smoke look like they float in space. Environmental layers only in
   // corridor (flat) mode — globe is for world context + orbital decor only.
   const showEnvironmentalLayers = scene === 'corridor'
+
+  const baselineGrid = useMemo(
+    () => buildBaselinePlumeCells(grid, transportBearing),
+    [grid, transportBearing],
+  )
+  const exposurePath = useMemo(
+    () => buildExposureRibbonPath(grid, transportBearing),
+    [grid, transportBearing],
+  )
+  const grapAlert = useMemo(
+    () => showGrapZone && showEnvironmentalLayers && grapPlumeIntersection(grid),
+    [showGrapZone, showEnvironmentalLayers, grid],
+  )
   const globeDecor = scene === 'globe'
 
   const orbitalPoints = useMemo(
-    () => buildOrbitalShell(420, time),
+    () => buildOrbitalShell(2600, time),
     [time],
   )
   const corridorArcs = useMemo(() => buildCorridorArcs(), [])
@@ -429,9 +512,29 @@ export function AeroMap({
       ),
     [grid, layers.pollution, showEnvironmentalLayers, handleCellClick],
   )
+  const baselinePlumeLayer = useMemo(
+    () =>
+      createBaselinePlumeLayer(
+        baselineGrid,
+        showEnvironmentalLayers && showBaselinePlume && layers.forecast,
+      ),
+    [baselineGrid, showBaselinePlume, layers.forecast, showEnvironmentalLayers],
+  )
   const plumeLayer = useMemo(
     () => createPlumeLayer(grid, showEnvironmentalLayers && layers.forecast),
     [grid, layers.forecast, showEnvironmentalLayers],
+  )
+  const grapLayer = useMemo(
+    () => createGrapZoneLayer(GRAP_NCR_RING, showEnvironmentalLayers && showGrapZone),
+    [showGrapZone, showEnvironmentalLayers],
+  )
+  const exposureRibbonLayer = useMemo(
+    () =>
+      createExposureRibbonLayer(
+        exposurePath,
+        showEnvironmentalLayers && showExposureRibbon && layers.forecast,
+      ),
+    [exposurePath, showExposureRibbon, layers.forecast, showEnvironmentalLayers],
   )
   const populationLayer = useMemo(
     () => createPopulationLayer(grid, showEnvironmentalLayers && layers.population),
@@ -490,6 +593,7 @@ export function AeroMap({
           (layers.forecast || layers.pollution),
         time,
         Math.max(hourOffset, 6),
+        transportBearing,
       ),
     [
       particles,
@@ -500,6 +604,7 @@ export function AeroMap({
       showEnvironmentalLayers,
       time,
       hourOffset,
+      transportBearing,
     ],
   )
   const windLayer = useMemo(
@@ -507,6 +612,10 @@ export function AeroMap({
     [wind, layers.wind, showEnvironmentalLayers, time],
   )
 
+  const orbitalHaloLayer = useMemo(
+    () => createOrbitalShellHaloLayer(orbitalPoints, showOrbit && globeDecor, time),
+    [orbitalPoints, showOrbit, globeDecor, time],
+  )
   const orbitalLayer = useMemo(
     () => createOrbitalShellLayer(orbitalPoints, showOrbit && globeDecor, time),
     [orbitalPoints, showOrbit, globeDecor, time],
@@ -525,8 +634,11 @@ export function AeroMap({
       (showEnvironmentalLayers
         ? [
             geographyLayer,
+            grapLayer,
             pollutionLayer,
+            baselinePlumeLayer,
             plumeLayer,
+            exposureRibbonLayer,
             axisLayer,
             populationLayer,
             windLayer,
@@ -537,16 +649,20 @@ export function AeroMap({
             placeDotLayer,
             placeLabelLayer,
           ]
-        : [orbitalLayer]
+        : [orbitalHaloLayer, orbitalLayer]
       ).filter(Boolean),
     [
       showEnvironmentalLayers,
       geographyLayer,
+      orbitalHaloLayer,
       orbitalLayer,
       globeArcLayer,
       monitoringLayer,
+      grapLayer,
       pollutionLayer,
+      baselinePlumeLayer,
       plumeLayer,
+      exposureRibbonLayer,
       axisLayer,
       populationLayer,
       windLayer,
@@ -649,6 +765,7 @@ export function AeroMap({
           return null
         }}
       />
+      {!compact && <MapFusionStrip className={scene === 'globe' ? 'top-12 sm:top-11' : undefined} />}
       <MapToolbar
         scene={scene}
         onToggleScene={toggleScene}
@@ -660,16 +777,22 @@ export function AeroMap({
         onReset={resetView}
         expanded={expanded}
         onToggleExpand={() => setExpanded((v) => !v)}
+        onExportSnapshot={scene === 'corridor' ? exportSnapshot : undefined}
       />
       {showGlobeBar && (
         <MapGlobeBar
           scene={scene}
           onSceneChange={goToScene}
           bearing={viewState.bearing}
+          onEnterTheater={enterTheater}
           compact={compact}
           className={!compact && chrome.timeline ? 'bottom-40' : undefined}
         />
       )}
+      {!compact && scene === 'globe' && <MapIntelChrome scene={scene} />}
+      {!compact && <MapScenarioPanel scene={scene} className="!right-20 !left-auto" />}
+      {!compact && <MapGrapBanner active={grapAlert} />}
+      {!compact && <MapStoryCaption caption={mapStoryCaption} />}
       {!compact && (
         <MapViewControls
           scene={scene}
@@ -685,14 +808,29 @@ export function AeroMap({
           }}
           showOrbit={showOrbit}
           onShowOrbitChange={setShowOrbit}
+          className={
+            scene === 'globe'
+              ? '!bottom-auto top-[4.25rem] left-3 w-48 sm:top-[4rem]'
+              : undefined
+          }
         />
       )}
       {chrome.controls && (
-        <MapControls onZoomToFire={zoomToFireCenter} onSelectLocation={goToLocation} />
+        <MapControls
+          scene={scene}
+          onZoomToFire={zoomToFireCenter}
+          onSelectLocation={goToLocation}
+        />
       )}
       {chrome.legend && <MapLegend resolutionKm={resolutionKm} />}
       {(popupCell || popupFire) && (
-        <MapPopup cell={popupCell} fire={popupFire} fires={fires} onClose={closePopup} />
+        <MapPopup
+          cell={popupCell}
+          fire={popupFire}
+          fires={fires}
+          hourOffset={hourOffset}
+          onClose={closePopup}
+        />
       )}
       {/* Sits above the timeline panel, which previously covered it entirely. */}
       {offlineBasemap && (

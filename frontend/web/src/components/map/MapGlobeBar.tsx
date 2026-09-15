@@ -6,6 +6,7 @@ interface MapGlobeBarProps {
   scene: MapScene
   onSceneChange: (scene: MapScene) => void
   bearing: number
+  onEnterTheater?: () => void
   /** Smaller strip for dashboard preview cards (Overview). */
   compact?: boolean
   className?: string
@@ -18,6 +19,7 @@ export function MapGlobeBar({
   scene,
   onSceneChange,
   bearing,
+  onEnterTheater,
   compact = false,
   className,
 }: MapGlobeBarProps) {
@@ -25,7 +27,7 @@ export function MapGlobeBar({
     <div
       className={cn(
         'pointer-events-auto absolute left-1/2 z-30 flex -translate-x-1/2 flex-col items-center gap-2',
-        compact ? 'bottom-2' : 'bottom-28',
+        compact ? 'bottom-2' : 'bottom-[8.25rem] sm:bottom-36',
         className,
       )}
     >
@@ -64,6 +66,15 @@ export function MapGlobeBar({
           Corridor
         </button>
       </div>
+      {scene === 'globe' && !compact && onEnterTheater && (
+        <button
+          type="button"
+          onClick={onEnterTheater}
+          className="rounded-md border border-orange-500/40 bg-orange-500/15 px-4 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-orange-200 shadow-[0_0_20px_rgba(251,146,60,0.15)] hover:bg-orange-500/25"
+        >
+          Enter Punjab–Delhi theater
+        </button>
+      )}
       {scene === 'globe' && (
         <p
           className={cn(
@@ -73,7 +84,7 @@ export function MapGlobeBar({
         >
           {compact
             ? 'Drag to rotate · Tap Corridor for Punjab data'
-            : `Drag to rotate · Scroll to zoom · Bearing ${bearing.toFixed(0)}° · Corridor for Punjab plume`}
+            : `Drag to rotate · Bearing ${bearing.toFixed(0)}° · Theater for 1 km science`}
         </p>
       )}
     </div>

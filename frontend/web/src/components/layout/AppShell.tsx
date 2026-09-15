@@ -7,6 +7,7 @@ import { FooterStatus } from './FooterStatus'
 import { CommandPalette } from './CommandPalette'
 import { NotificationDrawer } from './NotificationDrawer'
 import { DemoOverlay } from './DemoOverlay'
+import { JudgeTourDriver } from './JudgeTourDriver'
 
 export function AppShell() {
   const location = useLocation()
@@ -30,6 +31,7 @@ export function AppShell() {
             </motion.div>
           </AnimatePresence>
           <DemoOverlay />
+          <JudgeTourDriver />
         </main>
       </div>
       <FooterStatus />

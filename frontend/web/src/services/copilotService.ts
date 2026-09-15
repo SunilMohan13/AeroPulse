@@ -62,6 +62,7 @@ function matchResponse(query: string) {
   const q = query.toLowerCase()
   if (q.includes('plume') || q.includes('moving') || q.includes('affected')) return responses.plume
   if (q.includes('confidence') || q.includes('why')) return responses.confidence
+  if (q.includes('evidence') && q.includes('biomass')) return responses.confidence
   return responses.default
 }
 

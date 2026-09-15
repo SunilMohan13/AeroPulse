@@ -22,22 +22,46 @@ import type { OrbitalPoint } from './orbitalDecor'
 const COLOR_TRANSITION = 700
 
 /** Cyan shell visible in globe command view — decorative, not real TLE tracks. */
+export function createOrbitalShellHaloLayer(
+  points: OrbitalPoint[],
+  visible: boolean,
+  time: number,
+) {
+  if (!visible || points.length === 0) return null
+  const twinkle = 0.5 + Math.sin(time * 0.9) * 0.08
+  return new ScatterplotLayer<OrbitalPoint>({
+    id: 'orbital-shell-halo',
+    data: points,
+    pickable: false,
+    radiusUnits: 'pixels',
+    getPosition: (d) => [d.lon, d.lat],
+    getRadius: (d) => 2.8 + (d.band % 4) * 0.6,
+    getFillColor: (d) => {
+      const a = Math.round((28 + d.band * 6) * twinkle)
+      return d.band % 2 === 0 ? [34, 211, 238, a] : [74, 222, 128, Math.round(a * 0.85)]
+    },
+    radiusMinPixels: 1.5,
+    radiusMaxPixels: 5,
+    updateTriggers: { getFillColor: [time] },
+  })
+}
+
 export function createOrbitalShellLayer(points: OrbitalPoint[], visible: boolean, time: number) {
   if (!visible || points.length === 0) return null
-  const twinkle = 0.65 + Math.sin(time * 1.4) * 0.12
+  const twinkle = 0.72 + Math.sin(time * 1.4) * 0.14
   return new ScatterplotLayer<OrbitalPoint>({
     id: 'orbital-shell',
     data: points,
     pickable: false,
     radiusUnits: 'pixels',
     getPosition: (d) => [d.lon, d.lat],
-    getRadius: (d) => 1.2 + (d.band % 3) * 0.35,
+    getRadius: (d) => 1.4 + (d.band % 3) * 0.45,
     getFillColor: (d) => {
-      const a = Math.round((55 + d.band * 18) * twinkle)
-      return d.band % 2 === 0 ? [34, 211, 238, a] : [74, 222, 128, Math.round(a * 0.75)]
+      const a = Math.round((70 + d.band * 14) * twinkle)
+      return d.band % 2 === 0 ? [34, 211, 238, a] : [74, 222, 128, Math.round(a * 0.8)]
     },
     radiusMinPixels: 1,
-    radiusMaxPixels: 3,
+    radiusMaxPixels: 3.5,
     updateTriggers: { getFillColor: [time] },
   })
 }
@@ -118,6 +142,24 @@ export function createPollutionLayer(
  * Transported smoke drawn as its own translucent field above the pollution
  * ramp, so the fire-to-Delhi ribbon is legible as a distinct phenomenon.
  */
+export function createBaselinePlumeLayer(data: GridCell[], visible: boolean) {
+  if (!visible) return null
+  const smoke = data.filter((c) => c.plume > 3)
+  return new PolygonLayer<GridCell>({
+    id: 'baseline-plume',
+    data: smoke,
+    pickable: false,
+    stroked: false,
+    filled: true,
+    getPolygon: (d) => cellPolygonDeg(d.lat, d.lon, d.stepDeg),
+    getFillColor: (d) => {
+      const a = Math.min(Math.round(d.plume * 0.85), 72)
+      return [148, 163, 184, a]
+    },
+    updateTriggers: { getFillColor: [smoke.length] },
+  })
+}
+
 export function createPlumeLayer(data: GridCell[], visible: boolean) {
   if (!visible) return null
   const smoke = data.filter((c) => c.plume > 3)
@@ -206,10 +248,11 @@ export function createSmokeParticleLayer(
   visible: boolean,
   time: number,
   horizonHours: number,
+  transportBearingDeg = TRANSPORT_BEARING_DEG,
 ) {
   if (!visible || fires.length === 0) return null
 
-  const theta = (TRANSPORT_BEARING_DEG * Math.PI) / 180
+  const theta = (transportBearingDeg * Math.PI) / 180
   const eastward = Math.sin(theta)
   const northward = Math.cos(theta)
   const travelKm = WIND_SPEED_KMH * Math.max(horizonHours, 8)
@@ -432,5 +475,37 @@ export function createTransportAxisLayer(
     getWidth: 1,
     widthUnits: 'pixels',
     widthMinPixels: 1,
+  })
+}
+
+export function createGrapZoneLayer(ring: [number, number][], visible: boolean) {
+  if (!visible) return null
+  return new PolygonLayer<{ polygon: [number, number][] }>({
+    id: 'grap-zone',
+    data: [{ polygon: ring }],
+    pickable: false,
+    stroked: true,
+    filled: true,
+    getPolygon: (d) => d.polygon,
+    getFillColor: [139, 92, 246, 28],
+    getLineColor: [167, 139, 250, 160],
+    getLineWidth: 2,
+    lineWidthUnits: 'pixels',
+  })
+}
+
+export function createExposureRibbonLayer(path: [number, number][], visible: boolean) {
+  if (!visible || path.length < 2) return null
+  return new PathLayer<{ path: [number, number][] }>({
+    id: 'exposure-ribbon',
+    data: [{ path }],
+    pickable: false,
+    getPath: (d) => d.path,
+    getColor: [251, 191, 36, 200],
+    getWidth: 8,
+    widthUnits: 'pixels',
+    widthMinPixels: 3,
+    capRounded: true,
+    jointRounded: true,
   })
 }

@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { useApp } from '../../context/AppContext'
 import type { MapLayerVisibility } from '../../types'
 import { searchLocations, type NamedLocation } from '../../utils/geo'
+import type { MapScene } from './MapViewControls'
 
 const layerOptions: { key: keyof MapLayerVisibility; label: string }[] = [
   { key: 'pollution', label: 'Pollution' },
@@ -13,9 +14,11 @@ const layerOptions: { key: keyof MapLayerVisibility; label: string }[] = [
 ]
 
 export function MapControls({
+  scene = 'corridor',
   onZoomToFire,
   onSelectLocation,
 }: {
+  scene?: MapScene
   onZoomToFire?: () => void
   onSelectLocation?: (location: NamedLocation) => void
 }) {
@@ -30,7 +33,11 @@ export function MapControls({
 
   return (
     <>
-      <div className="absolute left-4 top-4 z-10 flex flex-col gap-1">
+      <div
+        className={`absolute left-4 z-10 flex flex-col gap-1 ${
+          scene === 'globe' ? 'top-14 sm:top-12' : 'top-4'
+        }`}
+      >
         <input
           type="search"
           value={query}
@@ -41,7 +48,7 @@ export function MapControls({
           }}
           placeholder="Search location..."
           aria-label="Search location"
-          className="w-40 rounded-md border border-border bg-bg-panel/90 px-3 py-1.5 text-sm backdrop-blur placeholder:text-text-muted sm:w-48"
+          className="w-40 rounded-md border border-cyan-500/20 bg-black/55 px-3 py-1.5 text-sm backdrop-blur placeholder:text-text-muted sm:w-48"
         />
         {results.length > 0 && (
           <ul className="w-40 overflow-hidden rounded-md border border-border bg-bg-panel/95 backdrop-blur sm:w-48">
@@ -60,29 +67,32 @@ export function MapControls({
         )}
       </div>
 
-      {/* Sits clear of the timeline panel below it. */}
-      <div className="absolute bottom-32 left-1/2 z-10 flex max-w-[calc(100%-2rem)] -translate-x-1/2 flex-wrap justify-center gap-1 rounded-lg border border-border bg-bg-panel/90 p-2 backdrop-blur">
-        {layerOptions.map(({ key, label }) => (
-          <button
-            key={key}
-            type="button"
-            onClick={() => toggleLayer(key)}
-            aria-pressed={layers[key]}
-            className={`rounded px-2.5 py-1 text-xs transition-colors ${
-              layers[key] ? 'bg-intel/20 text-intel' : 'text-text-muted hover:text-text-secondary'
-            }`}
-          >
-            {layers[key] ? '☑' : '☐'} {label}
-          </button>
-        ))}
-      </div>
+      {scene === 'corridor' && (
+        <div className="absolute bottom-32 left-1/2 z-10 flex max-w-[calc(100%-2rem)] -translate-x-1/2 flex-wrap justify-center gap-1 rounded-lg border border-border bg-bg-panel/90 p-2 backdrop-blur">
+          {layerOptions.map(({ key, label }) => (
+            <button
+              key={key}
+              type="button"
+              onClick={() => toggleLayer(key)}
+              aria-pressed={layers[key]}
+              className={`rounded px-2.5 py-1 text-xs transition-colors ${
+                layers[key] ? 'bg-intel/20 text-intel' : 'text-text-muted hover:text-text-secondary'
+              }`}
+            >
+              {layers[key] ? '☑' : '☐'} {label}
+            </button>
+          ))}
+        </div>
+      )}
 
       {onZoomToFire && (
         <button
           type="button"
           onClick={onZoomToFire}
           // Clears the zoom/expand toolbar pinned to the right edge.
-          className="absolute right-16 top-4 z-10 rounded-md border border-border bg-bg-panel/90 px-3 py-1.5 text-xs text-text-secondary backdrop-blur hover:text-intel"
+          className={`absolute right-16 z-10 rounded-md border border-cyan-500/20 bg-black/55 px-3 py-1.5 text-xs text-text-secondary backdrop-blur hover:text-intel ${
+            scene === 'globe' ? 'top-14 sm:top-12' : 'top-4'
+          }`}
         >
           Zoom to Punjab fires
         </button>

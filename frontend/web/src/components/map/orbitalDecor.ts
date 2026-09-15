@@ -12,11 +12,14 @@ export interface OrbitalPoint {
 export function buildOrbitalShell(count: number, time: number): OrbitalPoint[] {
   const pts: OrbitalPoint[] = []
   for (let i = 0; i < count; i++) {
-    const band = i % 5
+    const band = i % 9
     const phase = (i / count) * Math.PI * 2
-    const drift = time * (0.04 + band * 0.01)
-    const lon = ((phase + drift) * 57.3) % 360 - 180
-    const lat = Math.sin(phase * 2.1 + band) * (48 + band * 6) + hashNoise(i, 2) * 4
+    const drift = time * (0.025 + band * 0.006)
+    const ring = 28 + (band % 4) * 14 + hashNoise(i, 2) * 18
+    const hemisphere = band % 2 === 0 ? 1 : -1
+    const lat =
+      hemisphere * ring + Math.sin(phase * 3.7 + band) * 6 + (hashNoise(i, 5) - 0.5) * 8
+    const lon = ((phase + drift) * 57.3 + hashNoise(i, 3) * 22) % 360 - 180
     pts.push({ lon, lat, phase, band })
   }
   return pts

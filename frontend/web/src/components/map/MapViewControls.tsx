@@ -36,7 +36,7 @@ export function MapViewControls({
   return (
     <div
       className={cn(
-        'pointer-events-auto absolute bottom-28 left-4 z-20 w-52 rounded-lg border border-cyan-500/20 bg-bg-panel/88 p-3 backdrop-blur-md shadow-[0_0_24px_rgba(34,211,238,0.08)]',
+        'pointer-events-auto absolute bottom-[8.5rem] left-4 z-20 w-52 rounded-lg border border-cyan-500/20 bg-black/65 p-3 backdrop-blur-md shadow-[0_0_24px_rgba(34,211,238,0.12)] sm:bottom-36',
         className,
       )}
     >

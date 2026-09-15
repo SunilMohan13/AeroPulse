@@ -86,6 +86,8 @@ export interface ForecastPoint {
   pm25: number
   confidenceLow: number
   confidenceHigh: number
+  /** Persistence baseline: hold last observed PM2.5 (honest comparison for promotion). */
+  baselinePm25?: number
 }
 
 export interface EvidenceItem {
@@ -137,6 +139,7 @@ export interface CitizenReport {
   classification: string
   corroboration: number
   status: 'PENDING' | 'CORROBORATED' | 'REJECTED'
+  relatedEventId?: string
 }
 
 export interface PopulationRiskArea {

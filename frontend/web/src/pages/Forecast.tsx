@@ -50,6 +50,7 @@ export function Forecast() {
       series.map((p) => ({
         hour: p.hour,
         pm25: p.pm25,
+        baselinePm25: p.baselinePm25 ?? p.pm25,
         band: [p.confidenceLow, p.confidenceHigh] as [number, number],
       })),
     [series],
@@ -180,7 +181,9 @@ export function Forecast() {
         <Card className="md:col-span-2">
           <CardHeader className="flex items-center justify-between py-2">
             <span className="text-xs font-medium">PM2.5 trajectory · Delhi NCR</span>
-            <span className="text-[10px] text-text-muted">shaded band = 80% confidence</span>
+            <span className="text-[10px] text-text-muted">
+              cyan = model · dashed = persistence baseline
+            </span>
           </CardHeader>
           <CardBody className="h-[150px] p-2">
             <ResponsiveContainer width="100%" height="100%">
@@ -232,11 +235,22 @@ export function Forecast() {
                 />
                 <Line
                   type="monotone"
+                  dataKey="baselinePm25"
+                  stroke="#64748b"
+                  strokeWidth={1.5}
+                  strokeDasharray="6 4"
+                  dot={false}
+                  isAnimationActive={!reducedMotion}
+                  name="baseline"
+                />
+                <Line
+                  type="monotone"
                   dataKey="pm25"
                   stroke="#22d3ee"
                   strokeWidth={2}
                   dot={false}
                   isAnimationActive={!reducedMotion}
+                  name="pm25"
                 />
               </ComposedChart>
             </ResponsiveContainer>
@@ -263,6 +277,10 @@ export function Forecast() {
             <div className="flex justify-between">
               <span className="text-text-secondary">Forecast confidence</span>
               <span className="font-mono">89%</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-text-secondary">vs persistence @ +6h</span>
+              <span className="font-mono text-emerald-400">−18% error</span>
             </div>
             <p className="border-t border-border pt-2 text-text-muted">
               Smoke is advecting southeast from the Punjab fire cluster at ~22 km/h. Values are

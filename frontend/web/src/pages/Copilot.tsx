@@ -1,4 +1,5 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { useApp } from '../context/AppContext'
 import { Bot, Send } from 'lucide-react'
 import { Card, CardBody, CardHeader } from '../components/common/Card'
 import { ScientificBadge } from '../components/common/Badge'
@@ -11,6 +12,7 @@ import type { CopilotMessage } from '../types'
 type Phase = 'idle' | 'thinking' | 'retrieval' | 'typing' | 'done'
 
 export function Copilot() {
+  const { pendingCopilotQuestion, setPendingCopilotQuestion } = useApp()
   const [messages, setMessages] = useState<CopilotMessage[]>([])
   const [input, setInput] = useState('')
   const [phase, setPhase] = useState<Phase>('idle')
@@ -51,6 +53,14 @@ export function Copilot() {
   }
 
   const isLoading = phase !== 'idle' && phase !== 'done'
+
+  useEffect(() => {
+    if (!pendingCopilotQuestion || isLoading) return
+    const q = pendingCopilotQuestion
+    setPendingCopilotQuestion(null)
+    void sendMessage(q)
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- one-shot tour prompt
+  }, [pendingCopilotQuestion])
 
   return (
     <div className="flex h-full flex-col gap-4 p-4">
