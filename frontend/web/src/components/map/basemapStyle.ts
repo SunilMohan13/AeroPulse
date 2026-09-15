@@ -4,6 +4,10 @@ import { CORRIDOR_LOCATIONS } from '../../utils/geo'
 export const CARTO_STYLE_URL =
   'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json'
 
+/** Lighter basemap for the “satellite / map” toggle in globe command view. */
+export const CARTO_VOYAGER_STYLE_URL =
+  'https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json'
+
 function graticule(stepDeg: number) {
   const features = []
   for (let lon = 60; lon <= 100; lon += stepDeg) {

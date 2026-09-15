@@ -17,8 +17,79 @@ import {
   type NamedLocation,
 } from '../../utils/geo'
 import { hashNoise } from '../../utils/seededRandom'
+import type { OrbitalPoint } from './orbitalDecor'
 
 const COLOR_TRANSITION = 700
+
+/** Cyan shell visible in globe command view — decorative, not real TLE tracks. */
+export function createOrbitalShellLayer(points: OrbitalPoint[], visible: boolean, time: number) {
+  if (!visible || points.length === 0) return null
+  const twinkle = 0.65 + Math.sin(time * 1.4) * 0.12
+  return new ScatterplotLayer<OrbitalPoint>({
+    id: 'orbital-shell',
+    data: points,
+    pickable: false,
+    radiusUnits: 'pixels',
+    getPosition: (d) => [d.lon, d.lat],
+    getRadius: (d) => 1.2 + (d.band % 3) * 0.35,
+    getFillColor: (d) => {
+      const a = Math.round((55 + d.band * 18) * twinkle)
+      return d.band % 2 === 0 ? [34, 211, 238, a] : [74, 222, 128, Math.round(a * 0.75)]
+    },
+    radiusMinPixels: 1,
+    radiusMaxPixels: 3,
+    updateTriggers: { getFillColor: [time] },
+  })
+}
+
+/** Great-circle style arcs from the fire source toward exposed metros. */
+export function createGlobeArcLayer(
+  arcs: { path: [number, number][]; id: string }[],
+  visible: boolean,
+  pulse: number,
+) {
+  if (!visible || arcs.length === 0) return null
+  const glow = 0.55 + Math.sin(pulse) * 0.15
+  return new PathLayer<{ path: [number, number][]; id: string }>({
+    id: 'globe-arcs',
+    data: arcs,
+    pickable: false,
+    getPath: (d) => d.path,
+    getColor: [56, 189, 248, Math.round(95 * glow)],
+    getWidth: 1.4,
+    widthUnits: 'pixels',
+    widthMinPixels: 1,
+    capRounded: true,
+    updateTriggers: { getColor: [pulse] },
+  })
+}
+
+/** Pulsing nodes at CPCB-scale monitoring cities for the world-scale view. */
+export function createMonitoringNodesLayer(
+  places: NamedLocation[],
+  visible: boolean,
+  pulse: number,
+) {
+  if (!visible) return null
+  const breathe = 1 + Math.sin(pulse) * 0.1
+  return new ScatterplotLayer<NamedLocation>({
+    id: 'monitoring-nodes',
+    data: places,
+    pickable: false,
+    stroked: true,
+    filled: true,
+    getPosition: (d) => [d.lon, d.lat],
+    getRadius: 5 * breathe,
+    radiusUnits: 'pixels',
+    getFillColor: [34, 211, 238, 200],
+    getLineColor: [15, 23, 42, 230],
+    lineWidthUnits: 'pixels',
+    getLineWidth: 1.2,
+    radiusMinPixels: 4,
+    radiusMaxPixels: 10,
+    updateTriggers: { getRadius: [pulse] },
+  })
+}
 
 export function createPollutionLayer(
   data: GridCell[],

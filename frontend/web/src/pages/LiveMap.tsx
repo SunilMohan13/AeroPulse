@@ -10,7 +10,7 @@ export function LiveMap() {
         </p>
       </div>
       <div className="relative min-h-0 flex-1">
-        <AeroMap />
+        <AeroMap initialScene="globe" />
       </div>
     </div>
   )

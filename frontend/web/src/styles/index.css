@@ -71,6 +71,30 @@
   }
 }
 
+/* Starfield behind globe command view — pure CSS, no extra WebGL cost. */
+.aero-map-space {
+  background:
+    radial-gradient(ellipse 120% 80% at 50% 40%, rgba(15, 40, 70, 0.45), transparent 55%),
+    radial-gradient(circle at 20% 30%, rgba(34, 211, 238, 0.06), transparent 40%),
+    #000;
+}
+
+.aero-map-space::before {
+  content: '';
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  opacity: 0.55;
+  background-image:
+    radial-gradient(1px 1px at 10% 20%, rgba(255, 255, 255, 0.7), transparent),
+    radial-gradient(1px 1px at 80% 10%, rgba(255, 255, 255, 0.5), transparent),
+    radial-gradient(1px 1px at 40% 60%, rgba(255, 255, 255, 0.45), transparent),
+    radial-gradient(1px 1px at 70% 75%, rgba(255, 255, 255, 0.55), transparent),
+    radial-gradient(1px 1px at 25% 85%, rgba(255, 255, 255, 0.4), transparent);
+  background-size: 100% 100%;
+}
+
 /* MapLibre ships a light-themed attribution control that renders as a white
    slab over the dark map. Attribution has to stay visible for the OSM/CARTO
    licence, so it is restyled rather than hidden. */

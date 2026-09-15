@@ -1,6 +1,10 @@
-import { Crosshair, Maximize2, Minimize2, Minus, Plus } from 'lucide-react'
+import { Crosshair, Globe2, Maximize2, Minimize2, Minus, Plus } from 'lucide-react'
+import { cn } from '../../utils/cn'
+import type { MapScene } from './MapViewControls'
 
 interface MapToolbarProps {
+  scene?: MapScene
+  onToggleScene?: () => void
   zoom: number
   minZoom: number
   maxZoom: number
@@ -17,6 +21,8 @@ const button =
   'disabled:hover:bg-transparent disabled:hover:text-text-secondary'
 
 export function MapToolbar({
+  scene,
+  onToggleScene,
   zoom,
   minZoom,
   maxZoom,
@@ -50,13 +56,28 @@ export function MapToolbar({
         >
           <Minus size={15} />
         </button>
+        {onToggleScene && (
+          <>
+            <div className="h-px bg-border" />
+            <button
+              type="button"
+              onClick={onToggleScene}
+              className={cn(button, scene === 'globe' && 'text-cyan-300')}
+              title={scene === 'globe' ? 'Switch to corridor map' : 'Switch to rotatable globe'}
+              aria-label="Toggle globe view"
+              aria-pressed={scene === 'globe'}
+            >
+              <Globe2 size={14} />
+            </button>
+          </>
+        )}
         <div className="h-px bg-border" />
         <button
           type="button"
           onClick={onReset}
           className={button}
           title="Reset view"
-          aria-label="Reset view to the Punjab–Haryana–Delhi corridor"
+          aria-label="Reset view"
         >
           <Crosshair size={14} />
         </button>
