@@ -10,9 +10,16 @@ import {
   createFireGlowLayer,
   createFireLayer,
   createGeographyLayer,
+  createGlobeArcLayer,
   createIndustryLayer,
+  createMonitoringNodesLayer,
+  createOrbitalShellHaloLayer,
+  createOrbitalShellLayer,
   createPlaceDotLayer,
   createPlaceLabelLayer,
+  createBaselinePlumeLayer,
+  createExposureRibbonLayer,
+  createGrapZoneLayer,
   createPlumeLayer,
   createPollutionLayer,
   createPopulationLayer,
@@ -20,6 +27,17 @@ import {
   createTransportAxisLayer,
   createWindLayer,
 } from './layerFactories'
+import { buildCorridorArcs, buildOrbitalShell } from './orbitalDecor'
+import {
+  applyMapAtmosphere,
+  basemapUrl,
+  type BasemapFlavor,
+} from './mapAtmosphere'
+import { MapGlobeBar } from './MapGlobeBar'
+import { MapIntelChrome } from './MapIntelChrome'
+import { softenBasemapLabels, syncGlobeIntelOverlays } from './globeIntelLayers'
+import { MapViewControls, type MapScene } from './MapViewControls'
+import { readViewFromMap, setMapInteraction } from './mapInteraction'
 import { useApp } from '../../context/AppContext'
 import { fetchAirQuality, fetchFires, fetchWeather, fetchIndustries } from '../../services/mapService'
 import { resolveStep, stepToKm, type GridBounds } from '../../data/mockGrid'
@@ -28,10 +46,20 @@ import { MapControls } from './MapControls'
 import { MapToolbar } from './MapToolbar'
 import { MapTimeline } from './MapTimeline'
 import { MapLegend } from './MapLegend'
-import { CORRIDOR_LOCATIONS, PUNJAB_FIRE_CENTER, type NamedLocation } from '../../utils/geo'
-import { attachBasemapFallback, CARTO_STYLE_URL } from './basemapStyle'
+import { MapFusionStrip } from './MapFusionStrip'
+import { MapScenarioPanel } from './MapScenarioPanel'
+import { MapGrapBanner } from './MapGrapBanner'
+import { MapStoryCaption } from './MapStoryCaption'
+import {
+  buildBaselinePlumeCells,
+  buildExposureRibbonPath,
+  GRAP_NCR_RING,
+  grapPlumeIntersection,
+} from './mapScenarioGeo'
+import { CORRIDOR_LOCATIONS, PUNJAB_FIRE_CENTER, TRANSPORT_BEARING_DEG, type NamedLocation } from '../../utils/geo'
+import { attachBasemapFallback } from './basemapStyle'
 import { useAnimationClock } from '../../hooks/useAnimationClock'
-const INITIAL_VIEW = {
+const CORRIDOR_VIEW = {
   longitude: 76.2,
   latitude: 29.8,
   zoom: 6.2,
@@ -39,9 +67,19 @@ const INITIAL_VIEW = {
   bearing: 0,
 }
 
-type ViewState = typeof INITIAL_VIEW
+const GLOBE_VIEW = {
+  longitude: 72,
+  latitude: 22,
+  zoom: 2.15,
+  pitch: 0,
+  bearing: -12,
+}
 
-const MIN_ZOOM = 3
+const INITIAL_VIEW = CORRIDOR_VIEW
+
+type ViewState = typeof CORRIDOR_VIEW
+
+const MIN_ZOOM = 1.6
 const MAX_ZOOM = 13
 const ZOOM_STEP = 0.9
 
@@ -95,6 +133,12 @@ interface AeroMapProps {
   /** Per-instance layer overrides, so a page can require its own layers
    *  without mutating the shared toggle state other pages read. */
   forceLayers?: Partial<MapLayerVisibility>
+  /** Globe on load (Overview + Live Map). */
+  initialScene?: MapScene
+  /** Tour / deep-link: switch corridor vs globe when this changes. */
+  sceneRequest?: MapScene
+  /** Show Globe / Corridor bar inside compact dashboard cards. */
+  showGlobeBar?: boolean
   className?: string
 }
 
@@ -104,22 +148,36 @@ export function AeroMap({
   showTimeline = !compact,
   showLegend = !compact,
   forceLayers,
+  initialScene = 'corridor',
+  sceneRequest,
+  showGlobeBar: showGlobeBarProp,
   className,
 }: AeroMapProps) {
+  const showGlobeBar = showGlobeBarProp ?? !compact
   const mapContainerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<maplibregl.Map | null>(null)
   const {
     hourOffset,
     layers: globalLayers,
+    setLayers,
+    setHourOffset,
     demoIntensity,
     setSelectedFireId,
     setSelectedGridId,
+    windBearingOffset,
+    showBaselinePlume,
+    showGrapZone,
+    showExposureRibbon,
+    showFireSeasonGlobe,
+    mapStoryCaption,
   } = useApp()
   const layers = useMemo(
     () => ({ ...globalLayers, ...forceLayers }),
     [globalLayers, forceLayers],
   )
-  const [viewState, setViewState] = useState<ViewState>(INITIAL_VIEW)
+  const [viewState, setViewState] = useState<ViewState>(
+    initialScene === 'globe' ? GLOBE_VIEW : INITIAL_VIEW,
+  )
   const time = useAnimationClock(24)
   const pulse = time * 1.6
   const [popupCell, setPopupCell] = useState<GridCell | null>(null)
@@ -127,6 +185,19 @@ export function AeroMap({
   const [offlineBasemap, setOfflineBasemap] = useState(false)
   const [size, setSize] = useState({ width: 1200, height: 600 })
   const [expanded, setExpanded] = useState(false)
+  const [scene, setScene] = useState<MapScene>(initialScene)
+  const [basemapFlavor, setBasemapFlavor] = useState<BasemapFlavor>('intel')
+  const [dayNight, setDayNight] = useState(true)
+  const [dimension3d, setDimension3d] = useState(false)
+  const [showOrbit, setShowOrbit] = useState(true)
+  const basemapFlavorRef = useRef(basemapFlavor)
+  basemapFlavorRef.current = basemapFlavor
+  const sceneRef = useRef(scene)
+  const dayNightRef = useRef(dayNight)
+  sceneRef.current = scene
+  dayNightRef.current = dayNight
+  const basemapAppliedRef = useRef(basemapFlavor)
+  const skipMapSyncRef = useRef(false)
 
   useEffect(() => {
     if (!expanded) return
@@ -160,10 +231,11 @@ export function AeroMap({
   )
   const boundsKey = `${bounds.west},${bounds.east},${bounds.south},${bounds.north}`
   const resolutionKm = useMemo(() => stepToKm(resolveStep(bounds)), [bounds])
+  const transportBearing = TRANSPORT_BEARING_DEG + windBearingOffset
 
   const { data: grid = [] } = useQuery({
-    queryKey: ['airQuality', hourOffset, demoIntensity, boundsKey],
-    queryFn: () => fetchAirQuality(hourOffset, demoIntensity, bounds),
+    queryKey: ['airQuality', hourOffset, demoIntensity, boundsKey, windBearingOffset],
+    queryFn: () => fetchAirQuality(hourOffset, demoIntensity, bounds, transportBearing),
     placeholderData: (previous) => previous,
     // Each snapshot is tens of MB and every hour/viewport combination is a
     // distinct key, so the default 5-minute retention accumulated gigabytes
@@ -196,7 +268,7 @@ export function AeroMap({
     const view = viewRef.current
     const map = new maplibregl.Map({
       container: mapContainerRef.current,
-      style: CARTO_STYLE_URL,
+      style: basemapUrl(basemapFlavorRef.current),
       center: [view.longitude, view.latitude],
       zoom: view.zoom,
       attributionControl: { compact: true },
@@ -206,6 +278,19 @@ export function AeroMap({
     if (import.meta.env.DEV) {
       ;(window as unknown as { __aeroMap?: maplibregl.Map }).__aeroMap = map
     }
+
+    const onStyleReady = () => {
+      applyMapAtmosphere(
+        map,
+        sceneRef.current === 'globe' ? 'globe' : 'mercator',
+        dayNightRef.current,
+      )
+      setMapInteraction(map, sceneRef.current)
+      softenBasemapLabels(map, sceneRef.current === 'globe')
+      syncGlobeIntelOverlays(map, sceneRef.current === 'globe', showFireSeasonGlobe)
+    }
+    map.on('load', onStyleReady)
+    map.on('style.load', onStyleReady)
 
     // Tile hosting can be blocked on demo networks; fall back to a bundled
     // style instead of showing an empty canvas.
@@ -217,32 +302,185 @@ export function AeroMap({
     }
   }, [expanded])
 
-  const syncBasemap = useCallback((v: ViewState) => {
-    mapRef.current?.jumpTo({
-      center: [v.longitude, v.latitude],
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map) return
+    applyMapAtmosphere(map, scene === 'globe' ? 'globe' : 'mercator', dayNight)
+    setMapInteraction(map, scene)
+  }, [scene, dayNight])
+
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map) return
+    const applyIntel = () => {
+      softenBasemapLabels(map, scene === 'globe')
+      syncGlobeIntelOverlays(map, scene === 'globe' && showOrbit, showFireSeasonGlobe)
+    }
+    if (map.isStyleLoaded()) applyIntel()
+    else map.once('style.load', applyIntel)
+  }, [scene, showOrbit, expanded, basemapFlavor, showFireSeasonGlobe])
+
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || scene !== 'globe') return
+
+    const onMove = () => {
+      if (skipMapSyncRef.current) return
+      setViewState((prev) => ({ ...prev, ...readViewFromMap(map) }))
+    }
+    const onDragStart = () => {
+      map.getCanvas().style.cursor = 'grabbing'
+    }
+    const onDragEnd = () => {
+      map.getCanvas().style.cursor = 'grab'
+    }
+
+    map.on('move', onMove)
+    map.on('dragstart', onDragStart)
+    map.on('dragend', onDragEnd)
+    return () => {
+      map.off('move', onMove)
+      map.off('dragstart', onDragStart)
+      map.off('dragend', onDragEnd)
+    }
+  }, [scene, expanded])
+
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || offlineBasemap || basemapAppliedRef.current === basemapFlavor) return
+    basemapAppliedRef.current = basemapFlavor
+    map.setStyle(basemapUrl(basemapFlavor))
+    map.once('style.load', () => {
+      applyMapAtmosphere(
+        map,
+        sceneRef.current === 'globe' ? 'globe' : 'mercator',
+        dayNightRef.current,
+      )
+    })
+  }, [basemapFlavor, offlineBasemap])
+
+  const syncBasemap = useCallback((v: ViewState, animate = false) => {
+    const map = mapRef.current
+    if (!map) return
+    skipMapSyncRef.current = true
+    const camera = {
+      center: [v.longitude, v.latitude] as [number, number],
       zoom: v.zoom,
       pitch: v.pitch,
       bearing: v.bearing,
-    })
+    }
+    if (animate) {
+      map.flyTo({ ...camera, duration: 1400, essential: true })
+    } else {
+      map.jumpTo(camera)
+    }
+    window.setTimeout(() => {
+      skipMapSyncRef.current = false
+    }, animate ? 1500 : 0)
   }, [])
 
   const applyView = useCallback(
     (next: ViewState) => {
       const clamped = {
         ...next,
+        pitch: dimension3d ? Math.min(Math.max(next.pitch ?? 48, 20), 58) : 0,
         zoom: Math.min(Math.max(next.zoom, MIN_ZOOM), MAX_ZOOM),
       }
       setViewState(clamped)
       syncBasemap(clamped)
     },
-    [syncBasemap],
+    [syncBasemap, dimension3d],
   )
 
   const zoomBy = useCallback(
-    (delta: number) => applyView({ ...viewState, zoom: viewState.zoom + delta }),
-    [applyView, viewState],
+    (delta: number) => {
+      const map = mapRef.current
+      if (scene === 'globe' && map) {
+        const next = Math.min(Math.max(map.getZoom() + delta, MIN_ZOOM), MAX_ZOOM)
+        map.zoomTo(next, { duration: 280 })
+        setViewState((prev) => ({ ...prev, zoom: next }))
+        return
+      }
+      applyView({ ...viewState, zoom: viewState.zoom + delta })
+    },
+    [applyView, viewState, scene],
   )
-  const resetView = useCallback(() => applyView(INITIAL_VIEW), [applyView])
+  const resetView = useCallback(
+    () => applyView(scene === 'globe' ? GLOBE_VIEW : CORRIDOR_VIEW),
+    [applyView, scene],
+  )
+
+  const goToScene = useCallback(
+    (next: MapScene) => {
+      setScene(next)
+      const target = {
+        ...(next === 'globe' ? GLOBE_VIEW : CORRIDOR_VIEW),
+        pitch: next === 'globe' ? (dimension3d ? 48 : 0) : dimension3d ? 48 : 0,
+        bearing: next === 'globe' ? GLOBE_VIEW.bearing : 0,
+      }
+      setViewState(target)
+      syncBasemap(target, true)
+    },
+    [syncBasemap, dimension3d],
+  )
+
+  useEffect(() => {
+    if (!sceneRequest || sceneRequest === scene) return
+    goToScene(sceneRequest)
+  }, [sceneRequest, scene, goToScene])
+
+  const toggleScene = useCallback(() => {
+    goToScene(scene === 'globe' ? 'corridor' : 'globe')
+  }, [goToScene, scene])
+
+  const enterTheater = useCallback(() => {
+    goToScene('corridor')
+    setLayers({
+      pollution: true,
+      fires: true,
+      wind: true,
+      forecast: true,
+      industry: false,
+      population: false,
+    })
+    setHourOffset(6)
+    setViewState(CORRIDOR_VIEW)
+    syncBasemap(CORRIDOR_VIEW, true)
+  }, [goToScene, setLayers, setHourOffset, syncBasemap])
+
+  const exportSnapshot = useCallback(() => {
+    const map = mapRef.current
+    if (!map) return
+    const link = document.createElement('a')
+    link.download = `aeropulse-map-${Date.now()}.png`
+    link.href = map.getCanvas().toDataURL('image/png')
+    link.click()
+  }, [])
+
+  // deck.gl draws in Web Mercator; on MapLibre globe that misaligns and Punjab
+  // fires/smoke look like they float in space. Environmental layers only in
+  // corridor (flat) mode — globe is for world context + orbital decor only.
+  const showEnvironmentalLayers = scene === 'corridor'
+
+  const baselineGrid = useMemo(
+    () => buildBaselinePlumeCells(grid, transportBearing),
+    [grid, transportBearing],
+  )
+  const exposurePath = useMemo(
+    () => buildExposureRibbonPath(grid, transportBearing),
+    [grid, transportBearing],
+  )
+  const grapAlert = useMemo(
+    () => showGrapZone && showEnvironmentalLayers && grapPlumeIntersection(grid),
+    [showGrapZone, showEnvironmentalLayers, grid],
+  )
+  const globeDecor = scene === 'globe'
+
+  const orbitalPoints = useMemo(
+    () => buildOrbitalShell(2600, time),
+    [time],
+  )
+  const corridorArcs = useMemo(() => buildCorridorArcs(), [])
 
   const handleFireClick = useCallback(
     (fire: FireObservation) => {
@@ -266,26 +504,54 @@ export function AeroMap({
   // Each layer memoises independently so the animation clock only rebuilds the
   // cheap animated layers, never the large polygon fields.
   const pollutionLayer = useMemo(
-    () => createPollutionLayer(grid, layers.pollution, handleCellClick),
-    [grid, layers.pollution, handleCellClick],
+    () =>
+      createPollutionLayer(
+        grid,
+        showEnvironmentalLayers && layers.pollution,
+        handleCellClick,
+      ),
+    [grid, layers.pollution, showEnvironmentalLayers, handleCellClick],
   )
-  const plumeLayer = useMemo(() => createPlumeLayer(grid, layers.forecast), [grid, layers.forecast])
+  const baselinePlumeLayer = useMemo(
+    () =>
+      createBaselinePlumeLayer(
+        baselineGrid,
+        showEnvironmentalLayers && showBaselinePlume && layers.forecast,
+      ),
+    [baselineGrid, showBaselinePlume, layers.forecast, showEnvironmentalLayers],
+  )
+  const plumeLayer = useMemo(
+    () => createPlumeLayer(grid, showEnvironmentalLayers && layers.forecast),
+    [grid, layers.forecast, showEnvironmentalLayers],
+  )
+  const grapLayer = useMemo(
+    () => createGrapZoneLayer(GRAP_NCR_RING, showEnvironmentalLayers && showGrapZone),
+    [showGrapZone, showEnvironmentalLayers],
+  )
+  const exposureRibbonLayer = useMemo(
+    () =>
+      createExposureRibbonLayer(
+        exposurePath,
+        showEnvironmentalLayers && showExposureRibbon && layers.forecast,
+      ),
+    [exposurePath, showExposureRibbon, layers.forecast, showEnvironmentalLayers],
+  )
   const populationLayer = useMemo(
-    () => createPopulationLayer(grid, layers.population),
-    [grid, layers.population],
+    () => createPopulationLayer(grid, showEnvironmentalLayers && layers.population),
+    [grid, layers.population, showEnvironmentalLayers],
   )
   const industryLayer = useMemo(
-    () => createIndustryLayer(industries, layers.industry),
-    [industries, layers.industry],
+    () => createIndustryLayer(industries, showEnvironmentalLayers && layers.industry),
+    [industries, layers.industry, showEnvironmentalLayers],
   )
   const axisLayer = useMemo(
     () =>
       createTransportAxisLayer(
         PUNJAB_FIRE_CENTER,
         CORRIDOR_LOCATIONS[0],
-        layers.forecast || layers.wind,
+        showEnvironmentalLayers && (layers.forecast || layers.wind),
       ),
-    [layers.forecast, layers.wind],
+    [layers.forecast, layers.wind, showEnvironmentalLayers],
   )
 
   const particles = useMemo(() => buildSmokeParticles(520, fires.length), [fires.length])
@@ -310,49 +576,93 @@ export function AeroMap({
   )
 
   const fireGlowLayer = useMemo(
-    () => createFireGlowLayer(fires, layers.fires, pulse),
-    [fires, layers.fires, pulse],
+    () => createFireGlowLayer(fires, showEnvironmentalLayers && layers.fires, pulse),
+    [fires, layers.fires, showEnvironmentalLayers, pulse],
   )
   const fireLayer = useMemo(
-    () => createFireLayer(fires, layers.fires, handleFireClick),
-    [fires, layers.fires, handleFireClick],
+    () => createFireLayer(fires, showEnvironmentalLayers && layers.fires, handleFireClick),
+    [fires, layers.fires, showEnvironmentalLayers, handleFireClick],
   )
   const smokeLayer = useMemo(
     () =>
       createSmokeParticleLayer(
         particles,
         fires,
-        layers.fires && (layers.forecast || layers.pollution),
+        showEnvironmentalLayers &&
+          layers.fires &&
+          (layers.forecast || layers.pollution),
         time,
         Math.max(hourOffset, 6),
+        transportBearing,
       ),
-    [particles, fires, layers.fires, layers.forecast, layers.pollution, time, hourOffset],
+    [
+      particles,
+      fires,
+      layers.fires,
+      layers.forecast,
+      layers.pollution,
+      showEnvironmentalLayers,
+      time,
+      hourOffset,
+      transportBearing,
+    ],
   )
   const windLayer = useMemo(
-    () => createWindLayer(wind, layers.wind, time),
-    [wind, layers.wind, time],
+    () => createWindLayer(wind, showEnvironmentalLayers && layers.wind, time),
+    [wind, layers.wind, showEnvironmentalLayers, time],
+  )
+
+  const orbitalHaloLayer = useMemo(
+    () => createOrbitalShellHaloLayer(orbitalPoints, showOrbit && globeDecor, time),
+    [orbitalPoints, showOrbit, globeDecor, time],
+  )
+  const orbitalLayer = useMemo(
+    () => createOrbitalShellLayer(orbitalPoints, showOrbit && globeDecor, time),
+    [orbitalPoints, showOrbit, globeDecor, time],
+  )
+  const globeArcLayer = useMemo(
+    () => createGlobeArcLayer(corridorArcs, globeDecor, pulse),
+    [corridorArcs, globeDecor, pulse],
+  )
+  const monitoringLayer = useMemo(
+    () => createMonitoringNodesLayer(labelPlaces, globeDecor, pulse),
+    [labelPlaces, globeDecor, pulse],
   )
 
   const deckLayers = useMemo(
     () =>
-      [
-        geographyLayer,
-        pollutionLayer,
-        plumeLayer,
-        axisLayer,
-        populationLayer,
-        windLayer,
-        industryLayer,
-        fireGlowLayer,
-        smokeLayer,
-        fireLayer,
-        placeDotLayer,
-        placeLabelLayer,
-      ].filter(Boolean),
+      (showEnvironmentalLayers
+        ? [
+            geographyLayer,
+            grapLayer,
+            pollutionLayer,
+            baselinePlumeLayer,
+            plumeLayer,
+            exposureRibbonLayer,
+            axisLayer,
+            populationLayer,
+            windLayer,
+            industryLayer,
+            fireGlowLayer,
+            smokeLayer,
+            fireLayer,
+            placeDotLayer,
+            placeLabelLayer,
+          ]
+        : [orbitalHaloLayer, orbitalLayer]
+      ).filter(Boolean),
     [
+      showEnvironmentalLayers,
       geographyLayer,
+      orbitalHaloLayer,
+      orbitalLayer,
+      globeArcLayer,
+      monitoringLayer,
+      grapLayer,
       pollutionLayer,
+      baselinePlumeLayer,
       plumeLayer,
+      exposureRibbonLayer,
       axisLayer,
       populationLayer,
       windLayer,
@@ -405,20 +715,48 @@ export function AeroMap({
     <div
       className={
         expanded
-          ? 'fixed inset-0 z-50 bg-bg-base'
-          : cn('relative h-full w-full', className)
+          ? 'fixed inset-0 z-50 bg-black'
+          : cn('relative h-full w-full', scene === 'globe' && 'aero-map-space', className)
       }
     >
       {/* maplibre-gl.css sets `.maplibregl-map { position: relative }`, which
           beats the utility class and collapses this box to zero height (and
           then MapLibre requests no tiles at all). Inline style wins. */}
-      <div ref={mapContainerRef} className="absolute inset-0" style={{ position: 'absolute' }} />
+      <div
+        ref={mapContainerRef}
+        className="absolute inset-0"
+        style={{
+          position: 'absolute',
+          zIndex: scene === 'globe' ? 3 : 0,
+        }}
+      />
       <DeckGL
         viewState={viewState}
-        onViewStateChange={({ viewState: vs }) => applyView(vs as ViewState)}
-        // Zoom limits are enforced in `applyView`, which every camera change
-        // (wheel, drag, toolbar, fly-to) funnels through.
-        controller
+        onViewStateChange={({ viewState: vs }) => {
+          if (scene === 'globe') return
+          applyView(vs as ViewState)
+        }}
+        controller={
+          scene === 'globe'
+            ? false
+            : {
+                inertia: 280,
+                scrollZoom: true,
+                dragPan: true,
+                dragRotate: dimension3d,
+                touchRotate: true,
+                doubleClickZoom: true,
+              }
+        }
+        style={{
+          position: 'absolute',
+          top: '0',
+          left: '0',
+          width: '100%',
+          height: '100%',
+          zIndex: scene === 'globe' ? '1' : '2',
+          pointerEvents: scene === 'globe' ? 'none' : 'auto',
+        }}
         layers={deckLayers}
         getTooltip={({ object }) => {
           if (!object) return null
@@ -427,7 +765,10 @@ export function AeroMap({
           return null
         }}
       />
+      {!compact && <MapFusionStrip className={scene === 'globe' ? 'top-12 sm:top-11' : undefined} />}
       <MapToolbar
+        scene={scene}
+        onToggleScene={toggleScene}
         zoom={viewState.zoom}
         minZoom={MIN_ZOOM}
         maxZoom={MAX_ZOOM}
@@ -436,13 +777,60 @@ export function AeroMap({
         onReset={resetView}
         expanded={expanded}
         onToggleExpand={() => setExpanded((v) => !v)}
+        onExportSnapshot={scene === 'corridor' ? exportSnapshot : undefined}
       />
+      {showGlobeBar && (
+        <MapGlobeBar
+          scene={scene}
+          onSceneChange={goToScene}
+          bearing={viewState.bearing}
+          onEnterTheater={enterTheater}
+          compact={compact}
+          className={!compact && chrome.timeline ? 'bottom-40' : undefined}
+        />
+      )}
+      {!compact && scene === 'globe' && <MapIntelChrome scene={scene} />}
+      {!compact && <MapScenarioPanel scene={scene} className="!right-20 !left-auto" />}
+      {!compact && <MapGrapBanner active={grapAlert} />}
+      {!compact && <MapStoryCaption caption={mapStoryCaption} />}
+      {!compact && (
+        <MapViewControls
+          scene={scene}
+          onSceneChange={goToScene}
+          basemap={basemapFlavor}
+          onBasemapChange={setBasemapFlavor}
+          dayNight={dayNight}
+          onDayNightChange={setDayNight}
+          dimension3d={dimension3d}
+          onDimension3dChange={(on) => {
+            setDimension3d(on)
+            applyView({ ...viewState, pitch: on ? 48 : 0 })
+          }}
+          showOrbit={showOrbit}
+          onShowOrbitChange={setShowOrbit}
+          className={
+            scene === 'globe'
+              ? '!bottom-auto top-[4.25rem] left-3 w-48 sm:top-[4rem]'
+              : undefined
+          }
+        />
+      )}
       {chrome.controls && (
-        <MapControls onZoomToFire={zoomToFireCenter} onSelectLocation={goToLocation} />
+        <MapControls
+          scene={scene}
+          onZoomToFire={zoomToFireCenter}
+          onSelectLocation={goToLocation}
+        />
       )}
       {chrome.legend && <MapLegend resolutionKm={resolutionKm} />}
       {(popupCell || popupFire) && (
-        <MapPopup cell={popupCell} fire={popupFire} fires={fires} onClose={closePopup} />
+        <MapPopup
+          cell={popupCell}
+          fire={popupFire}
+          fires={fires}
+          hourOffset={hourOffset}
+          onClose={closePopup}
+        />
       )}
       {/* Sits above the timeline panel, which previously covered it entirely. */}
       {offlineBasemap && (

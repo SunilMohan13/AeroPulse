@@ -53,7 +53,15 @@ export function MapLegend({ resolutionKm }: { resolutionKm: number }) {
           className="h-2 w-2 shrink-0 rounded-full"
           style={{ backgroundColor: 'rgba(255, 200, 150, 0.85)' }}
         />
-        <span className="text-text-secondary">Transported smoke</span>
+        <span className="text-text-secondary">Model plume (cyan)</span>
+      </div>
+      <div className="mt-1 flex items-center gap-2 text-[11px]">
+        <span aria-hidden className="h-2 w-2 shrink-0 rounded-full bg-slate-400/80" />
+        <span className="text-text-secondary">Baseline persistence</span>
+      </div>
+      <div className="mt-1 flex items-center gap-2 text-[11px]">
+        <span aria-hidden className="h-2 w-2 shrink-0 rounded-full bg-amber-400/90" />
+        <span className="text-text-secondary">Exposure ribbon</span>
       </div>
 
       <p className="mt-2 text-[10px] text-text-muted">

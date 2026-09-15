@@ -11,9 +11,10 @@ export async function fetchAirQuality(
   hourOffset = 0,
   intensity = 1,
   bounds?: GridBounds,
+  transportBearingDeg?: number,
 ): Promise<GridCell[]> {
   await delay()
-  return getGridAt(hourOffset, intensity, bounds)
+  return getGridAt(hourOffset, intensity, bounds, transportBearingDeg)
 }
 
 export async function fetchFires(

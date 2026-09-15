@@ -13,6 +13,8 @@ import { SourceLikelihoodBars } from '../components/events/SourceLikelihoodBars'
 import { LoadingState } from '../components/common/States'
 import { formatDateTimeIST, formatPopulation } from '../utils/format'
 import { getBandLabel } from '../utils/aqi'
+import { ActionBrief } from '../components/events/ActionBrief'
+import { CitizenCorroboration } from '../components/events/CitizenCorroboration'
 
 export function EventDetail() {
   const { eventId } = useParams<{ eventId: string }>()
@@ -57,6 +59,9 @@ export function EventDetail() {
           Detected {formatDateTimeIST(event.detectedAt)} · Updated {formatDateTimeIST(event.updatedAt)}
         </p>
       </motion.div>
+
+      <ActionBrief event={event} />
+      <CitizenCorroboration eventId={event.id} />
 
       <div className="grid gap-4 lg:grid-cols-3">
         <Card className="lg:col-span-2">

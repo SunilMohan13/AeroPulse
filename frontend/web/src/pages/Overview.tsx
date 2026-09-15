@@ -74,11 +74,23 @@ export function Overview() {
       </motion.div>
 
       <Card className="min-h-[320px] flex-1 overflow-hidden">
-        <CardHeader>
+        <CardHeader className="flex items-center justify-between gap-2">
           <span className="text-sm font-medium">Live Intelligence Map</span>
+          <Link
+            to="/map"
+            className="text-xs text-intel hover:underline"
+          >
+            Open full map
+          </Link>
         </CardHeader>
-        <CardBody className="h-[320px] p-0">
-          <AeroMap compact showTimeline={false} className="h-full" />
+        <CardBody className="h-[340px] p-0">
+          <AeroMap
+            compact
+            showTimeline={false}
+            showGlobeBar
+            initialScene="globe"
+            className="h-full"
+          />
         </CardBody>
       </Card>
 

@@ -12,24 +12,27 @@ const phaseMessages: Record<string, string> = {
 }
 
 export function DemoOverlay() {
-  const { demoPhase, demoRunning, skipDemo } = useApp()
+  const { demoPhase, demoRunning, skipDemo, tourCaption, judgeTourRunning, stopJudgeTour } =
+    useApp()
 
   if (!demoRunning && demoPhase !== 'complete') return null
   if (demoPhase === 'idle') return null
 
+  const label = tourCaption ?? phaseMessages[demoPhase] ?? 'DEMO MODE'
+
   return (
-    <div className="pointer-events-none absolute inset-x-0 top-4 z-30 flex justify-center">
-      <div className="pointer-events-auto flex items-center gap-3 rounded-lg border border-intel/40 bg-bg-panel/95 px-4 py-2 shadow-lg backdrop-blur">
-        <span className="text-sm font-semibold text-intel">
-          {phaseMessages[demoPhase] ?? 'DEMO MODE'}
-        </span>
+    <div className="pointer-events-none absolute inset-x-0 top-16 z-30 flex justify-center px-4 sm:top-14">
+      <div
+        className="pointer-events-auto flex max-w-2xl items-center gap-3 rounded-lg border border-intel/40 bg-bg-panel/95 px-4 py-2 shadow-lg backdrop-blur"
+      >
+        <span className="text-center text-sm font-semibold text-intel">{label}</span>
         {demoRunning && (
           <button
             type="button"
-            onClick={skipDemo}
-            className="text-xs text-text-muted hover:text-text-primary"
+            onClick={judgeTourRunning ? stopJudgeTour : skipDemo}
+            className="shrink-0 text-xs text-text-muted hover:text-text-primary"
           >
-            Skip
+            {judgeTourRunning ? 'Stop tour' : 'Skip'}
           </button>
         )}
       </div>

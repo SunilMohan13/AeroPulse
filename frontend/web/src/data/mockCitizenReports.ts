@@ -1,4 +1,5 @@
 import type { CitizenReport } from '../types'
+import { HERO_EVENT_ID } from './mockEvents'
 
 export const mockCitizenReports: CitizenReport[] = [
   {
@@ -48,6 +49,7 @@ export const mockCitizenReports: CitizenReport[] = [
     classification: 'Haze / pollution',
     corroboration: 2,
     status: 'CORROBORATED',
+    relatedEventId: HERO_EVENT_ID,
   },
   {
     id: 'cr_5',
@@ -60,5 +62,6 @@ export const mockCitizenReports: CitizenReport[] = [
     classification: 'Smoke / fire-related',
     corroboration: 3,
     status: 'CORROBORATED',
+    relatedEventId: HERO_EVENT_ID,
   },
 ]

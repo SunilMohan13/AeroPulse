@@ -17,8 +17,103 @@ import {
   type NamedLocation,
 } from '../../utils/geo'
 import { hashNoise } from '../../utils/seededRandom'
+import type { OrbitalPoint } from './orbitalDecor'
 
 const COLOR_TRANSITION = 700
+
+/** Cyan shell visible in globe command view — decorative, not real TLE tracks. */
+export function createOrbitalShellHaloLayer(
+  points: OrbitalPoint[],
+  visible: boolean,
+  time: number,
+) {
+  if (!visible || points.length === 0) return null
+  const twinkle = 0.5 + Math.sin(time * 0.9) * 0.08
+  return new ScatterplotLayer<OrbitalPoint>({
+    id: 'orbital-shell-halo',
+    data: points,
+    pickable: false,
+    radiusUnits: 'pixels',
+    getPosition: (d) => [d.lon, d.lat],
+    getRadius: (d) => 2.8 + (d.band % 4) * 0.6,
+    getFillColor: (d) => {
+      const a = Math.round((28 + d.band * 6) * twinkle)
+      return d.band % 2 === 0 ? [34, 211, 238, a] : [74, 222, 128, Math.round(a * 0.85)]
+    },
+    radiusMinPixels: 1.5,
+    radiusMaxPixels: 5,
+    updateTriggers: { getFillColor: [time] },
+  })
+}
+
+export function createOrbitalShellLayer(points: OrbitalPoint[], visible: boolean, time: number) {
+  if (!visible || points.length === 0) return null
+  const twinkle = 0.72 + Math.sin(time * 1.4) * 0.14
+  return new ScatterplotLayer<OrbitalPoint>({
+    id: 'orbital-shell',
+    data: points,
+    pickable: false,
+    radiusUnits: 'pixels',
+    getPosition: (d) => [d.lon, d.lat],
+    getRadius: (d) => 1.4 + (d.band % 3) * 0.45,
+    getFillColor: (d) => {
+      const a = Math.round((70 + d.band * 14) * twinkle)
+      return d.band % 2 === 0 ? [34, 211, 238, a] : [74, 222, 128, Math.round(a * 0.8)]
+    },
+    radiusMinPixels: 1,
+    radiusMaxPixels: 3.5,
+    updateTriggers: { getFillColor: [time] },
+  })
+}
+
+/** Great-circle style arcs from the fire source toward exposed metros. */
+export function createGlobeArcLayer(
+  arcs: { path: [number, number][]; id: string }[],
+  visible: boolean,
+  pulse: number,
+) {
+  if (!visible || arcs.length === 0) return null
+  const glow = 0.55 + Math.sin(pulse) * 0.15
+  return new PathLayer<{ path: [number, number][]; id: string }>({
+    id: 'globe-arcs',
+    data: arcs,
+    pickable: false,
+    getPath: (d) => d.path,
+    getColor: [56, 189, 248, Math.round(95 * glow)],
+    getWidth: 1.4,
+    widthUnits: 'pixels',
+    widthMinPixels: 1,
+    capRounded: true,
+    updateTriggers: { getColor: [pulse] },
+  })
+}
+
+/** Pulsing nodes at CPCB-scale monitoring cities for the world-scale view. */
+export function createMonitoringNodesLayer(
+  places: NamedLocation[],
+  visible: boolean,
+  pulse: number,
+) {
+  if (!visible) return null
+  const breathe = 1 + Math.sin(pulse) * 0.1
+  return new ScatterplotLayer<NamedLocation>({
+    id: 'monitoring-nodes',
+    data: places,
+    pickable: false,
+    stroked: true,
+    filled: true,
+    getPosition: (d) => [d.lon, d.lat],
+    getRadius: 5 * breathe,
+    radiusUnits: 'pixels',
+    getFillColor: [34, 211, 238, 200],
+    getLineColor: [15, 23, 42, 230],
+    lineWidthUnits: 'pixels',
+    getLineWidth: 1.2,
+    radiusMinPixels: 4,
+    radiusMaxPixels: 10,
+    updateTriggers: { getRadius: [pulse] },
+  })
+}
 
 export function createPollutionLayer(
   data: GridCell[],
@@ -47,6 +142,24 @@ export function createPollutionLayer(
  * Transported smoke drawn as its own translucent field above the pollution
  * ramp, so the fire-to-Delhi ribbon is legible as a distinct phenomenon.
  */
+export function createBaselinePlumeLayer(data: GridCell[], visible: boolean) {
+  if (!visible) return null
+  const smoke = data.filter((c) => c.plume > 3)
+  return new PolygonLayer<GridCell>({
+    id: 'baseline-plume',
+    data: smoke,
+    pickable: false,
+    stroked: false,
+    filled: true,
+    getPolygon: (d) => cellPolygonDeg(d.lat, d.lon, d.stepDeg),
+    getFillColor: (d) => {
+      const a = Math.min(Math.round(d.plume * 0.85), 72)
+      return [148, 163, 184, a]
+    },
+    updateTriggers: { getFillColor: [smoke.length] },
+  })
+}
+
 export function createPlumeLayer(data: GridCell[], visible: boolean) {
   if (!visible) return null
   const smoke = data.filter((c) => c.plume > 3)
@@ -135,10 +248,11 @@ export function createSmokeParticleLayer(
   visible: boolean,
   time: number,
   horizonHours: number,
+  transportBearingDeg = TRANSPORT_BEARING_DEG,
 ) {
   if (!visible || fires.length === 0) return null
 
-  const theta = (TRANSPORT_BEARING_DEG * Math.PI) / 180
+  const theta = (transportBearingDeg * Math.PI) / 180
   const eastward = Math.sin(theta)
   const northward = Math.cos(theta)
   const travelKm = WIND_SPEED_KMH * Math.max(horizonHours, 8)
@@ -361,5 +475,37 @@ export function createTransportAxisLayer(
     getWidth: 1,
     widthUnits: 'pixels',
     widthMinPixels: 1,
+  })
+}
+
+export function createGrapZoneLayer(ring: [number, number][], visible: boolean) {
+  if (!visible) return null
+  return new PolygonLayer<{ polygon: [number, number][] }>({
+    id: 'grap-zone',
+    data: [{ polygon: ring }],
+    pickable: false,
+    stroked: true,
+    filled: true,
+    getPolygon: (d) => d.polygon,
+    getFillColor: [139, 92, 246, 28],
+    getLineColor: [167, 139, 250, 160],
+    getLineWidth: 2,
+    lineWidthUnits: 'pixels',
+  })
+}
+
+export function createExposureRibbonLayer(path: [number, number][], visible: boolean) {
+  if (!visible || path.length < 2) return null
+  return new PathLayer<{ path: [number, number][] }>({
+    id: 'exposure-ribbon',
+    data: [{ path }],
+    pickable: false,
+    getPath: (d) => d.path,
+    getColor: [251, 191, 36, 200],
+    getWidth: 8,
+    widthUnits: 'pixels',
+    widthMinPixels: 3,
+    capRounded: true,
+    jointRounded: true,
   })
 }

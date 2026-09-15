@@ -26,11 +26,13 @@ export const mockObservedHistory: { hour: number; pm25: number }[] = [
 export function getForecastSeries(): ForecastPoint[] {
   const hours = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
   const values = [185, 192, 198, 205, 212, 218, 230, 238, 246, 255, 260, 252, 245]
+  const persistence = values[0]
   return hours.map((h, i) => ({
     hour: h,
     timestamp: new Date(new Date(base).getTime() + h * 3600000).toISOString(),
     pm25: values[i],
     confidenceLow: values[i] - 15,
     confidenceHigh: values[i] + 18,
+    baselinePm25: persistence,
   }))
 }

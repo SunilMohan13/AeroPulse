@@ -72,6 +72,7 @@ function buildCell(
   step: number,
   hourOffset: number,
   intensity: number,
+  transportBearingDeg: number,
 ): GridCell {
   const lat = i * step
   const lon = j * step
@@ -96,7 +97,7 @@ function buildCell(
         lon,
         PUNJAB_FIRE_CENTER.lat,
         PUNJAB_FIRE_CENTER.lon,
-        TRANSPORT_BEARING_DEG,
+        transportBearingDeg,
         150 * intensity,
         elapsed * frac,
       ),
@@ -142,6 +143,7 @@ export function getGridAt(
   hourOffset = 0,
   intensity = 1,
   bounds: GridBounds = CORRIDOR_BOUNDS,
+  transportBearingDeg = TRANSPORT_BEARING_DEG,
 ): GridCell[] {
   const west = Math.max(bounds.west, CORRIDOR_BOUNDS.west)
   const east = Math.min(bounds.east, CORRIDOR_BOUNDS.east)
@@ -159,7 +161,7 @@ export function getGridAt(
 
   for (let i = iStart; i <= iEnd; i++) {
     for (let j = jStart; j <= jEnd; j++) {
-      cells.push(buildCell(i, j, step, hourOffset, intensity))
+      cells.push(buildCell(i, j, step, hourOffset, intensity, transportBearingDeg))
     }
   }
   return cells

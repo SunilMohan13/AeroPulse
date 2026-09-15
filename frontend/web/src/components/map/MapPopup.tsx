@@ -1,11 +1,13 @@
-import { Link } from 'react-router-dom'
-import { X } from 'lucide-react'
+import { Link, useNavigate } from 'react-router-dom'
+import { X, Bot } from 'lucide-react'
 import type { GridCell, FireObservation } from '../../types'
 import { ScientificBadge } from '../common/Badge'
 import { formatNumber, formatTimeIST } from '../../utils/format'
 import { getBandLabel } from '../../utils/aqi'
 import { distanceKm } from '../../utils/geo'
 import { HERO_EVENT_ID } from '../../data/mockEvents'
+import { copilotQuestionForCell, evidenceForCell } from './mapCellEvidence'
+import { useApp } from '../../context/AppContext'
 
 function Row({ label, value }: { label: string; value: string }) {
   return (
@@ -20,22 +22,35 @@ export function MapPopup({
   cell,
   fire,
   fires = [],
+  hourOffset = 0,
   onClose,
 }: {
   cell: GridCell | null
   fire: FireObservation | null
   fires?: FireObservation[]
+  hourOffset?: number
   onClose: () => void
 }) {
+  const navigate = useNavigate()
+  const { setPendingCopilotQuestion } = useApp()
   const nearbyFires = fire
     ? fires.filter((f) => f.id !== fire.id && distanceKm(fire.lat, fire.lon, f.lat, f.lon) < 25)
         .length
     : 0
 
+  const cellEvidence = cell ? evidenceForCell(cell, hourOffset) : []
+
+  const askCopilot = () => {
+    if (!cell) return
+    setPendingCopilotQuestion(copilotQuestionForCell(cell))
+    navigate('/copilot')
+    onClose()
+  }
+
   return (
-    <div className="absolute right-4 top-4 z-20 w-64 rounded-lg border border-border bg-bg-panel/95 p-4 shadow-xl backdrop-blur">
+    <div className="absolute right-4 top-4 z-20 w-72 rounded-lg border border-cyan-500/25 bg-bg-panel/95 p-4 shadow-xl backdrop-blur">
       <div className="mb-3 flex items-start justify-between">
-        <h3 className="font-semibold">{fire ? 'Fire Detected' : 'Grid Cell'}</h3>
+        <h3 className="font-semibold">{fire ? 'Fire Detected' : 'Grid intelligence'}</h3>
         <button
           type="button"
           onClick={onClose}
@@ -69,17 +84,41 @@ export function MapPopup({
       )}
 
       {cell && (
-        <div className="space-y-2 text-sm">
+        <div className="space-y-3 text-sm">
           <ScientificBadge label="OBSERVED" />
           <Row label="PM2.5" value={`${cell.pm25} µg/m³`} />
-          <Row label="PM10" value={`${cell.pm10} µg/m³`} />
-          <Row label="NO₂" value={`${cell.no2} ppb`} />
           <Row label="AQI" value={`${cell.aqi} · ${getBandLabel(cell.pm25)}`} />
           <Row label="Population" value={formatNumber(cell.population)} />
           <div className="flex justify-between gap-4">
             <span className="text-text-secondary">Risk</span>
             <span className="font-medium">{cell.risk}</span>
           </div>
+
+          <div className="rounded-md border border-border/70 bg-black/20 p-2">
+            <p className="text-[10px] uppercase tracking-wider text-text-muted">Fused evidence</p>
+            <ul className="mt-1.5 space-y-1.5">
+              {cellEvidence.slice(0, 4).map((line) => (
+                <li key={line.source} className="text-[11px] leading-snug">
+                  <span className="text-cyan-300/90">{line.source}</span>
+                  <span className="text-text-muted"> · {line.label}</span>
+                  <p className="text-text-secondary">{line.text}</p>
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          <p className="text-[10px] text-text-muted">
+            Sensitive groups: limit prolonged outdoor exertion when band is Poor or worse.
+          </p>
+
+          <button
+            type="button"
+            onClick={askCopilot}
+            className="flex w-full items-center justify-center gap-2 rounded-md bg-intel/20 py-2 text-xs font-medium text-intel hover:bg-intel/30"
+          >
+            <Bot size={14} />
+            Explain this cell (Copilot)
+          </button>
         </div>
       )}
     </div>

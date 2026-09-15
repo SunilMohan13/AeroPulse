@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { Card, CardBody, CardHeader } from '../components/common/Card'
 import { StatusBadge, ScientificBadge } from '../components/common/Badge'
@@ -7,10 +8,18 @@ import { CitizenReportMap } from '../components/map/CitizenReportMap'
 import type { CitizenReport } from '../types'
 
 export function CitizenReports() {
+  const [searchParams] = useSearchParams()
+  const highlightId = searchParams.get('highlight')
   const { data } = useQuery({ queryKey: ['citizenStats'], queryFn: fetchCitizenStats })
   const [selected, setSelected] = useState<CitizenReport | null>(null)
 
   const reports = data?.reports ?? []
+
+  useEffect(() => {
+    if (!highlightId || reports.length === 0) return
+    const match = reports.find((r) => r.id === highlightId)
+    if (match) setSelected(match)
+  }, [highlightId, reports])
 
   return (
     <div className="space-y-4 p-4">
@@ -65,8 +74,8 @@ export function CitizenReports() {
                 type="button"
                 onClick={() => setSelected(r)}
                 className={`w-full rounded-md border p-3 text-left transition-colors ${
-                  selected?.id === r.id
-                    ? 'border-intel/40 bg-intel/5'
+                  selected?.id === r.id || r.id === highlightId
+                    ? 'border-intel/40 bg-intel/5 ring-1 ring-intel/30'
                     : 'border-border hover:bg-bg-elevated'
                 }`}
               >
@@ -119,6 +128,11 @@ export function CitizenReports() {
                     {selected.status}
                   </StatusBadge>
                 </div>
+                {selected.relatedEventId && (
+                  <p className="text-xs text-intel">
+                    Linked event {selected.relatedEventId} · corroboration only
+                  </p>
+                )}
                 <p className="text-xs text-text-muted">
                   Citizen reports corroborate events; a single photo alone does not create high-severity alerts.
                 </p>
