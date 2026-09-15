@@ -69,7 +69,6 @@ def _checkpoint_repository() -> Any | None:
         return None
     try:
         import psycopg
-
         from aeropulse_worker.db import TimescaleRepository
 
         return TimescaleRepository(psycopg.connect(settings.database_url))
