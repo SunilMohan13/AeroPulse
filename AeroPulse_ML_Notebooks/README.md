@@ -1,5 +1,32 @@
 # AeroPulse ML Notebooks
 
+## Verified saved execution state (2026-09-13)
+
+This repository was audited by reading notebook JSON and saved cell outputs only; no notebook cells
+were executed during the audit.
+
+| Track | Code cells | Executed | Saved outputs | Saved errors |
+|---|---:|---:|---:|---:|
+| PM2.5 estimator | 121 | 116 | 116 | 0 |
+| Anomaly detector | 88 | 87 | 87 | 0 |
+| Propagation forecast | 87 | 87 | 85 | 0 |
+| Source likelihood | 79 | 79 | 79 | 0 |
+| **Total** | **375** | **369** | **367** | **0** |
+
+The external canonical dataset is physically present under `$PM25_DATA_ROOT/data/pm25/processed`:
+1,705,252 rows, 149 stations, four seasons, 100% weather coverage, a 42.7 MB base Parquet, and a
+256.2 MB event-aware Parquet. All manifest quality gates pass.
+
+Six code cells have no execution count. They are confined to acquisition/optional audit branches
+in PM2.5 notebooks 01, 03, 04 and anomaly notebook 01; downstream modelling notebooks otherwise
+carry saved outputs and no saved error tracebacks.
+
+**Important boundary:** saved notebook outputs prove prior research execution, but the notebook
+track artifact directories currently contain no physical model bundles. Do not promote or serve a
+notebook model from metrics embedded in a notebook alone. Packaging must first export the bundle,
+manifest, feature schema, dataset fingerprint and gate status into the runtime registry, initially
+as `VALIDATION`/`SHADOW`.
+
 Research notebooks for the four AeroPulse model families. Each folder is a Parquet
 pipeline — acquisition or import, then feature engineering, then models — and the
 numbered notebooks inside a folder are meant to be run in order.

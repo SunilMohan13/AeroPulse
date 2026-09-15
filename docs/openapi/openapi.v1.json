@@ -528,6 +528,18 @@
             "description": "min_lon,min_lat,max_lon,max_lat"
           },
           {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 2000,
+              "minimum": 1,
+              "default": 500,
+              "title": "Limit"
+            }
+          },
+          {
             "name": "authorization",
             "in": "header",
             "required": false,
@@ -598,6 +610,18 @@
                 }
               ],
               "title": "Bbox"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 2000,
+              "minimum": 1,
+              "default": 500,
+              "title": "Limit"
             }
           },
           {
@@ -674,6 +698,18 @@
             }
           },
           {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 2000,
+              "minimum": 1,
+              "default": 500,
+              "title": "Limit"
+            }
+          },
+          {
             "name": "authorization",
             "in": "header",
             "required": false,
@@ -722,7 +758,7 @@
           "map"
         ],
         "summary": "Satellite",
-        "description": "Return fixture satellite product footprints (metadata only, not AOD-as-PM2.5).",
+        "description": "Return latest persisted satellite/raster metadata footprints.",
         "operationId": "satellite_api_v1_map_satellite_get",
         "security": [
           {
@@ -730,6 +766,18 @@
           }
         ],
         "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 2000,
+              "minimum": 1,
+              "default": 500,
+              "title": "Limit"
+            }
+          },
           {
             "name": "authorization",
             "in": "header",
@@ -779,7 +827,7 @@
           "map"
         ],
         "summary": "Forecast",
-        "description": "Return advection forecast points as GeoJSON.",
+        "description": "Return latest persisted advection forecast points as GeoJSON.",
         "operationId": "forecast_api_v1_map_forecast_get",
         "security": [
           {
@@ -787,6 +835,18 @@
           }
         ],
         "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 2000,
+              "minimum": 1,
+              "default": 500,
+              "title": "Limit"
+            }
+          },
           {
             "name": "authorization",
             "in": "header",
@@ -836,7 +896,7 @@
           "map"
         ],
         "summary": "Grid",
-        "description": "Grid polygons are materialized in a later story. Empty collection.",
+        "description": "Return latest persisted H3 grid cells as GeoJSON polygons.",
         "operationId": "grid_api_v1_map_grid_get",
         "security": [
           {
@@ -844,6 +904,18 @@
           }
         ],
         "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 2000,
+              "minimum": 1,
+              "default": 500,
+              "title": "Limit"
+            }
+          },
           {
             "name": "authorization",
             "in": "header",
@@ -893,7 +965,7 @@
           "events"
         ],
         "summary": "List Events",
-        "description": "List pollution events from the in-process store, newest-updated first.",
+        "description": "List pollution events from the configured read repository.",
         "operationId": "list_events_api_v1_events_get",
         "security": [
           {
@@ -1240,6 +1312,593 @@
                   "type": "object",
                   "additionalProperties": true,
                   "title": "Response Get Graph Api V1 Events  Event Id  Graph Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/grid-features": {
+      "get": {
+        "tags": [
+          "grid-intelligence"
+        ],
+        "summary": "List Grid Features",
+        "description": "List persisted grid-hour feature vectors, newest first.",
+        "operationId": "list_grid_features_api_v1_grid_features_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "grid_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Grid Id"
+            }
+          },
+          {
+            "name": "start",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Start"
+            }
+          },
+          {
+            "name": "end",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "End"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 500,
+              "minimum": 1,
+              "default": 100,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response List Grid Features Api V1 Grid Features Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/grid-features/{grid_id}/latest": {
+      "get": {
+        "tags": [
+          "grid-intelligence"
+        ],
+        "summary": "Latest Grid Feature",
+        "description": "Return the latest persisted feature vector for one grid cell.",
+        "operationId": "latest_grid_feature_api_v1_grid_features__grid_id__latest_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "grid_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Grid Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Latest Grid Feature Api V1 Grid Features  Grid Id  Latest Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/grid-predictions": {
+      "get": {
+        "tags": [
+          "grid-intelligence"
+        ],
+        "summary": "List Grid Predictions",
+        "description": "List persisted grid predictions, newest first.",
+        "operationId": "list_grid_predictions_api_v1_grid_predictions_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "grid_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Grid Id"
+            }
+          },
+          {
+            "name": "model_version",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Model Version"
+            }
+          },
+          {
+            "name": "start",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Start"
+            }
+          },
+          {
+            "name": "end",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "End"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 500,
+              "minimum": 1,
+              "default": 100,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response List Grid Predictions Api V1 Grid Predictions Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/grid-predictions/{grid_id}/latest": {
+      "get": {
+        "tags": [
+          "grid-intelligence"
+        ],
+        "summary": "Latest Grid Prediction",
+        "description": "Return the latest persisted prediction for one grid cell.",
+        "operationId": "latest_grid_prediction_api_v1_grid_predictions__grid_id__latest_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "grid_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Grid Id"
+            }
+          },
+          {
+            "name": "model_version",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Model Version"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Latest Grid Prediction Api V1 Grid Predictions  Grid Id  Latest Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/drift": {
+      "get": {
+        "tags": [
+          "drift"
+        ],
+        "summary": "Get Drift",
+        "description": "Compare non-overlapping reference/current distributions using PSI and KS.",
+        "operationId": "get_drift_api_v1_drift_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "reference_start",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date-time",
+              "title": "Reference Start"
+            }
+          },
+          {
+            "name": "reference_end",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date-time",
+              "title": "Reference End"
+            }
+          },
+          {
+            "name": "current_start",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date-time",
+              "title": "Current Start"
+            }
+          },
+          {
+            "name": "current_end",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date-time",
+              "title": "Current End"
+            }
+          },
+          {
+            "name": "signal",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "prediction.pm25_estimate",
+              "title": "Signal"
+            }
+          },
+          {
+            "name": "grid_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Grid Id"
+            }
+          },
+          {
+            "name": "model_version",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Model Version"
+            }
+          },
+          {
+            "name": "min_samples",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 1000,
+              "minimum": 10,
+              "default": 30,
+              "title": "Min Samples"
+            }
+          },
+          {
+            "name": "max_samples",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100000,
+              "minimum": 100,
+              "default": 10000,
+              "title": "Max Samples"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Get Drift Api V1 Drift Get"
                 }
               }
             }
@@ -1825,7 +2484,7 @@
           "models"
         ],
         "summary": "List Models",
-        "description": "List production model versions used by detection and forecast.",
+        "description": "List serving baselines and all filesystem-registered trained models.",
         "operationId": "list_models_api_v1_models_get",
         "security": [
           {
@@ -2125,6 +2784,14 @@
     {
       "name": "events",
       "description": "Pollution events, evidence, forecast, lineage"
+    },
+    {
+      "name": "grid-intelligence",
+      "description": "Persisted grid features and predictions"
+    },
+    {
+      "name": "drift",
+      "description": "Feature and prediction distribution drift"
     },
     {
       "name": "copilot",

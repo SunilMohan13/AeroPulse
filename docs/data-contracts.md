@@ -7,7 +7,7 @@ All Kafka and HTTP scientific payloads are versioned Pydantic models (`extra=for
 | `observation.v1` | `aeropulse_contracts.Observation` | AQ |
 | `fire_observation.v1` | `FireObservation` | FIRMS |
 | `meteo.v1` | `MeteorologicalObservation` | IMD |
-| `raster.v1` | `RasterObservation` | metadata only |
+| `raster.v1` | `RasterObservation` | Metadata persisted in TimescaleDB; large arrays remain in object storage |
 | `envelope.v1` | `KafkaEnvelope` | `LIVE` / `BACKFILL` |
 | `grid-features.v1` | `GridFeature` | explicit null satellite fields |
 | `anomaly.v1` | `AnomalyResult` | |

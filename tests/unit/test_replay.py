@@ -62,6 +62,35 @@ def test_replay_all_disables_source_via_config(tmp_path: Path) -> None:
     assert counts["cpcb"] == 8
 
 
+def test_replay_all_updates_checkpoint_cursor(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[tuple[str, str]] = []
+
+    class FakeRepo:
+        def get_checkpoint(self, source_id: str) -> str | None:
+            return "2" if source_id == "cpcb" else None
+
+        def upsert_checkpoint(self, source_id: str, cursor: str) -> None:
+            calls.append((source_id, cursor))
+
+    monkeypatch.setattr("aeropulse_connector_app.runner._checkpoint_repository", lambda: FakeRepo())
+
+    def fake_replay_cpcb(fixtures_root: Path, request, publish, mode):
+        assert request.cursor == "2"
+        return 3
+
+    monkeypatch.setattr("aeropulse_connector_app.runner._replay_cpcb", fake_replay_cpcb)
+    monkeypatch.setattr(
+        "aeropulse_connector_app.runner._run_connector",
+        lambda connector, request, publish, topic, mode: 0,
+    )
+
+    counts = replay_all(Path("fixtures"), lambda topic, env: None)
+
+    assert counts["cpcb"] == 3
+    assert ("cpcb", "5") in calls
+    assert calls[0] == ("cpcb", "5")
+
+
 @pytest.mark.parametrize("bad_content", ["not: a: list", "sources: not-a-list"])
 def test_replay_all_falls_back_when_config_malformed(tmp_path: Path, bad_content: str) -> None:
     config = tmp_path / "sources.yaml"

@@ -43,6 +43,40 @@ PRODUCTS_JSON = "products.json"
 ASSETS_JSON = "assets.json"
 DEFAULT_SOURCES_CONFIG = Path("config/sources.yaml")
 
+
+def _decode_cursor(cursor: str | None) -> int:
+    """Return a non-negative integer offset for a checkpoint cursor."""
+    if cursor in (None, ""):
+        return 0
+    try:
+        value = int(cursor)
+    except (TypeError, ValueError):
+        return 0
+    return max(0, value)
+
+
+def _next_cursor(cursor: str | None, records_emitted: int) -> str:
+    """Advance the checkpoint by the number of records processed."""
+    return str(_decode_cursor(cursor) + max(0, records_emitted))
+
+
+def _checkpoint_repository() -> Any | None:
+    """Return the Timescale-backed checkpoint repository when the DB is configured."""
+    from aeropulse_common.settings import get_settings
+
+    settings = get_settings()
+    if not settings.database_url:
+        return None
+    try:
+        import psycopg
+
+        from aeropulse_worker.db import TimescaleRepository
+
+        return TimescaleRepository(psycopg.connect(settings.database_url))
+    except Exception:
+        logger.warning("connector.checkpoint.unavailable")
+        return None
+
 _RASTER_JOBS: list[tuple[str, Any, str]] = [
     ("sentinel5p", Sentinel5PConnector, f"sentinel5p/{PRODUCTS_JSON}"),
     ("modis", ModisConnector, f"modis/{PRODUCTS_JSON}"),
@@ -96,15 +130,21 @@ def replay_all(
         Counts of published observations per source (skipped sources read 0).
     """
     enabled = _enabled_source_ids(sources_config)
-    request = FetchRequest(processing_mode=processing_mode.value)
+    repo = _checkpoint_repository()
     counts = dict.fromkeys(
         ["cpcb", "firms", "imd", *[key for key, _, _ in _RASTER_JOBS]],
         0,
     )
 
     if enabled is None or "cpcb" in enabled:
+        cursor = repo.get_checkpoint("cpcb") if repo is not None else None
+        request = FetchRequest(processing_mode=processing_mode.value, cursor=cursor)
         counts["cpcb"] = _replay_cpcb(fixtures_root, request, publish, processing_mode)
+        if repo is not None:
+            repo.upsert_checkpoint("cpcb", _next_cursor(cursor, counts["cpcb"]))
     if enabled is None or "firms" in enabled:
+        cursor = repo.get_checkpoint("firms") if repo is not None else None
+        request = FetchRequest(processing_mode=processing_mode.value, cursor=cursor)
         counts["firms"] = _run_connector(
             FirmsConnector(fixtures_root / "firms" / "fires.json"),
             request,
@@ -112,7 +152,11 @@ def replay_all(
             OBSERVATION_FIRE,
             processing_mode,
         )
+        if repo is not None:
+            repo.upsert_checkpoint("firms", _next_cursor(cursor, counts["firms"]))
     if enabled is None or "imd" in enabled:
+        cursor = repo.get_checkpoint("imd") if repo is not None else None
+        request = FetchRequest(processing_mode=processing_mode.value, cursor=cursor)
         counts["imd"] = _run_connector(
             ImdConnector(fixtures_root / "imd" / "weather.json"),
             request,
@@ -120,9 +164,13 @@ def replay_all(
             OBSERVATION_WEATHER,
             processing_mode,
         )
+        if repo is not None:
+            repo.upsert_checkpoint("imd", _next_cursor(cursor, counts["imd"]))
     for key, cls, rel in _RASTER_JOBS:
         if enabled is not None and key not in enabled:
             continue
+        cursor = repo.get_checkpoint(key) if repo is not None else None
+        request = FetchRequest(processing_mode=processing_mode.value, cursor=cursor)
         counts[key] = _run_connector(
             cls(fixtures_root / rel),
             request,
@@ -130,6 +178,8 @@ def replay_all(
             OBSERVATION_RASTER,
             processing_mode,
         )
+        if repo is not None:
+            repo.upsert_checkpoint(key, _next_cursor(cursor, counts[key]))
 
     logger.info("connector.replay.completed", **counts)
     return counts

@@ -25,7 +25,9 @@ frontend/web/node_modules/
 frontend/web/dist/
 
 # OS / IDE
+**/.DS_Store
 .DS_Store
+**/._*
 .idea/
 .vscode/
 *.swp
@@ -72,6 +74,7 @@ graphify-out/
 *.pkl
 *.pickle
 *.parquet
+**/*.parquet
 *.feather
 *.npy
 *.npz

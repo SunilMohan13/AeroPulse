@@ -113,7 +113,9 @@ def _handle(
         elif topic == OBSERVATION_RASTER:
             raster = RasterObservation.model_validate(payload)
             snapshot_repo.add_raster(raster)
-            result = {"status": "persisted", "grid_id": None}
+            writer = getattr(persist, "upsert_raster", None)
+            inserted = writer(raster) if writer is not None else True
+            result = {"status": "persisted" if inserted else "duplicate", "grid_id": None}
         else:
             obs_w = MeteorologicalObservation.model_validate(payload)
             result = process_weather(obs_w, persist)

@@ -8,6 +8,7 @@ from pathlib import Path
 
 from aeropulse_common.ids import new_ulid
 from aeropulse_connector_sdk.base import DataConnector
+from aeropulse_connector_sdk.checkpoint import apply_cursor
 from aeropulse_connector_sdk.contracts import (
     ConnectorMetadata,
     FetchRequest,
@@ -51,7 +52,7 @@ class FirmsConnector(DataConnector):
             return
         payload = load_fixture(self.fixture_path)
         fetched_at = datetime.now(UTC)
-        for idx, fire in enumerate(payload.get("fires", [])):
+        for idx, fire in enumerate(apply_cursor(payload.get("fires", []), request.cursor)):
             yield RawRecord(
                 source_id="firms",
                 source_record_id=str(fire.get("id", f"fire_{idx}")),

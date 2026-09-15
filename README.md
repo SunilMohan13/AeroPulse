@@ -47,6 +47,8 @@ Run the API locally:
 uv run aeropulse-api
 # GET http://127.0.0.1:8000/health
 # GET http://127.0.0.1:8000/api/v1/sources  (Bearer token)
+# GET http://127.0.0.1:8000/api/v1/grid-features?limit=100  (Bearer token, DB required)
+# GET http://127.0.0.1:8000/api/v1/grid-predictions?limit=100  (Bearer token, DB required)
 ```
 
 Replay connectors (no network, no secrets):
@@ -70,11 +72,14 @@ Published on localhost only:
 | MinIO console | <http://127.0.0.1:9001> |
 | Redis | `127.0.0.1:6380` (mapped off the default 6379 to avoid host conflicts) |
 
+The API exposes Prometheus text metrics at `GET /metrics` (request counts, latency histogram, and
+in-flight requests). Route labels use FastAPI templates rather than concrete IDs.
+
 Optional connector profile: `--profile connectors`.
 
 Verified 2026-09-09: all 7 services (`timescaledb`, `redpanda`, `redis`, `minio`, `api`, `worker`,
-`web`) come up healthy from a clean `up --build`. `connector` is a one-shot replay job — it exits 0
-after each cycle and `restart: unless-stopped` relaunches it; that is expected, not a crash. See
+`web`) come up healthy from a clean `up --build`. `connector` is a one-shot replay job: it runs one
+cycle and exits 0 with `restart: "no"`, preventing repeated fixture ingestion. See
 `docs/AeroPulse_Production_Readiness.md` for the container fixes that made this true.
 
 ## Adding a source
@@ -121,9 +126,11 @@ behaviour — see `docs/AeroPulse_ML_Architecture.md` for every metric and cavea
 Live satellite HTTP (Sentinel-5P/MODIS/CAMS are **replay fixtures**), MLflow, live LLM Copilot,
 citizen CV models, ArangoDB client, SigNoz, OIDC, Kubernetes. CAMS blend is optional `cams_applied`.
 
-**Known not working:** the API reads a process-local store, not the database the worker writes to, so
-`/api/v1/events` is empty under Compose; and the frontend uses mock data and never calls the API.
-Both are scoped in `docs/AeroPulse_Production_Readiness.md`.
+**Known not working:** the frontend uses mock data and never calls the API. Event, evidence,
+forecast, graph, grid-feature, grid-prediction, and model-catalog APIs now read persisted/runtime
+state. Operational air-quality, fire, weather, forecast, and H3 grid map layers are database-backed;
+satellite/raster metadata is persisted and served as product footprints. Live satellite HTTP is
+still deferred; current raster rows come from replay connectors. See `docs/AeroPulse_Production_Readiness.md`.
 
 Docs: `docs/architecture.md`, `docs/api.md`, `docs/openapi/openapi.v1.json`, and the six review
 documents under `docs/AeroPulse_*.md`.

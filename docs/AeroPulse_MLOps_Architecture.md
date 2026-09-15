@@ -107,7 +107,7 @@ LLD §20 advises against a heavyweight feature-store product for the MVP. Curren
 | Layer | LLD §20 | Implemented |
 |---|---|---|
 | Offline | Parquet + object storage | `save_parquet()`; **falls back to CSV without pyarrow** (`data/training/grid_features.csv`) |
-| Historical queries | TimescaleDB | **Not wired** — `grid_feature` hypertable exists, nothing writes to it |
+| Historical queries | TimescaleDB | `grid_feature`/`grid_prediction` are written and exposed through authenticated list/latest APIs (2026-09-14); drift jobs remain open |
 | Hot features | Redis | **Not wired** — Redis is in compose and in deps, never instantiated |
 | Feature metadata | TimescaleDB | Written alongside the dataset as `*_metadata.json` |
 
@@ -158,7 +158,7 @@ Artifacts are memoised per process, so champion loading does not dominate infere
 
 | Gap | LLD | Severity |
 |---|---|---|
-| No drift monitoring (feature/prediction/error drift, PSI/KS) | §46 | P1 |
+| Drift monitoring is on-demand only: feature/prediction PSI+KS exist, but no scheduler/alerts or delayed-label error drift | §46 | P1 |
 | Features and predictions never persisted, so no offline/online consistency check and no post-hoc error tracking once labels arrive | §13, §20 | P1 |
 | No model-metadata table in SQL; the registry is a JSON index, not queryable alongside predictions | §13 | P2 |
 | Artifacts local-only; MinIO writes silently no-op without credentials | §11 | P2 |
@@ -166,4 +166,17 @@ Artifacts are memoised per process, so champion loading does not dominate infere
 | No ML job in CI; nothing retrains or re-validates automatically | §46 | P2 |
 | No automated retraining trigger | §46 | P3 |
 
-The highest-value next step is persisting `grid_feature` and `grid_prediction`. It unblocks the feature store, the API read path, post-hoc error measurement once ground truth arrives, and drift detection — four gaps from one change.
+`grid_feature`/`grid_prediction` persistence and the event API read path are implemented as of
+2026-09-14. The highest-value next MLOps step is shadow inference telemetry: compare registered
+challengers against the deterministic primary without changing served output, then feed those
+measurements into promotion gates and drift monitoring.
+
+On-demand distribution monitoring is available at `/api/v1/drift` for whitelisted persisted
+feature/prediction signals. It uses PSI bands (0.10 warning, 0.25 drift), sample-size-aware KS, and
+returns `INSUFFICIENT_DATA` when either window is too small. Error drift remains blocked on delayed
+ground-truth labels; the endpoint must not be presented as model-quality monitoring by itself.
+
+The API also exposes Prometheus request counts, latency histograms and in-flight requests at
+`/metrics`, using route templates to prevent ID-driven label cardinality. This measures the HTTP
+serving boundary, not ML inference quality; worker/connector/ML metrics and collector-based alerting
+remain required.

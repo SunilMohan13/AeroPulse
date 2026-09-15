@@ -3,6 +3,108 @@
 **Date:** 2026-09-08 (Docker/wiring fixes added 2026-09-09)
 **Verdict: not production ready.** Suitable for a technical demonstration of the ML pipeline via the CLI. Not suitable for operational air-quality decisions.
 
+### 2026-09-13 ML notebook and registry update
+
+- Read-only audit found 369/375 notebook code cells executed, 367 with saved outputs, and zero saved
+  errors. The 1.7M-row canonical dataset and 256 MB event-aware dataset physically exist outside
+  the repository and pass their manifest gates.
+- No notebook-track model bundle is physically present. Saved output metrics therefore remain
+  research evidence; they are not loadable serving candidates.
+- `GET /api/v1/models` now exposes both deterministic serving baselines and filesystem-registry
+  records with truthful lifecycle stage, runtime role and artifact availability. This closes the
+  two-registry visibility gap without changing prediction routing.
+- Google AI integration remains gated on the TimescaleDB-backed API read path and a grounded,
+  schema-validated evidence envelope. Gemini must not be wired to the process-local event store.
+
+### Honest remaining work (updated 2026-09-15)
+
+The backend is materially closer to a working system, but the remaining work is still real and specific:
+
+1. Scheduled drift monitoring and alerting for feature/prediction windows.
+2. Provider-aware checkpoint resume logic beyond the shared cursor contract.
+3. OIDC and production secret-store hardening.
+4. Frontend-to-API wiring and real client integration.
+5. Population/exposure source integration for differentiated risk scoring.
+6. Production load testing, SLOs, and dashboard/alert coverage.
+7. Expansion of live connectors beyond the current credential-free Open-Meteo path.
+
+This list is intentionally narrow and honest. It is not a blanket "everything is missing" note; it is
+what still requires deliberate work after the implemented backend fixes.
+
+### 2026-09-14 persisted API and real-input E2E update
+
+- **P0-1 fixed:** event list/detail, evidence, latest forecast generation, and latest lineage graph
+  now read TimescaleDB when `AEROPULSE_DATABASE_URL` is configured. The in-memory store remains the
+  test/DB-free fallback; configured database failures return 503.
+- **Replay amplification fixed:** the one-shot Compose connector now uses `restart: "no"`. A clean
+  run exits 0 with restart count 0 instead of replaying fixtures indefinitely.
+- **Container model registry fixed:** the 2.6 MB checked-in `models/` registry/artifacts are copied
+  into runtime images. `/api/v1/models` returns 3 `PRIMARY_BASELINE` plus 4 `REGISTERED_ONLY`
+  records; no trained model was promoted.
+- **Actual-input validation passed:** committed CPCB/FIRMS/IMD/satellite fixtures flowed through
+  connector -> Kafka -> worker -> TimescaleDB -> authenticated API. Event detail, evidence,
+  forecast, graph, and models returned HTTP 200. The latest forecast response contained exactly six
+  cells with horizons `[3, 6, 12, 24, 48]` after latest-generation filtering.
+- Existing local volumes contain historical duplicated replay snapshots created before the restart
+  fix. They were preserved deliberately. A clean environment will not recreate that amplification;
+  pruning old local development rows is optional maintenance, not part of this change.
+
+### 2026-09-14 grid intelligence read API update
+
+- Persisted `grid_feature` and `grid_prediction` rows are now queryable through four authenticated
+  endpoints: paginated/filterable lists and latest-per-grid lookups.
+- The APIs return canonical `grid-features.v1` / `prediction.v1` contracts and never substitute
+  fixture data. Missing/unavailable database configuration returns 503.
+- Verified against actual preserved connector-produced rows: 2 feature rows and 2 prediction rows;
+  list/latest routes returned HTTP 200 with PM2.5 142.3 and baseline confidence 0.9168.
+- Populated local DB smoke check over 50 sequential requests: event list p95 15.88 ms, feature list
+  p95 11.47 ms, prediction list p95 18.74 ms. This does not replace concurrent production load tests.
+
+### 2026-09-14 operational map persistence update
+
+- `/api/v1/map/air-quality`, `/fire`, and `/weather` now return each source record's latest
+  Timescale observation, with optional validated bbox and bounded limit. DB-free development keeps
+  the committed fixture fallback.
+- `/api/v1/map/forecast` now returns each event/horizon's latest persisted forecast and derives
+  coordinates from canonical H3 cell IDs.
+- `/api/v1/map/grid` now returns latest persisted feature cells as closed H3 polygons.
+- Real-data E2E: AQ returned 8 CPCB measurements, fire 2 FIRMS detections, weather 2 IMD points,
+  forecast returned horizons 0/3/6/12/24/48 with valid coordinates, and grid returned 2 closed
+  seven-point polygons with PM2.5 values 142.3 and 186.0.
+- Satellite map metadata remains fixture-backed because raster observations are currently held only
+  in the worker snapshot and are not persisted to a queryable table.
+
+### 2026-09-14 raster persistence update
+
+- Added migration `0004_raster_observation.sql`; worker raster envelopes now upsert metadata while
+  large arrays remain in object storage as required by `raster.v1`.
+- `/api/v1/map/satellite` reads latest persisted source/product footprints and retains the explicit
+  `AOD is not surface PM2.5` warning.
+- Actual replay E2E persisted 8 rows: Sentinel-5P, MODIS, CAMS, INSAT, Bhuvan, ICAR, industry and
+  OSM. The API returned 8 closed polygon footprints; MODIS retained sample AOD 0.62.
+- This closes raster metadata persistence, not live satellite acquisition. Those connectors remain
+  replay-only and their referenced object URIs may still be logical when raw-object storage fails.
+
+### 2026-09-14 drift monitoring update
+
+- Added an authenticated `/api/v1/drift` endpoint for whitelisted feature and prediction signals.
+- Computes PSI and two-sample KS over caller-supplied non-overlapping reference/current windows.
+- Enforces minimum sample counts and returns `INSUFFICIENT_DATA` with null metrics rather than a
+  false stability claim. Actual local data correctly returned reference 0/current 2.
+- Synthetic tests cover stable, shifted, constant and insufficient distributions.
+- **Partial, not complete:** error drift still requires delayed CPCB ground-truth labels; source
+  coverage drift can be monitored through `feature.source_count`, but no scheduler/alert sink calls
+  this endpoint automatically yet.
+
+### 2026-09-14 API metrics update
+
+- Added Prometheus `/metrics` with HTTP request counters, request-duration histograms, and in-flight
+  gauge. Labels use method, FastAPI route template and status; concrete event/grid IDs are excluded.
+- Verified against real persisted event, grid-feature and satellite requests: each emitted request
+  count and latency histogram series under its route template.
+- This partially closes observability only. Worker ingestion/quality/ML metrics, OTLP collector
+  deployment, dashboards and alerts remain open; `/metrics` is intentionally not included in OpenAPI.
+
 ## 2026-09-09 update — Docker Compose now boots clean, four small wiring gaps closed
 
 Running `docker compose -f infrastructure/docker/compose.yaml up --build` previously crash-looped
@@ -105,9 +207,8 @@ actually calls the new methods, and is a no-op when the writer doesn't support t
 `uv run ruff check .`, `uv run pyright` (0 errors), `uv run pytest tests/unit tests/contract -q` —
 **194 tests**, up from 189.
 
-**Still open:** the feature store still has no read API (nothing queries `grid_feature` back out),
-and the API still doesn't read from Timescale at all (P0-1) — this fix makes the data exist, it
-does not yet make the API or a drift job consume it.
+**Updated 2026-09-14:** persisted events, features and predictions now have Timescale-backed read
+APIs. The remaining feature-store gap is an automated drift/error consumer, not storage or access.
 
 ---
 
@@ -123,12 +224,12 @@ does not yet make the API or a drift job consume it.
 | Docker Compose stack | **Yes** | Verified 2026-09-09: all 7 services boot healthy after Dockerfile/mem/port fixes |
 | Source registry (`config/sources.yaml`) | **Yes** | Now load-bearing (2026-09-09); still only covers replayed sources, not OpenAQ/ERA5/population |
 | Live ingestion | **Partial** | 1 of 15 sources live; 3 have no connector |
-| Feature pipeline | **Partial** | `grid_feature`/`grid_prediction` now persisted (2026-09-09, verified against live TimescaleDB); still no read API and no drift job consumes them |
+| Feature pipeline | **Partial** | `grid_feature`/`grid_prediction` persisted and queryable (2026-09-14); no drift job consumes them |
 | Event confidences | **Partial** | `forecast_confidence`/`impact_confidence` now wired (2026-09-09); still no shadow validation |
-| API | **No** | Not database-backed |
+| API | **Partial** | Event/grid intelligence and all map layers are database-backed; frontend is not wired and satellite acquisition remains replay-only |
 | UI | **No** | Mock data only |
-| Observability | **No** | No metrics; traces export nowhere by default; `trace_id`/`span_id` now bind onto logs when a span is active (2026-09-09), but nothing creates spans on the hot paths yet; raw-object-store failures are now logged (2026-09-09) but not alerted on |
-| Drift monitoring | **No** | Not implemented |
+| Observability | **Partial** | API Prometheus HTTP metrics and log trace IDs exist; worker/connector domain metrics, collector/export, dashboards and alerts remain open |
+| Drift monitoring | **Partial** | On-demand PSI/KS for feature/prediction/source-count signals; no scheduled alerts or error drift until labels arrive |
 | Security | **Partial** | Dev-only JWT by design; no OIDC |
 | Disaster recovery | **Partial** | Documented; untested |
 | SLO monitoring | **No** | Nothing measurable |
@@ -141,11 +242,11 @@ Dependency-ordered. Each item states why it comes when it does.
 
 ### Stage 1 — make the pipeline observable end to end
 
-**1.1 Persist `grid_feature` and `grid_prediction`.** Both hypertables exist and nothing writes to them. Highest leverage change in the backlog: it unblocks the feature store (LLD §20), the API read path, post-hoc error measurement once labels arrive, and drift detection (LLD §46) — four gaps from one change. Write from the worker after `process_snapshot`, keyed on `(time, grid_id, model_version)` which the schema already supports.
+**1.1 [DONE 2026-09-14] Persist and expose `grid_feature` / `grid_prediction`.** Worker upserts and authenticated filterable list/latest APIs are implemented and verified against persisted connector input. Drift/error jobs remain separate work.
 
-**1.2 Give the API a database read path.** Replace the process-local `EVENT_STORE` with a repository reading TimescaleDB, keeping the in-memory store as the test double. Until this lands, `GET /api/v1/events` returns `[]` under Compose no matter what the worker does, and neither the HTTP nor the UI demo can work. Delete or invert `test_events_empty`, which currently encodes the broken behaviour as correct.
+**1.2 [DONE 2026-09-14] Give the API a database read path.** `TimescaleEventReader` now reads persisted events, evidence, latest forecast generation and latest graph snapshot; `InMemoryEventReader` remains the test double. Database connection failure returns 503.
 
-**1.3 Wire OTel export and add the metrics of LLD §33.2.** Set `AEROPULSE_OTEL_EXPORTER_OTLP_ENDPOINT` in compose, add a structlog processor binding `trace_id`, and add the counters and histograms for ingestion latency, quality-failure rate, ML inference latency and API latency. Without this no SLO in LLD §59 is measurable, so no SLO can be claimed.
+**1.3 [PARTIAL 2026-09-14] Wire observability.** API latency/count/in-flight Prometheus metrics and log trace IDs are implemented. Remaining: OTLP collector/export, ingestion/quality/ML metrics, dashboards, alerts and SLO automation.
 
 ### Stage 2 — make the science defensible
 
@@ -161,7 +262,7 @@ Dependency-ordered. Each item states why it comes when it does.
 
 ### Stage 3 — harden
 
-**3.1 Implement drift monitoring** (LLD §46): feature drift, prediction drift, error drift, PSI/KS. Depends on 1.1.
+**3.1 [PARTIAL 2026-09-14] Implement drift monitoring.** On-demand PSI/KS now covers feature and prediction distributions with minimum-sample gates. Remaining: scheduled execution/alerts, seasonal dashboards, and error drift after delayed labels arrive.
 **3.2 [DONE 2026-09-09] Make `config/sources.yaml` load-bearing.** `apps/connector/aeropulse_connector_app/runner.py` now reads it and skips `enabled: false` sources; falls back to "all enabled" if the file is missing/malformed. All 11 replayed sources are now listed (previously 6 of 12).
 **3.3 [PARTIALLY DONE 2026-09-09] MinIO silent no-op now logs a warning** (`objects.raw_copy_not_stored`, reason `no_credentials`/`minio_error`) instead of swallowing the failure silently. It still returns a logical `s3://` URI either way — no caller yet treats that URI as untrustworthy, so provenance can still point at nothing without a human reading the logs. Full fix requires deciding whether unwritten raw copies should hard-fail ingestion.
 **3.4 Add checkpointing.** `FetchRequest.cursor` exists and no connector reads it, so every fetch is a full window re-pull.

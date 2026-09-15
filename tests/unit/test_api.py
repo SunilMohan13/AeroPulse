@@ -1,10 +1,14 @@
 """API auth and source/map contract tests."""
 
+from datetime import UTC, datetime
+from pathlib import Path
+
 import pytest
 from aeropulse_api.app import create_app
 from aeropulse_api.event_store import reset_event_store
 from aeropulse_auth.jwt import Role, encode_token
 from aeropulse_common.settings import Settings, get_settings
+from aeropulse_ml.registry import ModelRecord, ModelRegistry, ModelStage
 from fastapi.testclient import TestClient
 
 
@@ -29,6 +33,23 @@ def test_health_unauthenticated(client: TestClient) -> None:
     assert client.get("/health").status_code == 200
 
 
+def test_metrics_expose_http_count_latency_and_route_templates(
+    client: TestClient, settings: Settings
+) -> None:
+    headers = _auth(settings, Role.VIEWER)
+    assert client.get("/api/v1/events/concrete-id", headers=headers).status_code == 404
+
+    response = client.get("/metrics")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/plain")
+    body = response.text
+    assert "aeropulse_http_requests_total" in body
+    assert "aeropulse_http_request_duration_seconds_bucket" in body
+    assert 'route="/api/v1/events/{event_id}"' in body
+    assert 'route="/api/v1/events/concrete-id"' not in body
+
+
 def test_sources_requires_auth(client: TestClient) -> None:
     assert client.get("/api/v1/sources").status_code == 401
 
@@ -42,6 +63,19 @@ def test_viewer_can_list_sources(client: TestClient, settings: Settings) -> None
     assert body["total"] == len(body["items"])
     assert body["limit"] is None
     assert body["offset"] == 0
+
+
+def test_source_health_uses_real_connector_status(client: TestClient, settings: Settings) -> None:
+    response = client.post(
+        "/api/v1/sources/cpcb/test",
+        headers=_auth(settings, Role.ADMIN),
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["source_id"] == "cpcb"
+    assert payload["healthy"] is True
+    assert payload["mode"] == "replay"
+    assert payload["connector_id"] == "cpcb_caaqms"
 
 
 def test_sources_pagination(client: TestClient, settings: Settings) -> None:
@@ -127,6 +161,41 @@ def test_openapi_includes_forecast_and_graph(client: TestClient) -> None:
     assert "/api/v1/citizen/reports" in paths
     assert "/api/v1/alerts" in paths
     assert "/api/v1/risk" in paths
+
+
+def test_models_lists_runtime_baselines_and_registered_challengers(
+    client: TestClient,
+    settings: Settings,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    artifact = tmp_path / "challenger.joblib"
+    artifact.write_bytes(b"test-artifact")
+    registry = ModelRegistry(tmp_path)
+    registry.register(
+        ModelRecord(
+            model_id="pm25-challenger-v1",
+            model_name="pm25_forecast",
+            version="v1",
+            stage=ModelStage.VALIDATION,
+            algorithm="LightGBM",
+            feature_names=["pm25", "pm25_lag_1h"],
+            training_time=datetime(2026, 9, 13, tzinfo=UTC),
+            artifact_uri=str(artifact),
+        )
+    )
+    monkeypatch.setenv("AEROPULSE_MODEL_DIR", str(tmp_path))
+
+    response = client.get("/api/v1/models", headers=_auth(settings, Role.VIEWER))
+
+    assert response.status_code == 200
+    body = response.json()
+    challenger = next(item for item in body["items"] if item["model_id"] == "pm25-challenger-v1")
+    assert challenger["approval_status"] == "VALIDATION"
+    assert challenger["runtime_role"] == "REGISTERED_ONLY"
+    assert challenger["artifact_available"] is True
+    assert any(item["runtime_role"] == "PRIMARY_BASELINE" for item in body["items"])
+    assert body["total"] == len(body["items"])
 
 
 def test_citizen_report_round_trip(client: TestClient, settings: Settings) -> None:
