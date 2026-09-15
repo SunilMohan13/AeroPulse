@@ -11,16 +11,16 @@ from aeropulse_common.settings import get_settings
 CACHE_TTL_SECONDS = 30
 _CACHEABLE_PATHS = frozenset(
     {
-    "/api/v1/events",
-    "/api/v1/grid-features",
-    "/api/v1/grid-predictions",
+        "/api/v1/events",
+        "/api/v1/grid-features",
+        "/api/v1/grid-predictions",
         "/api/v1/map/air-quality",
         "/api/v1/map/fire",
         "/api/v1/map/forecast",
         "/api/v1/map/grid",
         "/api/v1/map/satellite",
         "/api/v1/map/weather",
-    "/api/v1/models",
+        "/api/v1/models",
     }
 )
 

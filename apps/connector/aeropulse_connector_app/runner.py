@@ -76,6 +76,7 @@ def _checkpoint_repository() -> Any | None:
         logger.warning("connector.checkpoint.unavailable")
         return None
 
+
 _RASTER_JOBS: list[tuple[str, Any, str]] = [
     ("sentinel5p", Sentinel5PConnector, f"sentinel5p/{PRODUCTS_JSON}"),
     ("modis", ModisConnector, f"modis/{PRODUCTS_JSON}"),
