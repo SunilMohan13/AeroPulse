@@ -31,7 +31,7 @@ def test_require_roles_forbids_viewer_admin() -> None:
 
 def test_decode_token_accepts_oidc_role_claims(monkeypatch: pytest.MonkeyPatch) -> None:
     settings = Settings(
-        jwt_secret="unit-test-secret-must-be-32bytes!",
+        jwt_secret="unit-test-secret-must-be-32bytes!",  # type: ignore[arg-type]
         oidc_jwks_url="https://issuer.example.com/.well-known/jwks.json",
     )
     oidc_token = "header.payload.signature"
