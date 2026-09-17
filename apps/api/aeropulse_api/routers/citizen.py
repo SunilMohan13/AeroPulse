@@ -61,6 +61,14 @@ def create_report(
     return report.model_dump(mode="json")
 
 
+@router.get("/reports")
+def list_reports(_claims: TokenClaims = Depends(get_claims)) -> dict:
+    """List citizen reports currently held by the API event repository."""
+    items = [report.model_dump(mode="json") for report in EVENT_STORE.citizen_reports.values()]
+    items.sort(key=lambda report: report["observed_at"], reverse=True)
+    return {"items": items, "total": len(items)}
+
+
 @router.post("/reports/{report_id}/media", responses={404: {"description": "Report not found"}})
 def attach_media(
     report_id: str,

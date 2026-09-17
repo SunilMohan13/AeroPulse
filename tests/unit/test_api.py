@@ -211,6 +211,10 @@ def test_citizen_report_round_trip(client: TestClient, settings: Settings) -> No
     assert fetched.status_code == 200
     assert fetched.json()["cv_class"] == "haze"
     assert fetched.json()["moderation"] == "pending"
+    listed = client.get("/api/v1/citizen/reports", headers=headers)
+    assert listed.status_code == 200
+    assert listed.json()["total"] >= 1
+    assert any(item["report_id"] == report_id for item in listed.json()["items"])
 
 
 def test_copilot_does_not_invent_event(client: TestClient, settings: Settings) -> None:
@@ -233,3 +237,19 @@ def test_risk_endpoint(client: TestClient, settings: Settings) -> None:
     assert response.status_code == 200
     assert "pollution_severity" in response.json()
     assert "population_risk" in response.json()
+
+
+    def test_risk_areas_and_industry_map_are_exposed(
+        client: TestClient, settings: Settings
+    ) -> None:
+        headers = _auth(settings, Role.VIEWER)
+        risk = client.get("/api/v1/risk/areas?pm25=180", headers=headers)
+        assert risk.status_code == 200
+        risk_body = risk.json()
+        assert risk_body["total"] == 5
+        assert risk_body["items"][0]["population"] > 0
+        assert risk_body["population_source"]["provider"] == "reference-fixture"
+
+        industry = client.get("/api/v1/map/industry", headers=headers)
+        assert industry.status_code == 200
+        assert industry.json()["features"][0]["properties"]["source_id"] == "industry"

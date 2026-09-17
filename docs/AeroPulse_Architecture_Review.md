@@ -17,7 +17,7 @@
 >
 > **Serving-path update (2026-09-14):** The event API now reads TimescaleDB through a request-scoped
 > repository (events, evidence, latest forecast and latest graph). Actual connector fixtures were
-> verified end to end through Kafka/worker/database/authenticated HTTP. The frontend remains mock-only.
+> verified end to end through Kafka/worker/database/authenticated HTTP. The frontend now consumes authenticated event, source, map, evidence, citizen, and copilot paths; population risk areas remain demo-backed.
 
 AeroPulse was, before this review, a **well-engineered deterministic evidence pipeline that ran entirely on replay fixtures**, plus two disconnected satellites: a real-ML notebook track that had never been executed, and a React UI wired to static mock data. The architecture was sound; the claim of being an ML platform was not supported by the code.
 
@@ -48,8 +48,8 @@ Derived, not impressionistic. Each dimension is the fraction of the LLD requirem
 | MLOps | 5% | **72% (2026-09-14)** | Enforced lifecycle plus on-demand feature/prediction PSI+KS; no scheduled alerts or delayed-label error drift |
 | Kafka | 40% | 40% | Untouched; 4 of 19 topics used |
 | Database | 55% | 55% | Untouched; two hypertables still unwritten |
-| API | 70% | **90% (2026-09-14)** | Event/grid intelligence and all map layers are database-backed; frontend remains unwired |
-| UI | 20% | 20% | Untouched by instruction; mock-only |
+| API | 70% | **90% (2026-09-14)** | Event/grid intelligence and all map layers are database-backed; several frontend domains now consume authenticated API paths |
+| UI | 20% | 55% | Events, sources, maps, evidence, citizen reports, copilot, risk areas, and industry assets are live when configured; population values are reference-fixture data |
 | Observability | 35% | 35% | Traces initialise but export nowhere; no custom metrics |
 | Security | 70% | 75% | Credential-in-URL logging closed |
 | Testing | 65% | 82% | 67 → 179 tests; leakage, gate, reliability and regression coverage added |

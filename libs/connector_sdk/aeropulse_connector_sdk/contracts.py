@@ -35,6 +35,7 @@ class FetchRequest(BaseModel):
     bbox: tuple[float, float, float, float] | None = None
     processing_mode: Literal["LIVE", "BACKFILL"] = "LIVE"
     cursor: str | None = None
+    provider: str | None = None
 
 
 class RawRecord(BaseModel):

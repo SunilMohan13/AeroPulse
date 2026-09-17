@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime
+from pathlib import Path
 
 from aeropulse_auth.jwt import TokenClaims
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -70,6 +72,31 @@ def _collection(features: list[dict]) -> dict:
         "generated_at": datetime.now(UTC).isoformat(),
         "features": features,
     }
+
+
+def _fixture_assets(source_id: str) -> list[dict]:
+    """Read deterministic geo assets for domains without a Timescale table."""
+    path = Path("/app") / "fixtures" / source_id / "assets.json"
+    if not path.exists():
+        path = Path("fixtures") / source_id / "assets.json"
+    if not path.exists():
+        return []
+    payload = json.loads(path.read_text())
+    return [
+        {
+            "type": "Feature",
+            "geometry": {"type": "Point", "coordinates": [asset["lon"], asset["lat"]]},
+            "properties": {
+                "asset_id": asset.get("asset_id"),
+                "name": asset.get("name"),
+                "source_id": source_id,
+                "observed_at": asset.get("observed_at"),
+                "object_uri": asset.get("object_uri"),
+            },
+        }
+        for asset in payload.get("assets", [])
+        if "lat" in asset and "lon" in asset
+    ]
 
 
 def _parse_bbox(value: str | None) -> list[float] | None:
@@ -148,3 +175,12 @@ def grid(
 ) -> dict:
     """Return latest persisted H3 grid cells as GeoJSON polygons."""
     return _collection(reader.grid(limit))
+
+
+@router.get("/industry")
+def industry(
+    limit: int = Query(default=500, ge=1, le=2000),
+    _claims: TokenClaims = Depends(get_claims),
+) -> dict:
+    """Return replayed industry/OCEMS asset locations."""
+    return _collection(_fixture_assets("industry")[:limit])

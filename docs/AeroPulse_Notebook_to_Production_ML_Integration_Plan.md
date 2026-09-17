@@ -553,7 +553,7 @@ notebooks' metrics, computed on production data rather than research data.
 **Status update 2026-09-14:** event/evidence/latest forecast/latest graph reads are implemented and
 verified with actual connector replay input. `grid_feature`/`grid_prediction` gained authenticated,
 filterable list/latest routes on 2026-09-14. Operational map routes now consume the same persisted
-AQ/fire/weather/forecast/grid state. The frontend remains mock-only.
+AQ/fire/weather/forecast/grid state. The frontend now consumes the authenticated event, source, map, evidence, citizen, and copilot paths; population risk remains mock-backed until a population source is integrated.
 
 **Goal:** the API serves what the worker computed. This is independent of the ML work
 and is called out in `AeroPulse_MLOps_Architecture.md` §8 as the highest-value single

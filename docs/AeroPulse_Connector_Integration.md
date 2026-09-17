@@ -25,11 +25,11 @@
 | OSM | `connectors/osm` | replay (geo asset) | — | NO |
 | **OpenAQ** | **none** | — | API key (`401` without) | **MISSING** — LLD §9 lists it |
 | **ERA5** | **none** | — | CDS key | **MISSING** — LLD §9 lists it |
-| **Population** | **none** | — | — | **MISSING** — LLD §9 lists it; every exposure number depends on it |
+| **Population** | `fixtures/population` + `/api/v1/risk/areas` | reference fixture; provider adapter boundary | REFERENCE ONLY | **Integrated plumbing; replace fixture with licensed WorldPop/Census extract before operations** |
 
 Live mode is opt-in: `AEROPULSE_CONNECTOR_MODE` defaults to `replay`, so a test run can never silently reach the network. A unit test pins that default.
 
-**The population gap has teeth.** LLD §18.5 separates pollution severity from population risk, but with no population source `risk.py` falls back to `DEFAULT_POPULATION_DENSITY = 5000.0` for every cell in India. Exposure numbers are therefore uniform by construction and must not be presented as differentiated impact.
+**The population gap has teeth.** The risk API now consumes versioned population cells and produces differentiated area scores. The committed values are a deterministic reference fixture, not operational population truth; production requires replacing it with a licensed provider extract and preserving its provenance/license metadata.
 
 ---
 
