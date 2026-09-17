@@ -4,6 +4,18 @@
 **Basis:** `AeroPulse_India_Low_Level_Design.md` v1.1 vs the repository at commit `532fa5e` plus uncommitted work.
 **Method:** every claim below is backed by a file path, a command output, or an explicit "NOT VERIFIED" marker. Nothing is inferred from documentation alone.
 
+## 2026-09-13 notebook/registry correction
+
+A read-only JSON audit corrected an earlier overstatement: the merged notebook suite is largely
+executed, not empty. Across 36 notebooks, 369 of 375 code cells have execution counts, 367 retain
+saved outputs, and none retain error outputs. The external PM2.5 base/event-aware Parquets also
+exist. However, notebook artifact directories are empty, so no notebook model is currently loadable.
+
+The API's two-registry mismatch is partially fixed: `/api/v1/models` now includes filesystem
+registry records alongside deterministic serving baselines, with truthful `runtime_role`, stage and
+artifact availability. Worker inference still uses the deterministic baselines; shadow serving and
+notebook bundle export remain open.
+
 ---
 
 ## 1. How to read this document
@@ -77,7 +89,7 @@ Conversely, one apparent strength is illusory: **LLD §64's own implementation c
 | §19 | "Avoid random splits" | No splits existed | `temporal_split`, `spatial_split`, `seasonal_split`; no random split is reachable | PASS |
 | §20 | Offline Parquet + online features, same definitions | Two divergent definitions (notebooks vs serving) | **`aeropulse_contracts.feature_spec` is now the single source both import** | PASS |
 | §45 | Metrics: RMSE/MAE/R²/calibration/F1/false-alert/skill-vs-baseline | None computed anywhere in the packages | `libs/ml/evaluation.py` computes all of these | PASS |
-| §46 | Drift monitoring (PSI/KS, prediction and error drift) | — | — | MISSING |
+| §46 | Drift monitoring (PSI/KS, prediction and error drift) | `/api/v1/drift` computes bounded PSI/KS for feature/prediction/source-count signals | PARTIAL (2026-09-14) | Minimum-sample gates implemented; scheduled alerts and error drift await orchestration and delayed ground truth |
 | §33.2 | ML metrics: inference latency, throughput | — | Timings reported by `aeropulse-ml predict`; no continuous metric | PARTIAL |
 
 **Estimator family deviation:** LLD §18.1 names LightGBM/XGBoost. This implementation uses scikit-learn `HistGradientBoosting*` — the same gradient-boosted-histogram algorithm family. Reason: LightGBM requires a system `libomp` that is absent on the target machine (verified: `/opt/homebrew/opt/libomp/lib/libomp.dylib` does not exist on this arm64 host), whereas scikit-learn wheels bundle their own OpenMP. The estimator is one constructor call per trainer, so switching back is a one-line change.
@@ -89,11 +101,11 @@ Conversely, one apparent strength is illusory: **LLD §64's own implementation c
 | §25 | REST API: map, events, sources, copilot, citizen | 26 routes, `/api/v1`, Pydantic validation, OpenAPI 3.1 exported | PASS | — |
 | §25 | Responses expose prediction, confidence, model_version, feature_version, evidence, grid | Present on `event.v1` / `forecast.v1` | PASS | Genuine strength |
 | §43 | API p95 < 500 ms | Not measured under load against real data | NOT VERIFIED | `tests/load/test_health_load.py` exercises `/health` only |
-| — | API reads persisted state | **API has zero DB client imports**; serves a process-local dict (`event_store.py:7`) and hardcoded fixtures (`map.py:16-64`) | **INCORRECT** | **P0: `api` and `worker` are separate containers, so `GET /api/v1/events` returns `[]` forever under Compose.** See §4 |
+| — | API reads persisted state | Timescale readers serve events/evidence/latest forecast/latest graph, grid features/predictions, and every map layer including persisted raster footprints | **PARTIAL [P0 FIXED 2026-09-14]** | Frontend remains unwired; live satellite acquisition remains replay-only |
 | §26 | UI: 11 screens | 9 pages exist in `frontend/web` | PARTIAL | **Every one of the 8 services returns `mock*` imports.** The only `fetch(` in `src/` is the CARTO basemap. `VITE_API_BASE` is set in compose and never read |
 | §21.3 | Four separate confidences | Four fields exist on `event.v1` | PARTIAL | Only `detection_confidence` and `source_confidence` are computed. `forecast_confidence` and `impact_confidence` are hardcoded `0.0` (`engine.py:102,186`) despite the forecast module computing its own per-cell confidence |
 | §33 | OpenTelemetry + SigNoz | `libs/observability/telemetry.py` initialises a real TracerProvider | PARTIAL | **No OTLP endpoint is set in compose, so traces export nowhere by default.** SigNoz is absent (self-documented in `docs/architecture.md:31`) |
-| §33.2 | Custom metrics (ingestion, quality, ML, API counters/histograms) | — | MISSING | **Zero `Counter(`/`Histogram(` in the codebase** |
+| §33.2 | Custom metrics (ingestion, quality, ML, API counters/histograms) | Prometheus API request counters/latency histogram/in-flight gauge | PARTIAL (2026-09-14) | Ingestion, quality and ML domain metrics plus collector/dashboards remain |
 | §33.1 | `trace_id` on every log record | structlog JSON with service fields | PARTIAL | **No `trace_id` binding exists**; no span-context processor |
 | §35.1 | Identity + RBAC | HS256 JWT, 7 roles, `require_roles` | PARTIAL-BY-DESIGN | Dev-only by explicit decision (ADR-0003). OIDC deferred |
 | §35.2 | Secrets hygiene | All credentials via `os.getenv`; `.gitignore` covers `.env`, `*.pem`, `*.key` | PASS | **Verified: no real credential in the tree or in git history.** Only labelled dev placeholders |
@@ -104,6 +116,12 @@ Conversely, one apparent strength is illusory: **LLD §64's own implementation c
 ## 4. P0 findings
 
 ### P0-1 — API read path severed from worker write path
+
+**[FIXED 2026-09-14]** `apps/api/aeropulse_api/event_store.py` now provides a request-scoped
+`TimescaleEventReader`; all event routes depend on that read contract. Real connector input was
+verified through Kafka, worker persistence and authenticated HTTP responses. Forecast and graph
+queries select only the latest persisted generation/snapshot. The in-memory implementation remains
+the test double, and configured database failures return 503.
 
 The worker persists to TimescaleDB (`apps/worker/aeropulse_worker/db.py`). The API imports no database client and reads only `EVENT_STORE`, a module-level Python dict. In `compose.yaml` these are separate containers, so nothing the worker writes is ever visible to the API. A passing test (`test_events_empty`) encodes the broken behaviour as correct.
 
@@ -142,7 +160,7 @@ Fixed: `LiveHttpClient` composes rate limiter → breaker → jittered retry →
 | ID | Finding | Evidence |
 |---|---|---|
 | P1-1 | Frontend never calls the API | All 8 services return `mock*` imports; `VITE_API_BASE` inert |
-| P1-2 | **[FIXED 2026-09-09]** `grid_feature`/`grid_prediction` hypertables never written | Was: no INSERT references them. Now: `apps/worker/aeropulse_worker/db.py` has `upsert_grid_feature`/`upsert_grid_prediction`; `detect.py::process_snapshot` records every processed cell (not only event-triggering ones, which was the actual bug in the old `store.features` dict); `main.py::_persist_intelligence` flushes both. Verified end-to-end against live Docker Compose + TimescaleDB. Still no read API consumes the data |
+| P1-2 | **[FIXED 2026-09-14]** `grid_feature`/`grid_prediction` persistence and reads | Worker persistence landed 2026-09-09. Four authenticated list/latest APIs now expose canonical persisted contracts with grid/model/time filters and pagination. Verified against actual Timescale rows |
 | P1-3 | **[FIXED 2026-09-09]** `forecast_confidence` and `impact_confidence` hardcoded `0.0` | Was `engine.py:102,186`. Now wired in `libs/intelligence/aeropulse_intelligence/detect.py`: `forecast_confidence` reuses the forecast module's own downwind per-cell confidence; `impact_confidence` reuses the PM2.5 estimator's `estimate_confidence`. Regression test: `tests/unit/test_event_engine.py::test_forecast_and_impact_confidence_are_wired_not_hardcoded`. Not yet calibrated/validated |
 | P1-4 | No population connector; exposure rests on a constant | `risk.py:7` |
 | P1-5 | Anomaly detector misses ~95% of exceedances | Measured recall 0.046 (temporal). **Now blocked by the promotion gate** |
@@ -152,11 +170,11 @@ Fixed: `LiveHttpClient` composes rate limiter → breaker → jittered retry →
 | P1-9 | **[PARTIALLY FIXED 2026-09-09]** No custom OTel metrics; no `trace_id` in logs; traces export nowhere by default | §3 above. `trace_id`/`span_id` now bind onto log lines when a span is active (`libs/observability/aeropulse_observability/logging.py`); custom metrics and default exporter wiring remain absent |
 | P1-10 | 15 of 19 Kafka topics unused; DLQ is a table not the declared topic | `topics.py` vs producers/consumers |
 | P1-11 | **[FIXED 2026-09-09]** `config/sources.yaml` ignored by the runner | Was hardcoded `_RASTER_JOBS`. `apps/connector/aeropulse_connector_app/runner.py` now reads the file and skips any source marked `enabled: false`, falling back to "all enabled" if the file is missing/malformed. File now lists all 11 replayed sources (was 6 of 12). Regression tests in `tests/unit/test_replay.py` |
-| P1-12 | No drift monitoring | LLD §46 |
+| P1-12 | **[PARTIAL 2026-09-14]** Drift monitoring incomplete | On-demand feature/prediction PSI+KS implemented; scheduled alerts and error drift remain |
 
 ## 6. P2 / P3
 
-**P2:** ~~quality-score weights hardcoded rather than configurable (§16.2)~~ **[FIXED 2026-09-09]** — now overridable via `AEROPULSE_QUALITY_WEIGHTS`; ~~no pagination on list endpoints~~ **[FIXED 2026-09-09]** — `GET /api/v1/events` and `GET /api/v1/sources` accept `limit`/`offset`; no `checkpoint.py`, so no incremental cursors; rolling max / rate-of-change / historical percentile features absent; no Redis caching; `discover()` returns configured sites rather than fixture contents; notebooks duplicate connector code four times and remain unexecuted.
+**P2:** ~~quality-score weights hardcoded rather than configurable (§16.2)~~ **[FIXED 2026-09-09]** — now overridable via `AEROPULSE_QUALITY_WEIGHTS`; ~~no pagination on list endpoints~~ **[FIXED 2026-09-09]** — `GET /api/v1/events` and `GET /api/v1/sources` accept `limit`/`offset`; no `checkpoint.py`, so no incremental cursors; rolling max / rate-of-change / historical percentile features absent; no Redis caching; `discover()` returns configured sites rather than fixture contents. **[Corrected 2026-09-13]** The merged notebooks are largely executed (369/375 code cells) and use shared toolkits; the remaining gap is absent physical notebook bundles and no worker inference integration.
 
 **P3:** `cv.py` is keyword regex on text, not a CV model (honestly documented); ~~`sources.yaml` covers 6 of 12 connectors~~ **[FIXED 2026-09-09]** — now covers all 11 replayed sources; `graphify-out/` build artifacts are committed; CI runs no ML job and builds no images.
 
@@ -222,6 +240,6 @@ flushes both after every detection pass.
 `uv run ruff check .`, `uv run pyright` (0 errors), `uv run pytest tests/unit tests/contract -q` —
 **194 tests**, up from 189.
 
-Still open: no read API queries `grid_feature`/`grid_prediction` back out (that's P0-1, the API↔DB
-boundary), and no drift job consumes the now-populated feature history.
+**[Updated 2026-09-14]** Four read APIs now query `grid_feature`/`grid_prediction`; the remaining gap
+is that no drift job consumes the feature/prediction history.
 

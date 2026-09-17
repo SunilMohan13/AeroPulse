@@ -157,7 +157,10 @@ All figures from the runs above on an M-series laptop. Nothing extrapolated.
 | Fixture ingest + features (offline) | 0.06 s |
 | Test suite (179 tests) | 5.3 s |
 
-**NOT VERIFIED:** API p95 under load against a populated database (LLD §43 targets < 500 ms). The existing load test exercises `/health` only, and the API is not database-backed — see §5.
+**PARTIALLY VERIFIED (2026-09-14):** local populated-DB smoke checks over 50 sequential requests
+measured event list p95 15.88 ms, grid-feature list 11.47 ms and grid-prediction list 18.74 ms,
+below the 500 ms target. Concurrent production load, saturation and multi-client behavior remain
+NOT VERIFIED; the committed automated load test still exercises `/health` only.
 
 ---
 
@@ -183,13 +186,17 @@ Optional connector workers: `--profile connectors`.
 
 Stated plainly so that nothing here is oversold.
 
-1. **The API is not database-backed.** The worker writes to TimescaleDB; the API imports no database client and reads a process-local Python dict. They are separate containers, so `GET /api/v1/events` returns `[]` permanently under Compose. The ML demo above therefore runs through the CLI, not the HTTP API.
+1. **[FIXED 2026-09-14] The event API is database-backed.** Actual fixture input was verified through connector -> Kafka -> worker -> TimescaleDB -> authenticated event/evidence/forecast/graph endpoints. Map routes and the frontend remain disconnected from this persisted path.
+  **Update:** AQ/fire/weather/forecast/grid map routes are now connected too; only satellite metadata
+  was pending. **A later 2026-09-14 update persisted raster metadata and connected the satellite
+  footprint route as well.** The frontend still uses mocks.
 2. **The frontend does not call the API.** All 8 frontend services return static mock imports; `VITE_API_BASE` is set in compose and never read. The UI is a design demo.
-3. **Features and predictions are not persisted.** The `grid_feature` and `grid_prediction` hypertables exist and are never written to, so there is no queryable feature store yet.
+3. **[FIXED 2026-09-14] Features and predictions are persisted and queryable.** Four authenticated
+list/latest endpoints return the canonical contracts from TimescaleDB. Drift consumers remain open.
 4. **Three of four models do not serve.** By design — they failed their gates. Fixing them is calibration work (anomaly threshold, per-horizon forecast promotion) and a data problem (source labels).
 5. **Air quality here is model output, not ground truth.** Open-Meteo is CAMS-derived. It validates the pipeline; it does not validate accuracy against CPCB stations. Every artifact records this caveat.
 6. **Every keyed source is unverified.** No credential exists in this environment: OpenAQ returns `401`, FIRMS requires a `MAP_KEY`. Those connectors remain fixture replays marked `NOT VERIFIED — requires <credential>`.
-7. **No drift monitoring** (LLD §46), no Redis caching, no custom OTel metrics, and traces export nowhere by default.
+7. **Partial drift/observability**: on-demand feature/prediction PSI+KS and API Prometheus HTTP metrics exist. Scheduled drift alerts, delayed-label error drift, Redis caching, worker/ML metrics, collector export and dashboards remain absent.
 
 ---
 

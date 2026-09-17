@@ -1,0 +1,79 @@
+"""Materialized grid feature and prediction APIs."""
+
+from datetime import datetime
+
+from aeropulse_auth.jwt import TokenClaims
+from fastapi import APIRouter, Depends, HTTPException, Query
+
+from aeropulse_api.deps import get_claims
+from aeropulse_api.grid_store import GridReader, get_grid_reader
+
+router = APIRouter(prefix="/api/v1", tags=["grid-intelligence"])
+
+
+@router.get("/grid-features")
+def list_grid_features(
+    _claims: TokenClaims = Depends(get_claims),
+    reader: GridReader = Depends(get_grid_reader),
+    grid_id: str | None = Query(default=None),
+    start: datetime | None = Query(default=None),
+    end: datetime | None = Query(default=None),
+    limit: int = Query(default=100, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+) -> dict:
+    """List persisted grid-hour feature vectors, newest first."""
+    items, total = reader.list_features(grid_id, start, end, limit, offset)
+    return {
+        "items": [item.model_dump(mode="json") for item in items],
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+    }
+
+
+@router.get("/grid-features/{grid_id}/latest")
+def latest_grid_feature(
+    grid_id: str,
+    _claims: TokenClaims = Depends(get_claims),
+    reader: GridReader = Depends(get_grid_reader),
+) -> dict:
+    """Return the latest persisted feature vector for one grid cell."""
+    item = reader.latest_feature(grid_id)
+    if item is None:
+        raise HTTPException(status_code=404, detail=f"No feature found for grid {grid_id}")
+    return item.model_dump(mode="json")
+
+
+@router.get("/grid-predictions")
+def list_grid_predictions(
+    _claims: TokenClaims = Depends(get_claims),
+    reader: GridReader = Depends(get_grid_reader),
+    grid_id: str | None = Query(default=None),
+    model_version: str | None = Query(default=None),
+    start: datetime | None = Query(default=None),
+    end: datetime | None = Query(default=None),
+    limit: int = Query(default=100, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+) -> dict:
+    """List persisted grid predictions, newest first."""
+    items, total = reader.list_predictions(grid_id, model_version, start, end, limit, offset)
+    return {
+        "items": [item.model_dump(mode="json") for item in items],
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+    }
+
+
+@router.get("/grid-predictions/{grid_id}/latest")
+def latest_grid_prediction(
+    grid_id: str,
+    _claims: TokenClaims = Depends(get_claims),
+    reader: GridReader = Depends(get_grid_reader),
+    model_version: str | None = Query(default=None),
+) -> dict:
+    """Return the latest persisted prediction for one grid cell."""
+    item = reader.latest_prediction(grid_id, model_version)
+    if item is None:
+        raise HTTPException(status_code=404, detail=f"No prediction found for grid {grid_id}")
+    return item.model_dump(mode="json")

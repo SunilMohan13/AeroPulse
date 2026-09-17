@@ -56,5 +56,22 @@ uv run python -c "from aeropulse_auth import encode_token, Role; print(encode_to
 ## Out of this pass
 
 Copilot LLM, citizen CV, ArangoDB client, MLflow, Sentinel/MODIS/CAMS live, SigNoz, Kubernetes,
-API-to-database read path, frontend-to-API wiring. Do not change `frontend/web` unless asked.
+Frontend-to-API wiring remains out of this pass. The event API now reads TimescaleDB when
+`AEROPULSE_DATABASE_URL` is configured and falls back to the in-memory test double otherwise.
+Do not change `frontend/web` unless asked.
 Export OpenAPI with `uv run python scripts/export_openapi.py`.
+
+## Remaining work (honest backlog)
+
+These are the next real tasks that still matter for a production-grade delivery, without pretending
+there are large hidden gaps in the already-implemented backend:
+
+- Scheduled drift monitoring + alerting job for feature and prediction drift.
+- Provider-aware resume semantics beyond the shared `FetchRequest.cursor` contract.
+- OIDC / production auth hardening and secret-store integration.
+- Frontend-to-API wiring and UI integration with real API contracts.
+- Population and exposure source integration for differentiated risk scoring.
+- Load testing, SLOs, and operational dashboards for API and worker paths.
+- Live connector expansion beyond the credential-free Open-Meteo path.
+
+These remain explicit follow-ups; they are not hidden defects in the current backend pass.

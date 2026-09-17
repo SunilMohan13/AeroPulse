@@ -11,15 +11,20 @@ from datetime import UTC, datetime
 from typing import Any
 
 from aeropulse_contracts.feature import GridFeature
+from aeropulse_contracts.observation import Provenance, Quality
 from aeropulse_contracts.prediction import GridPrediction
+from aeropulse_contracts.raster import RasterObservation
 from aeropulse_worker.db import TimescaleRepository
 
 NOW = datetime(2026, 9, 8, 5, 0, tzinfo=UTC)
 
 
 class _FakeCursor:
-    def __init__(self, calls: list[tuple[str, Any]]) -> None:
+    def __init__(self, calls: list[tuple[str, Any]], read_value: str | None = None) -> None:
         self._calls = calls
+        self.rowcount = 1
+        self._read_value = read_value
+        self._result = None
 
     def __enter__(self) -> _FakeCursor:
         return self
@@ -29,15 +34,23 @@ class _FakeCursor:
 
     def execute(self, sql: str, params: Any) -> None:
         self._calls.append((sql, params))
+        if "SELECT cursor FROM connector_checkpoint" in sql and self._read_value is not None:
+            self._result = (self._read_value,)
+
+    def fetchone(self) -> tuple[str] | None:
+        result = self._result
+        self._result = None
+        return result
 
 
 class _FakeConnection:
     def __init__(self) -> None:
         self.calls: list[tuple[str, Any]] = []
         self.commits = 0
+        self._read_value: str | None = None
 
     def cursor(self) -> _FakeCursor:
-        return _FakeCursor(self.calls)
+        return _FakeCursor(self.calls, self._read_value)
 
     def commit(self) -> None:
         self.commits += 1
@@ -95,3 +108,51 @@ def test_upsert_grid_prediction_sends_expected_columns() -> None:
     assert params["model_version"] == "baseline-idw-0.1"
     assert params["pm25_estimate"] == 175.2
     assert params["confidence"] == 0.7
+
+
+def test_upsert_raster_persists_metadata_and_samples() -> None:
+    conn = _FakeConnection()
+    repo = TimescaleRepository(conn)
+    raster = RasterObservation(
+        observation_id="ras_1",
+        source_id="modis",
+        source_record_id="MCD19A2_20260908",
+        product_id="MCD19A2_20260908",
+        acquisition_time=NOW,
+        processing_time=NOW,
+        bbox=(73.5, 27.0, 78.5, 32.5),
+        resolution="1km",
+        object_uri="s3://aeropulse/raw/modis/product.hdf",
+        checksum="fixture-modis",
+        cloud_fraction=0.18,
+        quality=Quality(quality_flag="valid", quality_score=0.77),
+        provenance=Provenance(provider="NASA MODIS", connector_version="1.0.0"),
+        sample_aod=0.62,
+    )
+
+    assert repo.upsert_raster(raster) is True
+
+    assert conn.commits == 1
+    sql, params = conn.calls[0]
+    assert "INSERT INTO raster_observation" in sql
+    assert params["source_id"] == "modis"
+    assert params["min_lon"] == 73.5
+    assert params["max_lat"] == 32.5
+    assert params["sample_aod"] == 0.62
+
+
+def test_upsert_checkpoint_records_cursor_and_reads_it_back() -> None:
+    conn = _FakeConnection()
+    repo = TimescaleRepository(conn)
+
+    repo.upsert_checkpoint("cpcb", "5")
+    assert conn.commits == 1
+    sql, params = conn.calls[0]
+    assert "INSERT INTO connector_checkpoint" in sql
+    assert params["source_id"] == "cpcb"
+    assert params["cursor"] == "5"
+
+    conn.calls.clear()
+    conn._read_value = "5"
+    assert repo.get_checkpoint("cpcb") == "5"
+    assert "SELECT cursor FROM connector_checkpoint" in conn.calls[0][0]

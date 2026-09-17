@@ -8,6 +8,17 @@
 
 ## 1. Executive summary
 
+> **State correction (2026-09-13):** The statements below describe the repository as reviewed on
+> 2026-09-08. After the merged notebook work, a read-only JSON audit found 369/375 code cells
+> executed, 367 with saved outputs, and zero saved errors; the 1.7M-row external dataset also
+> exists. Notebook-local model bundles are not present, so saved metrics still cannot be loaded or
+> served. The API now exposes filesystem registry metadata alongside deterministic baselines, while
+> worker inference remains deterministic.
+>
+> **Serving-path update (2026-09-14):** The event API now reads TimescaleDB through a request-scoped
+> repository (events, evidence, latest forecast and latest graph). Actual connector fixtures were
+> verified end to end through Kafka/worker/database/authenticated HTTP. The frontend remains mock-only.
+
 AeroPulse was, before this review, a **well-engineered deterministic evidence pipeline that ran entirely on replay fixtures**, plus two disconnected satellites: a real-ML notebook track that had never been executed, and a React UI wired to static mock data. The architecture was sound; the claim of being an ML platform was not supported by the code.
 
 The most important finding is not a missing feature. It is that **the LLD's own implementation checklist (§64) marks nearly every AI and connector item `[x]`** — "PM2.5 estimator", "Anomaly detector", "Source likelihood", "Forecast", "Model registry", all eleven connectors — while the code contained no trained model, no metric, no model artifact, and no live HTTP path. `README.md:85` is the honest counter-statement and agrees with the code. A reviewer trusting §64 would have concluded the platform was nearly complete.
@@ -31,13 +42,13 @@ Derived, not impressionistic. Each dimension is the fraction of the LLD requirem
 | Dimension | Before | After | Notes |
 |---|---|---|---|
 | Architecture & contracts | 85% | 88% | Strongest area throughout; contract-first design held up |
-| Data pipeline | 60% | 75% → **82% (2026-09-09)** | P0 hour-filter bug fixed; AOD and rainfall wired; `grid_feature`/`grid_prediction` persistence fixed 2026-09-09 (verified against a live TimescaleDB container) |
+| Data pipeline | 60% | **86% (2026-09-14)** | Point-in-time bug fixed; AOD/rainfall wired; grid features/predictions persisted and queryable through canonical APIs |
 | Connectors | 35% | 55% | First live source; primitives wired; 3 sources still absent, 11 still fixture-only |
 | ML | 10% | 70% | From zero trained models and zero metrics to four models, real holdouts, real metrics |
-| MLOps | 5% | 65% | From a hardcoded list to an enforced lifecycle; no drift monitoring |
+| MLOps | 5% | **72% (2026-09-14)** | Enforced lifecycle plus on-demand feature/prediction PSI+KS; no scheduled alerts or delayed-label error drift |
 | Kafka | 40% | 40% | Untouched; 4 of 19 topics used |
 | Database | 55% | 55% | Untouched; two hypertables still unwritten |
-| API | 70% | 70% | Well-built, but not database-backed |
+| API | 70% | **90% (2026-09-14)** | Event/grid intelligence and all map layers are database-backed; frontend remains unwired |
 | UI | 20% | 20% | Untouched by instruction; mock-only |
 | Observability | 35% | 35% | Traces initialise but export nowhere; no custom metrics |
 | Security | 70% | 75% | Credential-in-URL logging closed |
@@ -103,7 +114,7 @@ Two leakage defects were fixed structurally rather than by convention: the anoma
 Four items, in dependency order. Each is scoped in `AeroPulse_Production_Readiness.md`.
 
 1. ~~**Persist `grid_feature` and `grid_prediction`.**~~ **[FIXED 2026-09-09]** One change unblocked two of the four gaps below outright: the feature store now has data, and post-hoc error measurement/drift detection have something to read once a job is written to read it. See `docs/AeroPulse_Production_Readiness.md` for what changed and how it was verified end-to-end.
-2. **Give the API a database read path.** Still open. Until then the HTTP and UI demo cannot work regardless of how good the models are — this is now the single most valuable remaining item, since the data it would read (`grid_feature`/`grid_prediction`, events, forecasts) already exists in Timescale.
+2. ~~**Give the API a database read path.**~~ **[FIXED 2026-09-14]** Event/evidence/latest forecast/latest graph now read TimescaleDB and were verified with real replay input. The frontend still needs an API client.
 3. **Obtain CPCB ground truth.** No modelling work raises confidence in accuracy without it; everything currently trains on model output.
 4. **Observability.** Traces export nowhere by default and there are zero custom metrics; `trace_id` now reaches logs when a span is active (2026-09-09) — so LLD §33.2 SLOs remain unmeasurable, but log correlation during an incident is now possible.
 
@@ -119,6 +130,6 @@ Calibration work sits alongside these: the anomaly alert threshold is one residu
 
 **Yes:** live credential-free ingestion, canonical contracts, H3 grid assignment, point-in-time-correct features including real satellite AOD, four models trained on 90 days of real corridor data, evaluated on three independent holdouts with skill scores against honest baselines, registered with full provenance, gated on quality, and served with contract validation and measured latency (inference 0.056 s). One model earned promotion on merit; three were refused on merit. That path is reproducible with two commands and no credential.
 
-**No:** not through the HTTP API, because the API reads a process-local dict rather than the database the worker writes to. Not through the UI, which is mock-only. Not on ground-truth data, because the only keyless source is model output. And not with the anomaly, source or forecast models serving, because they failed their gates.
+**No:** not through the UI, which is mock-only. Not on operationally validated ground-truth data. And not with the anomaly, source or forecast trained models serving, because they failed their gates. **The persisted HTTP event path now works** (2026-09-14), but it serves deterministic runtime outputs rather than notebook challengers.
 
 The distinction worth holding onto is that the *pipeline* is now demonstrably real and the *deployment* is not. Before this pass neither was.

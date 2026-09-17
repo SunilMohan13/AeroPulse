@@ -5,10 +5,10 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 from aeropulse_auth.jwt import TokenClaims
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from aeropulse_api.deps import get_claims
-from aeropulse_api.event_store import EVENT_STORE
+from aeropulse_api.map_store import MapReader, get_map_reader
 
 router = APIRouter(prefix="/api/v1/map", tags=["map"])
 
@@ -64,106 +64,87 @@ _WEATHER = [
 ]
 
 
-def _in_bbox(feature: dict, bbox: list[float] | None) -> bool:
-    if not bbox or len(bbox) != 4:
-        return True
-    min_lon, min_lat, max_lon, max_lat = bbox
-    lon, lat = feature["geometry"]["coordinates"]
-    return min_lon <= lon <= max_lon and min_lat <= lat <= max_lat
-
-
-def _collection(features: list[dict], bbox: list[float] | None) -> dict:
+def _collection(features: list[dict]) -> dict:
     return {
         "type": "FeatureCollection",
         "generated_at": datetime.now(UTC).isoformat(),
-        "features": [f for f in features if _in_bbox(f, bbox)],
+        "features": features,
     }
+
+
+def _parse_bbox(value: str | None) -> list[float] | None:
+    if value is None:
+        return None
+    try:
+        bbox = [float(part) for part in value.split(",")]
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="bbox must contain four numbers") from exc
+    if len(bbox) != 4:
+        raise HTTPException(status_code=422, detail="bbox must contain four numbers")
+    min_lon, min_lat, max_lon, max_lat = bbox
+    if min_lon > max_lon or min_lat > max_lat:
+        raise HTTPException(status_code=422, detail="bbox minimums must not exceed maximums")
+    return bbox
 
 
 @router.get("/air-quality")
 def air_quality(
     bbox: str | None = Query(default=None, description="min_lon,min_lat,max_lon,max_lat"),
+    limit: int = Query(default=500, ge=1, le=2000),
     _claims: TokenClaims = Depends(get_claims),
+    reader: MapReader = Depends(get_map_reader),
 ) -> dict:
     """Return recent air-quality points as GeoJSON."""
-    parsed = [float(p) for p in bbox.split(",")] if bbox else None
-    return _collection(_AQ, parsed)
+    return _collection(reader.air_quality(_parse_bbox(bbox), limit))
 
 
 @router.get("/fire")
 def fire(
     bbox: str | None = Query(default=None),
+    limit: int = Query(default=500, ge=1, le=2000),
     _claims: TokenClaims = Depends(get_claims),
+    reader: MapReader = Depends(get_map_reader),
 ) -> dict:
     """Return recent fire detections as GeoJSON."""
-    parsed = [float(p) for p in bbox.split(",")] if bbox else None
-    return _collection(_FIRE, parsed)
+    return _collection(reader.fire(_parse_bbox(bbox), limit))
 
 
 @router.get("/weather")
 def weather(
     bbox: str | None = Query(default=None),
+    limit: int = Query(default=500, ge=1, le=2000),
     _claims: TokenClaims = Depends(get_claims),
+    reader: MapReader = Depends(get_map_reader),
 ) -> dict:
     """Return recent meteorological points as GeoJSON."""
-    parsed = [float(p) for p in bbox.split(",")] if bbox else None
-    return _collection(_WEATHER, parsed)
+    return _collection(reader.weather(_parse_bbox(bbox), limit))
 
 
 @router.get("/satellite")
-def satellite(_claims: TokenClaims = Depends(get_claims)) -> dict:
-    """Return fixture satellite product footprints (metadata only, not AOD-as-PM2.5)."""
-    features = [
-        {
-            "type": "Feature",
-            "geometry": {"type": "Point", "coordinates": [76.0, 30.0]},
-            "properties": {
-                "source_id": "modis",
-                "product": "MCD19A2 AOD metadata",
-                "note": "AOD is not surface PM2.5",
-            },
-        },
-        {
-            "type": "Feature",
-            "geometry": {"type": "Point", "coordinates": [76.5, 29.5]},
-            "properties": {
-                "source_id": "sentinel5p",
-                "product": "S5P NO2 metadata",
-            },
-        },
-    ]
-    return _collection(features, None)
+def satellite(
+    limit: int = Query(default=500, ge=1, le=2000),
+    _claims: TokenClaims = Depends(get_claims),
+    reader: MapReader = Depends(get_map_reader),
+) -> dict:
+    """Return latest persisted satellite/raster metadata footprints."""
+    return _collection(reader.satellite(limit))
 
 
 @router.get("/forecast")
-def forecast(_claims: TokenClaims = Depends(get_claims)) -> dict:
-    """Return advection forecast points as GeoJSON."""
-    features: list[dict] = []
-    for forecast in EVENT_STORE.forecasts.values():
-        for cell in forecast.grid_predictions:
-            if cell.center_lon is None or cell.center_lat is None:
-                continue
-            features.append(
-                {
-                    "type": "Feature",
-                    "geometry": {
-                        "type": "Point",
-                        "coordinates": [cell.center_lon, cell.center_lat],
-                    },
-                    "properties": {
-                        "grid_id": cell.grid_id,
-                        "pm25": cell.pm25,
-                        "confidence": cell.confidence,
-                        "event_id": forecast.event_id,
-                        "model_version": forecast.model_version,
-                        "cams_applied": forecast.cams_applied,
-                    },
-                }
-            )
-    return _collection(features, None)
+def forecast(
+    limit: int = Query(default=500, ge=1, le=2000),
+    _claims: TokenClaims = Depends(get_claims),
+    reader: MapReader = Depends(get_map_reader),
+) -> dict:
+    """Return latest persisted advection forecast points as GeoJSON."""
+    return _collection(reader.forecast(limit))
 
 
 @router.get("/grid")
-def grid(_claims: TokenClaims = Depends(get_claims)) -> dict:
-    """Grid polygons are materialized in a later story. Empty collection."""
-    return _collection([], None)
+def grid(
+    limit: int = Query(default=500, ge=1, le=2000),
+    _claims: TokenClaims = Depends(get_claims),
+    reader: MapReader = Depends(get_map_reader),
+) -> dict:
+    """Return latest persisted H3 grid cells as GeoJSON polygons."""
+    return _collection(reader.grid(limit))

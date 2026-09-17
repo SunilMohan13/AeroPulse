@@ -34,6 +34,18 @@ def neighbors(grid_id: str, k: int = 1) -> list[str]:
     return [cell for cell in disk if cell != grid_id]
 
 
+def grid_center(grid_id: str) -> tuple[float, float]:
+    """Return the WGS84 latitude/longitude center of an H3 cell."""
+    lat, lon = h3.cell_to_latlng(grid_id)
+    return float(lat), float(lon)
+
+
+def grid_boundary(grid_id: str) -> list[list[float]]:
+    """Return a closed GeoJSON longitude/latitude ring for an H3 cell."""
+    ring = [[float(lon), float(lat)] for lat, lon in h3.cell_to_boundary(grid_id)]
+    return [*ring, ring[0]]
+
+
 def in_default_aoi(lat: float, lon: float) -> bool:
     """Return True if the point lies inside the default NCR corridor AOI."""
     min_lon, min_lat, max_lon, max_lat = DEFAULT_AOI

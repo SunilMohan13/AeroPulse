@@ -214,7 +214,7 @@ Levels: 0 concept · 1 prototype · 2 working baseline · 3 validated · 4 produ
 
 | Model | Before | Now | Why |
 |---|---|---|---|
-| PM2.5 estimator | 1 | **3 — validated** | Trained on real data, positive skill on three independent holdouts, artifact registered and served with contract validation. Not level 4: trained on model output rather than CPCB ground truth, and no drift monitoring exists |
+| PM2.5 estimator | 1 | **3 — validated** | Trained on real data, positive skill on three independent holdouts, artifact registered and served with contract validation. Not level 4: trained on model output rather than CPCB ground truth; on-demand distribution drift exists but scheduled/error drift does not |
 | Anomaly detector | 1 | **2 — working baseline** | Residual model is sound and leakage-free, but the detector fails its own standards-based evaluation. Blocked from serving |
 | Source likelihood | 1 | **2 — working baseline** | Pipeline is correct and leakage-free; supervision is heuristic and one class is undetectable. Cannot exceed level 2 without labelled attribution data, which no available source provides |
 | Propagation forecast | 1 | **2/3 — validated at 3–12 h** | Genuine skill at 3–12 h; negative at 24 h. Level 3 for the short horizons, level 2 overall until per-horizon promotion exists |

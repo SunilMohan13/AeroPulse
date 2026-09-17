@@ -48,6 +48,13 @@ def test_imd_normalizes_wind() -> None:
     assert obs.humidity == 72.0
 
 
+def test_cursor_offsets_fixture_fetches() -> None:
+    connector = CpcbConnector(ROOT / "cpcb" / "stations.json")
+    records = list(connector.fetch(FetchRequest(cursor="1")))
+    assert len(records) == 1
+    assert records[0].source_record_id == "PB014"
+
+
 def test_empty_payload_yields_no_observations() -> None:
     connector = CpcbConnector()
     raw = RawRecord(

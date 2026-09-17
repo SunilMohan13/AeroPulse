@@ -8,6 +8,7 @@ from pathlib import Path
 
 from aeropulse_common.ids import new_ulid
 from aeropulse_connector_sdk.base import DataConnector
+from aeropulse_connector_sdk.checkpoint import apply_cursor
 from aeropulse_connector_sdk.contracts import (
     ConnectorMetadata,
     FetchRequest,
@@ -73,7 +74,7 @@ class CpcbConnector(DataConnector):
             return
         payload = load_fixture(self.fixture_path)
         fetched_at = datetime.now(UTC)
-        for station in payload.get("stations", []):
+        for station in apply_cursor(payload.get("stations", []), request.cursor):
             yield RawRecord(
                 source_id="cpcb",
                 source_record_id=str(station["station_id"]),

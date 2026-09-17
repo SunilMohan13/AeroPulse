@@ -13,6 +13,41 @@ The architecture separates:
 
 > **Core principle:** Use traditional ML for quantitative prediction and Gemini for reasoning, correlation, explanation, and agentic interaction.
 
+## Codebase review and integration status (2026-09-13)
+
+This document is a target architecture, not the current runtime. The repository currently has a
+deterministic, evidence-grounded Copilot API with `llm_used=false`; no Gemini SDK call is wired into
+the request path. That is intentional until the following prerequisites are satisfied:
+
+1. **Completed 2026-09-14:** the API reads persisted events/evidence/latest forecasts/latest graphs
+  from TimescaleDB. This is now the evidence boundary a Gemini adapter must use.
+  Persisted grid features and predictions are also available through authenticated, filterable
+  list/latest routes; Gemini tools should request bounded pages or one latest grid record, never
+  dump unbounded feature history into a prompt.
+  Operational AQ/fire/weather/forecast/grid map layers now read the same persisted state, so a
+  future Gemini tool should call these APIs rather than duplicating database queries. Satellite
+  metadata footprints are persisted too; Gemini must preserve the `AOD is not surface PM2.5`
+  limitation and must not infer pixel-level imagery from metadata-only records.
+  Drift summaries are available through `/api/v1/drift`; Gemini may explain their returned status
+  and limitations but must not reinterpret `INSUFFICIENT_DATA` as stability or trigger promotion.
+2. The model catalog must expose true lifecycle status. This is now partially implemented:
+  `GET /api/v1/models` merges deterministic serving baselines with filesystem-registry records and
+  labels each as `PRIMARY_BASELINE`, `PRIMARY_MODEL`, or `REGISTERED_ONLY`.
+3. Notebook metrics alone are not serving artifacts. The saved-output audit found 369/375 executed
+  code cells and no saved errors, but no physical notebook bundles under track artifact folders.
+  Export, contract validation and `VALIDATION -> SHADOW` registration must precede any use.
+4. Gemini receives only a structured evidence envelope: observed facts, predictions, model/version,
+  confidence, evidence identifiers, provenance and limitations. It may summarize or plan; it may
+  not create PM2.5 values, probabilities, source scores or promotion decisions.
+5. Gemini output must validate against `copilot.v1`, retain the deterministic numeric fields, expose
+  `llm_used`, and fall back to the current deterministic response on timeout, parse failure, safety
+  refusal or missing credentials.
+
+Recommended sequence: ~~persisted API read path~~ (done) -> shadow-model telemetry -> grounded Gemini rewrite
+behind a feature flag -> evaluation set for faithfulness/citation coverage -> optional Vertex AI
+artifact mirror. Do not start with Vertex deployment or autonomous agents; neither fixes the current
+data-boundary and artifact gaps.
+
 ## High-Level Architecture
 
 ```text

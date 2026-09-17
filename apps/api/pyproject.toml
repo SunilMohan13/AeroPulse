@@ -9,6 +9,8 @@ dependencies = [
     "aeropulse-observability",
     "aeropulse-contracts",
     "aeropulse-intelligence",
+    "aeropulse-ml",
+    "aeropulse-geospatial",
     "aeropulse-connector-app",
     "fastapi>=0.115.0",
     "uvicorn[standard]>=0.32.0",
@@ -30,4 +32,6 @@ aeropulse-auth = { workspace = true }
 aeropulse-observability = { workspace = true }
 aeropulse-contracts = { workspace = true }
 aeropulse-intelligence = { workspace = true }
+aeropulse-ml = { workspace = true }
+aeropulse-geospatial = { workspace = true }
 aeropulse-connector-app = { workspace = true }

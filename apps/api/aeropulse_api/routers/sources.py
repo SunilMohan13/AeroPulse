@@ -2,7 +2,17 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
+import yaml
 from aeropulse_auth.jwt import Role, TokenClaims
+from aeropulse_connector_cams import CamsConnector
+from aeropulse_connector_cpcb import CpcbConnector
+from aeropulse_connector_firms import FirmsConnector
+from aeropulse_connector_imd import ImdConnector
+from aeropulse_connector_modis import ModisConnector
+from aeropulse_connector_sdk.base import DataConnector
+from aeropulse_connector_sentinel5p import Sentinel5PConnector
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
@@ -94,6 +104,44 @@ class BackfillRequest(BaseModel):
     bbox: list[float] | None = None
 
 
+def _repo_root() -> Path:
+    """Return the project root for fixture-backed connector health checks."""
+    for candidate in (Path("/app"), Path(".")):
+        if (candidate / "fixtures").exists() and (candidate / "config" / "sources.yaml").exists():
+            return candidate
+    return Path(".")
+
+
+def _source_connector(source_id: str) -> DataConnector | None:
+    """Instantiate a connector for a registered source when the fixture is present."""
+    root = _repo_root()
+    config_path = root / "config" / "sources.yaml"
+    fixture_path: Path | None = None
+    try:
+        raw = yaml.safe_load(config_path.read_text()) if config_path.exists() else {}
+        sources = (raw or {}).get("sources", []) if isinstance(raw, dict) else []
+        for source in sources:
+            if isinstance(source, dict) and source.get("id") == source_id and source.get("fixture"):
+                fixture_path = root / source["fixture"]
+                break
+    except (OSError, yaml.YAMLError):
+        fixture_path = None
+
+    if source_id == "cpcb":
+        return CpcbConnector(fixture_path)
+    if source_id == "firms":
+        return FirmsConnector(fixture_path)
+    if source_id == "imd":
+        return ImdConnector(fixture_path)
+    if source_id == "sentinel5p":
+        return Sentinel5PConnector(fixture_path)
+    if source_id == "modis":
+        return ModisConnector(fixture_path)
+    if source_id == "cams":
+        return CamsConnector(fixture_path)
+    return None
+
+
 @router.get("")
 def list_sources(
     _claims: TokenClaims = Depends(get_claims),
@@ -148,10 +196,29 @@ def test_source(
     source_id: str,
     _claims: TokenClaims = Depends(require(Role.ADMIN, Role.OPERATOR)),
 ) -> dict:
-    """Run a connector health check (replay-mode stub)."""
+    """Run a connector health check using the actual fixture-backed connector."""
     if source_id not in _SOURCES:
         raise HTTPException(status_code=404, detail="Source not found")
-    return {"source_id": source_id, "healthy": True, "mode": "replay"}
+
+    connector = _source_connector(source_id)
+    if connector is None:
+        return {
+            "source_id": source_id,
+            "connector_id": _SOURCES[source_id]["connector_id"],
+            "healthy": True,
+            "mode": "replay",
+            "message": "configured",
+        }
+
+    status = connector.health_check()
+    return {
+        "source_id": source_id,
+        "connector_id": status.connector_id,
+        "healthy": status.healthy,
+        "mode": "replay",
+        "message": status.message,
+        "checked_at": status.checked_at.isoformat(),
+    }
 
 
 @router.post("/{source_id}/backfill")

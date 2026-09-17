@@ -1,7 +1,7 @@
 # AeroPulse India — Notebook to Production ML Integration Plan
 
-**Status:** design only. No code in this document is implemented.
-**Date:** 2026-09-10
+**Status:** partially implemented; registry visibility landed 2026-09-13, serving integration remains open.
+**Date:** 2026-09-13
 **Scope:** how the four research pipelines in `AeroPulse_ML_Notebooks/` become live
 predictive and regression models behind the AeroPulse API and UI.
 
@@ -20,6 +20,19 @@ between them and does not restate them.
 | **This document** | The gap between the notebooks and the running product, and the sequence that closes it |
 
 Read section 3 first. It changes what the rest of the plan has to be.
+
+### 2026-09-13 verification update
+
+- Read-only notebook JSON audit: 375 code cells, 369 executed, 367 with saved outputs, zero saved
+  errors. This corrects the earlier blanket statement that the notebooks were unexecuted.
+- The physical external dataset exists: 1,705,252 rows / 149 stations; base and event-aware
+  Parquets are present and their manifest gates pass.
+- Notebook-local artifact directories are empty. Saved metrics are research evidence, not a
+  deployable artifact or proof of current reproducibility.
+- `GET /api/v1/models` now merges deterministic serving baselines with the filesystem-backed
+  `aeropulse_ml.registry.ModelRegistry`. Each entry exposes its true stage, `runtime_role`, and
+  whether its local artifact is available. Non-production records remain `REGISTERED_ONLY`; this
+  changes visibility, not serving.
 
 ---
 
@@ -44,10 +57,10 @@ propagation withholds all six horizons, source likelihood fails 4 of 10 and abst
 on 48.3% of stations. The correct integration target is therefore **shadow serving**,
 not production serving. Section 12.
 
-**4. The trained models are not served by anything.** `aeropulse_ml` is imported only
-by `tests/`. The worker runs the deterministic baselines in `libs/intelligence`; the
-API returns a hardcoded model list; the frontend runs entirely on mocks. There are
-three disconnected systems, not one pipeline with a missing link. Section 4.
+**4. The trained models are not served by the worker.** The worker still runs deterministic
+baselines in `libs/intelligence`, but the API model catalog now reads both the runtime baselines and
+the real filesystem registry. This closes the registry-observability mismatch only; prediction
+traffic is unchanged and non-production records remain registered-only. Section 4.
 
 The practical consequence: the fastest honest route to live predictions is a
 **reduced-feature retrain restricted to what the online path can actually serve**,
@@ -66,13 +79,13 @@ trained model.
 ┌─────────────────────────────────────────────────────────────────────┐
 │ 1. RESEARCH          AeroPulse_ML_Notebooks/                        │
 │                                                                     │
-│    pm25_estimator (8 nb)   anomaly_detector (9 nb)                  │
+│    pm25_estimator (10 nb)  anomaly_detector (9 nb)                  │
 │    propagation_forecast (8) source_likelihood (9)                   │
 │         │                                                           │
-│         └── artifacts/**.joblib   LightGBM / CatBoost               │
-│             184-306 features, status: VALIDATION                    │
+│         └── saved cell outputs + manifests                          │
+│             physical notebook bundles currently absent             │
 │                                                                     │
-│    ✗ no consumer. Nothing in apps/ or libs/ reads these.            │
+│    ✗ no loadable bundle is available for a runtime consumer         │
 └─────────────────────────────────────────────────────────────────────┘
 
 ┌─────────────────────────────────────────────────────────────────────┐
@@ -90,7 +103,7 @@ trained model.
 │                                          │                          │
 │  API (FastAPI, 26 routes) ◀── EVENT_STORE (in-memory, empty)        │
 │                                                                     │
-│    ✗ no read path from TimescaleDB to the API                       │
+│    ✓ event/evidence/forecast/graph API reads TimescaleDB (2026-09-14)│
 └─────────────────────────────────────────────────────────────────────┘
 
 ┌─────────────────────────────────────────────────────────────────────┐
@@ -100,7 +113,7 @@ trained model.
 │    sklearn HistGradientBoosting, 30-feature FeatureSets             │
 │    promotion gate, ModelStage, validate_feature_contract            │
 │                                                                     │
-│    ✗ imported only by tests/. The worker never calls it.            │
+│    API reads registry metadata; worker still never calls inference  │
 └─────────────────────────────────────────────────────────────────────┘
 
 ┌─────────────────────────────────────────────────────────────────────┐
@@ -110,11 +123,10 @@ trained model.
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
-Verification of the two "not wired" claims:
+Verification of the remaining serving gap:
 
-- `grep aeropulse_ml` across the repo excluding `libs/ml/` returns only
-  `tests/unit/test_ml_inference.py`, `test_promotion_gate.py`, `test_ml_evaluation.py`,
-  `test_ml_registry.py`.
+- `apps/api/aeropulse_api/routers/models.py` imports `aeropulse_ml.registry.ModelRegistry` and
+  exposes registered metadata through `/api/v1/models`; this is catalog visibility only.
 - `apps/worker/aeropulse_worker/pipeline.py:19` imports
   `aeropulse_intelligence.detect.process_snapshot`, and nothing from `aeropulse_ml`.
 
@@ -124,13 +136,16 @@ mean the worker serves the model. Worth correcting in that document.
 
 ---
 
-## 4. What the notebooks actually produce
+## 4. What the saved notebook outputs report
 
-Every artifact below carries `status: VALIDATION`. None is promoted.
+The metrics below are retained in notebook outputs and manifests. The referenced notebook-local
+bundle files are not physically present in this checkout, so none can be loaded, registered from
+the notebook track, or promoted without rerunning the relevant packaging step. Treat every path
+below as an expected output path, not as proof that the artifact currently exists.
 
 ### 4.1 `pm25_estimator` — Phase 7 bundle
 
-`artifacts/pm25/phase7/peak_hazard/pm25_peak_hazard_bundle.joblib`, 3.44 MB,
+Expected path: `artifacts/pm25/phase7/peak_hazard/pm25_peak_hazard_bundle.joblib`, reported as 3.44 MB,
 `schema_version 1.0.0`, `dataset_version 3.0.0`, fingerprint `ba72d91a76c075ee`,
 184 features, `primary_horizon_h: 24`. Contains three models in one bundle:
 
@@ -534,6 +549,11 @@ impact on served output; a comparison report shows challenger vs champion on the
 notebooks' metrics, computed on production data rather than research data.
 
 ### Phase 5 — Persistence and the API read path
+
+**Status update 2026-09-14:** event/evidence/latest forecast/latest graph reads are implemented and
+verified with actual connector replay input. `grid_feature`/`grid_prediction` gained authenticated,
+filterable list/latest routes on 2026-09-14. Operational map routes now consume the same persisted
+AQ/fire/weather/forecast/grid state. The frontend remains mock-only.
 
 **Goal:** the API serves what the worker computed. This is independent of the ML work
 and is called out in `AeroPulse_MLOps_Architecture.md` §8 as the highest-value single

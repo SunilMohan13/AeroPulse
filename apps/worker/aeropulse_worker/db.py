@@ -13,6 +13,7 @@ from aeropulse_contracts.lineage import EvidenceGraph
 from aeropulse_contracts.meteo import MeteorologicalObservation
 from aeropulse_contracts.observation import Observation
 from aeropulse_contracts.prediction import GridPrediction
+from aeropulse_contracts.raster import RasterObservation
 
 UPSERT_AQ = """
 INSERT INTO air_quality_observation (
@@ -108,6 +109,27 @@ ON CONFLICT (time, grid_id, model_version) DO UPDATE SET
     prediction_interval_low = EXCLUDED.prediction_interval_low,
     prediction_interval_high = EXCLUDED.prediction_interval_high,
     confidence = EXCLUDED.confidence
+"""
+
+UPSERT_RASTER = """
+INSERT INTO raster_observation (
+    acquisition_time, observation_id, source_id, source_record_id, product_id,
+    processing_time, min_lon, min_lat, max_lon, max_lat, crs, resolution,
+    object_uri, checksum, cloud_fraction, quality_score, sample_aod, sample_no2,
+    sample_pm25, payload
+) VALUES (
+    %(acquisition_time)s, %(observation_id)s, %(source_id)s, %(source_record_id)s,
+    %(product_id)s, %(processing_time)s, %(min_lon)s, %(min_lat)s, %(max_lon)s,
+    %(max_lat)s, %(crs)s, %(resolution)s, %(object_uri)s, %(checksum)s,
+    %(cloud_fraction)s, %(quality_score)s, %(sample_aod)s, %(sample_no2)s,
+    %(sample_pm25)s, %(payload)s::jsonb
+)
+ON CONFLICT (acquisition_time, observation_id) DO UPDATE SET
+    processing_time = EXCLUDED.processing_time,
+    object_uri = EXCLUDED.object_uri,
+    checksum = EXCLUDED.checksum,
+    quality_score = EXCLUDED.quality_score,
+    payload = EXCLUDED.payload
 """
 
 UPSERT_EVENT = """
@@ -271,6 +293,39 @@ class TimescaleRepository:
             )
         self.conn.commit()
 
+    def upsert_raster(self, observation: RasterObservation) -> bool:
+        """Insert or refresh raster metadata; large arrays stay in object storage."""
+        min_lon, min_lat, max_lon, max_lat = observation.bbox
+        with self.conn.cursor() as cur:
+            cur.execute(
+                UPSERT_RASTER,
+                {
+                    "acquisition_time": observation.acquisition_time,
+                    "observation_id": observation.observation_id,
+                    "source_id": observation.source_id,
+                    "source_record_id": observation.source_record_id,
+                    "product_id": observation.product_id,
+                    "processing_time": observation.processing_time,
+                    "min_lon": min_lon,
+                    "min_lat": min_lat,
+                    "max_lon": max_lon,
+                    "max_lat": max_lat,
+                    "crs": observation.crs,
+                    "resolution": observation.resolution,
+                    "object_uri": observation.object_uri,
+                    "checksum": observation.checksum,
+                    "cloud_fraction": observation.cloud_fraction,
+                    "quality_score": observation.quality.quality_score,
+                    "sample_aod": observation.sample_aod,
+                    "sample_no2": observation.sample_no2,
+                    "sample_pm25": observation.sample_pm25,
+                    "payload": json.dumps(observation.model_dump(mode="json")),
+                },
+            )
+            inserted = cur.rowcount == 1
+        self.conn.commit()
+        return inserted
+
     def record_dlq(self, source_id: str, payload: dict[str, Any], error: str) -> None:
         """Insert a dead-letter row."""
         sql = """
@@ -296,6 +351,27 @@ class TimescaleRepository:
         with self.conn.cursor() as cur:
             cur.execute(sql, (source_id, status, records))
         self.conn.commit()
+
+    def upsert_checkpoint(self, source_id: str, cursor: str) -> None:
+        """Persist the last processed cursor for a source."""
+        sql = """
+        INSERT INTO connector_checkpoint (source_id, cursor, updated_at)
+        VALUES (%(source_id)s, %(cursor)s, now())
+        ON CONFLICT (source_id) DO UPDATE SET
+            cursor = EXCLUDED.cursor,
+            updated_at = now()
+        """
+        with self.conn.cursor() as cur:
+            cur.execute(sql, {"source_id": source_id, "cursor": cursor})
+        self.conn.commit()
+
+    def get_checkpoint(self, source_id: str) -> str | None:
+        """Return the last saved cursor for a source, if any."""
+        sql = "SELECT cursor FROM connector_checkpoint WHERE source_id = %(source_id)s"
+        with self.conn.cursor() as cur:
+            cur.execute(sql, {"source_id": source_id})
+            row = cur.fetchone()
+        return row[0] if row else None
 
     def upsert_event(self, event: PollutionEvent) -> None:
         """Insert or update a pollution event row."""

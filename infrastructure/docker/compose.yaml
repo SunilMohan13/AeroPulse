@@ -23,6 +23,7 @@ services:
       - ../db/migrations/0001_init.sql:/docker-entrypoint-initdb.d/0001_init.sql:ro
       - ../db/migrations/0002_phase3.sql:/docker-entrypoint-initdb.d/0002_phase3.sql:ro
       - ../db/migrations/0003_phase4.sql:/docker-entrypoint-initdb.d/0003_phase4.sql:ro
+      - ../db/migrations/0004_raster_observation.sql:/docker-entrypoint-initdb.d/0004_raster_observation.sql:ro
     ports:
       - "127.0.0.1:5432:5432"
     networks: [aeropulse-backend]
@@ -154,7 +155,7 @@ services:
     build:
       context: ../..
       dockerfile: infrastructure/docker/Dockerfile
-    restart: unless-stopped
+    restart: "no"
     command: ["uv", "run", "aeropulse-connector"]
     environment:
       AEROPULSE_SERVICE_NAME: aeropulse-connector

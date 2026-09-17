@@ -16,6 +16,7 @@ COPY apps ./apps
 COPY connectors ./connectors
 COPY fixtures ./fixtures
 COPY config ./config
+COPY models ./models
 COPY infrastructure/db ./infrastructure/db
 
 RUN uv sync --frozen --no-dev --no-install-project \
