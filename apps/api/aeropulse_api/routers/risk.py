@@ -59,7 +59,13 @@ def get_risk_areas(
                 "lon": cell["lon"],
                 "population": cell["population"],
                 "population_density": cell["density_per_km2"],
-                "risk": "SEVERE" if result.population_risk >= 0.5 else "HIGH" if result.population_risk >= 0.2 else "MEDIUM" if result.population_risk >= 0.05 else "LOW",
+                "risk": "SEVERE"
+                if result.population_risk >= 0.5
+                else "HIGH"
+                if result.population_risk >= 0.2
+                else "MEDIUM"
+                if result.population_risk >= 0.05
+                else "LOW",
                 "population_risk": result.population_risk,
                 "pollution_severity": result.pollution_severity,
             }

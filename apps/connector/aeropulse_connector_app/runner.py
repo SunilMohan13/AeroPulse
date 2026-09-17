@@ -97,7 +97,9 @@ def _checkpoint_cursor(repo: Any | None, source_id: str, provider: str | None) -
     return None
 
 
-def _persist_checkpoint(repo: Any | None, source_id: str, provider: str | None, cursor: str) -> None:
+def _persist_checkpoint(
+    repo: Any | None, source_id: str, provider: str | None, cursor: str
+) -> None:
     """Persist the updated cursor using the provider-aware key."""
     if repo is None:
         return
@@ -167,14 +169,18 @@ def replay_all(
         connector = CpcbConnector(fixtures_root / "cpcb" / STATIONS_JSON)
         provider = connector.metadata().provider
         cursor = _checkpoint_cursor(repo, "cpcb", provider)
-        request = FetchRequest(processing_mode=processing_mode.value, cursor=cursor, provider=provider)
+        request = FetchRequest(
+            processing_mode=processing_mode.value, cursor=cursor, provider=provider
+        )
         counts["cpcb"] = _replay_cpcb(fixtures_root, request, publish, processing_mode)
         _persist_checkpoint(repo, "cpcb", provider, _next_cursor(cursor, counts["cpcb"]))
     if enabled is None or "firms" in enabled:
         connector = FirmsConnector(fixtures_root / "firms" / "fires.json")
         provider = connector.metadata().provider
         cursor = _checkpoint_cursor(repo, "firms", provider)
-        request = FetchRequest(processing_mode=processing_mode.value, cursor=cursor, provider=provider)
+        request = FetchRequest(
+            processing_mode=processing_mode.value, cursor=cursor, provider=provider
+        )
         counts["firms"] = _run_connector(
             connector,
             request,
@@ -187,7 +193,9 @@ def replay_all(
         connector = ImdConnector(fixtures_root / "imd" / "weather.json")
         provider = connector.metadata().provider
         cursor = _checkpoint_cursor(repo, "imd", provider)
-        request = FetchRequest(processing_mode=processing_mode.value, cursor=cursor, provider=provider)
+        request = FetchRequest(
+            processing_mode=processing_mode.value, cursor=cursor, provider=provider
+        )
         counts["imd"] = _run_connector(
             connector,
             request,
@@ -202,7 +210,9 @@ def replay_all(
         connector = cls(fixtures_root / rel)
         provider = connector.metadata().provider
         cursor = _checkpoint_cursor(repo, key, provider)
-        request = FetchRequest(processing_mode=processing_mode.value, cursor=cursor, provider=provider)
+        request = FetchRequest(
+            processing_mode=processing_mode.value, cursor=cursor, provider=provider
+        )
         counts[key] = _run_connector(
             connector,
             request,

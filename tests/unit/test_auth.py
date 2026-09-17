@@ -44,13 +44,23 @@ def test_decode_token_accepts_oidc_role_claims(monkeypatch: pytest.MonkeyPatch) 
             assert token == oidc_token
             return FakeSigningKey()
 
-    def fake_decode(token: str, key: str, algorithms: list[str], issuer: str | None = None, **kwargs):
+    def fake_decode(
+        token: str, key: str, algorithms: list[str], issuer: str | None = None, **kwargs
+    ):
         assert token == oidc_token
         assert key == "oidc-key"
         assert algorithms == [settings.jwt_algorithm]
-        return {"sub": "operator", "role": "OPERATOR", "iss": settings.jwt_issuer, "exp": 4102444800}
+        return {
+            "sub": "operator",
+            "role": "OPERATOR",
+            "iss": settings.jwt_issuer,
+            "exp": 4102444800,
+        }
 
-    monkeypatch.setattr("aeropulse_auth.jwt.jwt.get_unverified_header", lambda token: {"alg": settings.jwt_algorithm})
+    monkeypatch.setattr(
+        "aeropulse_auth.jwt.jwt.get_unverified_header",
+        lambda token: {"alg": settings.jwt_algorithm},
+    )
     monkeypatch.setattr("aeropulse_auth.jwt.jwt.PyJWKClient", lambda url: FakeJwkClient())
     monkeypatch.setattr("aeropulse_auth.jwt.jwt.decode", fake_decode)
 

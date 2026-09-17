@@ -238,7 +238,6 @@ def test_risk_endpoint(client: TestClient, settings: Settings) -> None:
     assert "pollution_severity" in response.json()
     assert "population_risk" in response.json()
 
-
     def test_risk_areas_and_industry_map_are_exposed(
         client: TestClient, settings: Settings
     ) -> None:
