@@ -48,6 +48,11 @@ class Settings(BaseSettings):
     oidc_jwks_url: str | None = None
     arangodb_url: str | None = None
     mlflow_tracking_uri: str | None = None
+    drift_monitor_interval_seconds: int = Field(default=3600, ge=60)
+    drift_monitor_reference_hours: int = Field(default=168, ge=1)
+    drift_monitor_current_hours: int = Field(default=24, ge=1)
+    drift_monitor_min_samples: int = Field(default=30, ge=10)
+    drift_monitor_max_samples: int = Field(default=10000, ge=100)
 
 
 @lru_cache(maxsize=1)

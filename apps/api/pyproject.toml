@@ -25,6 +25,7 @@ build-backend = "hatchling.build"
 
 [project.scripts]
 aeropulse-api = "aeropulse_api.main:main"
+aeropulse-drift-monitor = "aeropulse_api.drift_monitor:main"
 
 [tool.uv.sources]
 aeropulse-common = { workspace = true }

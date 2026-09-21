@@ -17,7 +17,7 @@ import { HERO_EVENT_ID } from '../data/mockEvents'
 
 export function Overview() {
   const { data: events = [] } = useQuery({ queryKey: ['events'], queryFn: fetchEvents })
-  const { data: forecast = [] } = useQuery({ queryKey: ['forecast'], queryFn: fetchForecast })
+  const { data: forecast = [] } = useQuery({ queryKey: ['forecast'], queryFn: () => fetchForecast() })
   const { data: sources = [] } = useQuery({ queryKey: ['sources'], queryFn: fetchSources })
   const { data: totalExposure } = useQuery({
     queryKey: ['totalExposure'],

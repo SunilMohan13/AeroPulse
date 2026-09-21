@@ -132,6 +132,24 @@ services:
       retries: 15
     mem_limit: 512m
 
+  drift-monitor:
+    build:
+      context: ../..
+      dockerfile: infrastructure/docker/Dockerfile
+    restart: unless-stopped
+    command: ["uv", "run", "aeropulse-drift-monitor"]
+    environment:
+      AEROPULSE_SERVICE_NAME: aeropulse-drift-monitor
+      AEROPULSE_DATABASE_URL: postgresql://aeropulse:aeropulse@timescaledb:5432/aeropulse
+      AEROPULSE_DRIFT_MONITOR_INTERVAL_SECONDS: 3600
+      AEROPULSE_DRIFT_MONITOR_REFERENCE_HOURS: 168
+      AEROPULSE_DRIFT_MONITOR_CURRENT_HOURS: 24
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+    networks: [aeropulse-backend]
+    mem_limit: 256m
+
   worker:
     build:
       context: ../..
@@ -174,6 +192,8 @@ services:
     restart: unless-stopped
     environment:
       VITE_API_BASE: http://127.0.0.1:8000
+      # Local demo viewer token; replace with AEROPULSE_WEB_TOKEN outside development.
+      VITE_API_TOKEN: ${AEROPULSE_WEB_TOKEN:-eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhZXJvcHVsc2Utd2ViLWRlbW8iLCJyb2xlcyI6WyJWSUVXRVIiXSwiaXNzIjoiYWVyb3B1bHNlIiwiaWF0IjoxNzg5NjY1MDIyLCJleHAiOjE4MjEyMDEwMjJ9.3cYobg5Mu2udoBJdAgvr4VhBbii2WcHafEkmk7ibwSA}
     ports:
       - "127.0.0.1:5173:5173"
     depends_on:

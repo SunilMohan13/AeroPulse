@@ -359,7 +359,7 @@
           "sources"
         ],
         "summary": "Test Source",
-        "description": "Run a connector health check (replay-mode stub).",
+        "description": "Run a connector health check using the actual fixture-backed connector.",
         "operationId": "test_source_api_v1_sources__source_id__test_post",
         "security": [
           {
@@ -942,6 +942,75 @@
                   "type": "object",
                   "additionalProperties": true,
                   "title": "Response Grid Api V1 Map Grid Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/map/industry": {
+      "get": {
+        "tags": [
+          "map"
+        ],
+        "summary": "Industry",
+        "description": "Return replayed industry/OCEMS asset locations.",
+        "operationId": "industry_api_v1_map_industry_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 2000,
+              "minimum": 1,
+              "default": 500,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Industry Api V1 Map Industry Get"
                 }
               }
             }
@@ -2182,6 +2251,61 @@
             }
           }
         }
+      },
+      "get": {
+        "tags": [
+          "citizen"
+        ],
+        "summary": "List Reports",
+        "description": "List citizen reports currently held by the API event repository.",
+        "operationId": "list_reports_api_v1_citizen_reports_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response List Reports Api V1 Citizen Reports Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/v1/citizen/reports/{report_id}/media": {
@@ -2461,6 +2585,85 @@
                   "type": "object",
                   "additionalProperties": true,
                   "title": "Response Get Risk Api V1 Risk Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/risk/areas": {
+      "get": {
+        "tags": [
+          "risk"
+        ],
+        "summary": "Get Risk Areas",
+        "description": "Score each population cell with provider and provenance metadata.",
+        "operationId": "get_risk_areas_api_v1_risk_areas_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "pm25",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "number",
+              "minimum": 0,
+              "default": 180.0,
+              "title": "Pm25"
+            }
+          },
+          {
+            "name": "exposure_hours",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "number",
+              "minimum": 0,
+              "default": 6.0,
+              "title": "Exposure Hours"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Get Risk Areas Api V1 Risk Areas Get"
                 }
               }
             }

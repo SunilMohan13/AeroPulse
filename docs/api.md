@@ -103,6 +103,11 @@ are persisted.
 
 `GET /api/v1/alerts` — HIGH/CRITICAL events only, `channel=log`.
 `GET /api/v1/risk?pm25=` — `pollution_severity` vs `population_risk` (`risk-0.1`).
+`GET /api/v1/risk/areas?pm25=&exposure_hours=` — ranked population cells with per-area risk,
+population counts, density, and population-source provenance. The checked-in reference fixture is
+marked `replace-before-production`; configure a licensed WorldPop or Census extract before using
+the values for operational decisions.
+`GET /api/v1/map/industry` — replayed Industry/OCEMS asset locations as GeoJSON.
 
 ## Errors
 
