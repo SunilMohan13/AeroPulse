@@ -20,6 +20,13 @@ from aeropulse_intelligence.detect import process_snapshot
 from aeropulse_intelligence.engine import EventStore
 from aeropulse_intelligence.snapshot import FeatureSnapshot
 from aeropulse_observability.logging import get_logger
+from aeropulse_observability.metrics import (
+    EVENTS_TRANSITIONED,
+    FEATURES_MATERIALIZED,
+    INGESTED_OBSERVATIONS,
+    QUALITY_REJECTIONS,
+    QUALITY_SCORE,
+)
 
 logger = get_logger("aeropulse.worker")
 
@@ -117,6 +124,7 @@ def process_air_quality(
             source_id=observation.source_id,
             reasons=qc.reasons,
         )
+        _record_rejection(observation.source_id, "air_quality", qc.reasons)
         if hasattr(repository, "record_dlq"):
             repository.record_dlq(
                 observation.source_id,
@@ -133,6 +141,7 @@ def process_air_quality(
         observation.measurement.parameter,
     )
     inserted = repository.upsert_air_quality(observation)
+    _record_accepted(observation.source_id, "air_quality", inserted, qc.quality_score)
     return {"status": "persisted" if inserted else "duplicate", "grid_id": observation.grid_id}
 
 
@@ -152,6 +161,7 @@ def process_fire(
     observation.quality.quality_flag = qc.quality_flag
     observation.quality.quality_score = qc.quality_score
     if qc.quality_flag == "invalid":
+        _record_rejection(observation.source_id, "fire", qc.reasons)
         if hasattr(repository, "record_dlq"):
             repository.record_dlq(
                 observation.source_id,
@@ -167,6 +177,7 @@ def process_fire(
         "frp",
     )
     inserted = repository.upsert_fire(observation)
+    _record_accepted(observation.source_id, "fire", inserted, qc.quality_score)
     return {"status": "persisted" if inserted else "duplicate", "grid_id": observation.grid_id}
 
 
@@ -187,6 +198,7 @@ def process_weather(
     observation.quality.quality_flag = qc.quality_flag
     observation.quality.quality_score = qc.quality_score
     if qc.quality_flag == "invalid":
+        _record_rejection(observation.source_id, "weather", qc.reasons)
         if hasattr(repository, "record_dlq"):
             repository.record_dlq(
                 observation.source_id,
@@ -202,6 +214,7 @@ def process_weather(
         "weather",
     )
     inserted = repository.upsert_weather(observation)
+    _record_accepted(observation.source_id, "weather", inserted, qc.quality_score)
     return {"status": "persisted" if inserted else "duplicate", "grid_id": observation.grid_id}
 
 
@@ -214,11 +227,53 @@ def run_detection(repository: InMemoryRepository) -> dict[str, Any]:
         rasters=list(getattr(repository, "rasters", [])),
     )
     events = process_snapshot(snapshot, repository.event_store)
+    FEATURES_MATERIALIZED.inc(len(repository.event_store.latest_features))
+    for event in events:
+        EVENTS_TRANSITIONED.labels(status=event.status.value, severity=event.severity.value).inc()
     return {
         "events": len(events),
         "open": len(repository.event_store.open_by_grid),
         "event_ids": [e.event_id for e in events],
     }
+
+
+def _record_accepted(
+    source_id: str, observation_type: str, inserted: bool, quality_score: float
+) -> None:
+    """Count an accepted observation and record its quality score.
+
+    Args:
+        source_id: Connector that supplied the record.
+        observation_type: ``air_quality``, ``fire`` or ``weather``.
+        inserted: False when the dedup key already existed.
+        quality_score: Score the quality engine assigned.
+    """
+    INGESTED_OBSERVATIONS.labels(
+        source_id=source_id,
+        observation_type=observation_type,
+        outcome="persisted" if inserted else "duplicate",
+    ).inc()
+    QUALITY_SCORE.labels(source_id=source_id).observe(quality_score)
+
+
+def _record_rejection(source_id: str, observation_type: str, reasons: list[str]) -> None:
+    """Count a quality rejection against each rule that failed.
+
+    Rule names come from a fixed vocabulary in the quality engine, so the
+    label stays bounded; the raw message is deliberately not used as a label.
+
+    Args:
+        source_id: Connector that supplied the record.
+        observation_type: ``air_quality``, ``fire`` or ``weather``.
+        reasons: Failing rule identifiers.
+    """
+    INGESTED_OBSERVATIONS.labels(
+        source_id=source_id,
+        observation_type=observation_type,
+        outcome="rejected",
+    ).inc()
+    for reason in reasons or ["unspecified"]:
+        QUALITY_REJECTIONS.labels(source_id=source_id, reason=reason).inc()
 
 
 def _iso(value: datetime) -> str:

@@ -1,0 +1,167 @@
+- generic [ref=f13e3]:
+  - banner [ref=f13e4]:
+    - generic [ref=f13e5]:
+      - generic [ref=f13e6]:
+        - generic [ref=f13e7]: AP
+        - generic [ref=f13e9]: AeroPulse
+      - generic [ref=f13e10]: ● Demo
+      - generic [ref=f13e11]: Punjab–Haryana–Delhi NCR
+    - generic [ref=f13e12]:
+      - group "Data source" [ref=f13e14]:
+        - button "Demo" [pressed] [ref=f13e15]
+        - button "Live" [ref=f13e20]
+      - generic [ref=f13e27]: 22 Sept 2026, 11:08 pm IST
+      - button "Updated 0s ago" [ref=f13e28]
+      - generic [ref=f13e32]:
+        - button "Judge tour" [ref=f13e33]
+        - button "Map demo" [ref=f13e34]
+      - button "Open command palette" [ref=f13e35]:
+        - generic [ref=f13e38]: ⌘K
+      - button "Notifications" [ref=f13e39]
+      - generic [ref=f13e44]: OP
+  - generic [ref=f13e45]:
+    - complementary [ref=f13e46]:
+      - navigation "Primary" [ref=f13e47]:
+        - link "Overview" [ref=f13e48] [cursor=pointer]:
+          - /url: /
+        - link "Live Map" [ref=f13e55] [cursor=pointer]:
+          - /url: /map
+        - link "Events" [ref=f13e59] [cursor=pointer]:
+          - /url: /events/EVT-1024
+        - link "Forecast" [ref=f13e63] [cursor=pointer]:
+          - /url: /forecast
+        - link "Risk" [ref=f13e68] [cursor=pointer]:
+          - /url: /risk
+        - link "Evidence" [ref=f13e75] [cursor=pointer]:
+          - /url: /evidence
+        - link "Sources" [ref=f13e82] [cursor=pointer]:
+          - /url: /sources
+        - link "Copilot" [ref=f13e88] [cursor=pointer]:
+          - /url: /copilot
+        - link "Citizen" [ref=f13e93] [cursor=pointer]:
+          - /url: /citizen
+      - generic [ref=f13e97]:
+        - button "Collapse sidebar" [ref=f13e98]:
+          - generic [ref=f13e101]: Collapse
+        - link "Settings" [ref=f13e102] [cursor=pointer]:
+          - /url: /sources
+    - main [ref=f13e107]:
+      - generic [ref=f13e109]:
+        - generic [ref=f13e110]:
+          - heading "Population Exposure" [level=1] [ref=f13e111]
+          - paragraph [ref=f13e112]: Who may be affected by current pollution
+          - paragraph [ref=f13e113]: Demo — a scripted Punjab stubble-burning episode transporting into Delhi NCR. Every figure is illustrative and reproducible offline.
+        - generic [ref=f13e116]:
+          - generic [ref=f13e117]: PREDICTED
+          - generic [ref=f13e118]:
+            - paragraph [ref=f13e119]: —
+            - paragraph [ref=f13e120]: People potentially exposed
+            - paragraph [ref=f13e121]:
+              - text: The API exposes population
+              - emphasis [ref=f13e122]: density
+              - text: per km², never a headcount at risk. Summing it would invent the most quotable number on this page, so it is withheld in live mode.
+        - generic [ref=f13e125]:
+          - region "Map" [ref=f13e127]
+          - generic:
+            - generic:
+              - generic: Fusion 0/6 agree · transport signal
+              - generic: "|"
+          - generic [ref=f13e131]:
+            - generic [ref=f13e132]:
+              - button "Zoom in" [ref=f13e133]
+              - button "Zoom out" [ref=f13e136]
+              - button "Toggle globe view" [ref=f13e139]
+              - button "Reset view" [ref=f13e146]
+              - button "Export map snapshot" [ref=f13e150]
+              - button "Expand map to full screen" [ref=f13e155]
+            - generic [ref=f13e161]: z6.2
+          - group "Map view mode" [ref=f13e163]:
+            - button "Globe" [ref=f13e164]
+            - button "Corridor" [ref=f13e170]
+          - generic [ref=f13e173]:
+            - generic [ref=f13e174]: Scenario lab
+            - generic [ref=f13e179]: What-if wind 0° · PREDICTED scenario
+            - slider "Wind direction scenario offset" [ref=f13e180]: "0"
+            - generic [ref=f13e181]:
+              - generic [ref=f13e182] [cursor=pointer]:
+                - generic [ref=f13e183]: Baseline plume (persistence)
+                - checkbox "Baseline plume (persistence)" [ref=f13e184]
+              - generic [ref=f13e185] [cursor=pointer]:
+                - generic [ref=f13e186]: GRAP NCR zone
+                - checkbox "GRAP NCR zone" [checked] [ref=f13e187]
+              - generic [ref=f13e188] [cursor=pointer]:
+                - generic [ref=f13e189]: Exposure ribbon
+                - checkbox "Exposure ribbon" [checked] [ref=f13e190]
+            - button "Play 60s map story" [ref=f13e191]
+          - generic [ref=f13e194]:
+            - paragraph [ref=f13e195]: Display
+            - generic [ref=f13e196]:
+              - button "Globe" [ref=f13e197]
+              - button "Corridor" [ref=f13e198]
+            - generic [ref=f13e199]:
+              - button "Map" [ref=f13e200]
+              - button "Sat" [ref=f13e201]
+              - button "3D" [ref=f13e202]
+              - button "2D" [ref=f13e203]
+            - generic [ref=f13e204] [cursor=pointer]:
+              - generic [ref=f13e205]: Day / night cycle
+              - checkbox "Day / night cycle" [checked] [ref=f13e206]
+            - generic [ref=f13e207] [cursor=pointer]:
+              - generic [ref=f13e208]: Orbital shell
+              - checkbox "Orbital shell" [checked] [ref=f13e209]
+          - generic [ref=f13e210]:
+            - paragraph [ref=f13e211]: PM2.5 µg/m³
+            - generic [ref=f13e213]:
+              - generic [ref=f13e214]: "0"
+              - generic [ref=f13e215]: "60"
+              - generic [ref=f13e216]: "120"
+              - generic [ref=f13e217]: 280+
+            - list [ref=f13e218]:
+              - listitem [ref=f13e219]:
+                - generic [ref=f13e221]: Good
+                - generic [ref=f13e222]: ≤30
+              - listitem [ref=f13e223]:
+                - generic [ref=f13e225]: Moderate
+                - generic [ref=f13e226]: ≤60
+              - listitem [ref=f13e227]:
+                - generic [ref=f13e229]: Poor
+                - generic [ref=f13e230]: ≤90
+              - listitem [ref=f13e231]:
+                - generic [ref=f13e233]: Very Poor
+                - generic [ref=f13e234]: ≤120
+              - listitem [ref=f13e235]:
+                - generic [ref=f13e237]: Severe
+                - generic [ref=f13e238]: 120+
+            - generic [ref=f13e239]: Model plume (cyan)
+            - generic [ref=f13e242]: Baseline persistence
+            - generic [ref=f13e245]: Exposure ribbon
+            - paragraph [ref=f13e248]: Grid 5 km (downsampled)
+        - generic [ref=f13e249]:
+          - generic [ref=f13e250]:
+            - generic [ref=f13e251]: Most Affected Areas
+            - generic [ref=f13e252]:
+              - list
+              - application [ref=f13e257]
+          - generic [ref=f13e259]:
+            - generic [ref=f13e260]: Sensitive Populations
+            - generic [ref=f13e261]:
+              - generic [ref=f13e262]:
+                - generic [ref=f13e263]:
+                  - paragraph [ref=f13e264]: 840K
+                  - paragraph [ref=f13e265]: Children
+                - generic [ref=f13e266]:
+                  - paragraph [ref=f13e267]: 620K
+                  - paragraph [ref=f13e268]: Elderly
+                - generic [ref=f13e269]:
+                  - paragraph [ref=f13e270]: "142"
+                  - paragraph [ref=f13e271]: Hospitals
+                - generic [ref=f13e272]:
+                  - paragraph [ref=f13e273]: 1,240
+                  - paragraph [ref=f13e274]: Schools
+              - paragraph [ref=f13e275]: Exposure estimates combine predicted PM2.5 severity with gridded population data.
+  - contentinfo [ref=f13e276]:
+    - generic [ref=f13e277]: AeroPulse Intelligence Engine · ● All systems operational
+    - generic [ref=f13e278]:
+      - generic [ref=f13e279]: "Data freshness: 2 min"
+      - generic [ref=f13e280]: "Models: Production"
+      - generic [ref=f13e281]: "Last update: 22 Sept 2026, 11:08 pm IST"

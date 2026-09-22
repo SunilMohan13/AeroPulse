@@ -33,6 +33,8 @@ from aeropulse_contracts.feature_spec import (
     ANOMALY_RESIDUAL,
     ML_FEATURE_VERSION,
     PM25_ESTIMATOR,
+    PM25_HAZARD_24H,
+    PM25_PEAK_24H,
     PROPAGATION_FORECAST,
     SOURCE_LIKELIHOOD,
     FeatureSet,
@@ -45,6 +47,8 @@ FEATURE_SET_BY_MODEL: dict[str, FeatureSet] = {
     "anomaly_detector": ANOMALY_RESIDUAL,
     "source_likelihood": SOURCE_LIKELIHOOD,
     "propagation_forecast": PROPAGATION_FORECAST,
+    "pm25_peak_24h": PM25_PEAK_24H,
+    "pm25_hazard_24h": PM25_HAZARD_24H,
 }
 
 
@@ -145,6 +149,61 @@ class ModelBundleCache:
         return loaded
 
 
+#: A prediction is refused below this fraction of populated features. Gradient
+#: boosting handles NaN natively, which is convenient and dangerous: a feature
+#: family that is silently all-null yields a confident answer rather than an
+#: error. The floor turns that into a visible refusal. It is deliberately low —
+#: the point is to catch a collapsed input path, not to demand a full vector,
+#: since sparse co-pollutant and satellite coverage is normal here.
+MIN_FEATURE_COMPLETENESS = 0.5
+
+
+def feature_completeness(row: pd.Series, feature_set: FeatureSet) -> dict[str, Any]:
+    """Report how much of a feature vector is actually populated.
+
+    Recorded on every prediction so that a downstream consumer can tell a
+    well-supported answer from one computed mostly from imputed nulls.
+
+    Args:
+        row: One row of a materialised feature frame.
+        feature_set: Feature projection being used.
+
+    Returns:
+        ``present``, ``total``, ``ratio`` and the sorted ``missing`` names.
+    """
+    missing = [name for name in feature_set.names if name not in row.index or pd.isna(row[name])]
+    total = len(feature_set.names)
+    present = total - len(missing)
+    return {
+        "present": present,
+        "total": total,
+        "ratio": round(present / total, 4) if total else 0.0,
+        "missing": sorted(missing),
+    }
+
+
+def _insufficient_features(completeness: dict[str, Any], model_name: str) -> dict[str, Any] | None:
+    """Return a refusal payload when too little of the vector is populated.
+
+    Args:
+        completeness: Output of :func:`feature_completeness`.
+        model_name: Model family, for the message.
+
+    Returns:
+        A refusal payload, or None when the vector is usable.
+    """
+    if completeness["ratio"] >= MIN_FEATURE_COMPLETENESS:
+        return None
+    return {
+        "available": False,
+        "reason": (
+            f"{model_name}: only {completeness['present']}/{completeness['total']} "
+            f"features populated, below the {MIN_FEATURE_COMPLETENESS:.0%} floor"
+        ),
+        "feature_completeness": completeness,
+    }
+
+
 def _row_matrix(row: pd.Series, feature_set: FeatureSet) -> np.ndarray:
     """Project one dataframe row onto a feature set, in contract order."""
     values = [
@@ -171,6 +230,10 @@ def predict_pm25(row: pd.Series, cache: ModelBundleCache) -> dict[str, Any]:
             "available": False,
             "reason": cache.load_errors.get("pm25_estimator", "unavailable"),
         }
+    completeness = feature_completeness(row, PM25_ESTIMATOR)
+    refusal = _insufficient_features(completeness, "pm25_estimator")
+    if refusal is not None:
+        return refusal
     model = loaded.bundle["model"]
     value = float(model.predict(_row_matrix(row, PM25_ESTIMATOR))[0])
     spread = float(loaded.bundle.get("residual_std", 0.0))
@@ -182,6 +245,7 @@ def predict_pm25(row: pd.Series, cache: ModelBundleCache) -> dict[str, Any]:
         "model_version": loaded.record.version,
         "model_name": loaded.record.model_name,
         "feature_version": loaded.record.feature_version,
+        "feature_completeness": completeness,
     }
 
 
@@ -308,6 +372,92 @@ def predict_forecast(row: pd.Series, cache: ModelBundleCache) -> dict[str, Any]:
     }
 
 
+def predict_peak_24h(row: pd.Series, cache: ModelBundleCache) -> dict[str, Any]:
+    """Forecast the maximum PM2.5 over the next 24 hours for one grid-hour.
+
+    Args:
+        row: One row of a materialised feature frame.
+        cache: Champion cache.
+
+    Returns:
+        Peak payload with an interval, or an unavailability marker.
+    """
+    loaded = cache.get("pm25_peak_24h")
+    if loaded is None:
+        return {
+            "available": False,
+            "reason": cache.load_errors.get("pm25_peak_24h", "unavailable"),
+        }
+    completeness = feature_completeness(row, PM25_PEAK_24H)
+    refusal = _insufficient_features(completeness, "pm25_peak_24h")
+    if refusal is not None:
+        return refusal
+
+    value = float(loaded.bundle["model"].predict(_row_matrix(row, PM25_PEAK_24H))[0])
+    spread = float(loaded.bundle.get("residual_std", 0.0))
+    threshold = float(loaded.bundle.get("exceedance_threshold", 121.0))
+    return {
+        "available": True,
+        "peak_pm25": round(value, 3),
+        "prediction_interval_low": round(value - 1.96 * spread, 3),
+        "prediction_interval_high": round(value + 1.96 * spread, 3),
+        "horizon_hours": int(loaded.bundle.get("primary_horizon_h", 24)),
+        "exceeds_threshold": bool(value >= threshold),
+        "threshold_ugm3": threshold,
+        "model_version": loaded.record.version,
+        "feature_completeness": completeness,
+    }
+
+
+def predict_hazard_24h(row: pd.Series, cache: ModelBundleCache) -> dict[str, Any]:
+    """Score the probability of a hazardous 24 hours for one grid-hour.
+
+    The single reconciled hazard definition (integration plan §5.4): one
+    model, one threshold, so two contradictory hazard numbers can never reach
+    the same map cell.
+
+    Args:
+        row: One row of a materialised feature frame.
+        cache: Champion cache.
+
+    Returns:
+        Hazard payload, or an unavailability marker. ``calibrated`` states
+        whether the score may be read as a probability; when it is False the
+        value ranks hours but its magnitude is not a frequency.
+    """
+    loaded = cache.get("pm25_hazard_24h")
+    if loaded is None:
+        return {
+            "available": False,
+            "reason": cache.load_errors.get("pm25_hazard_24h", "unavailable"),
+        }
+    completeness = feature_completeness(row, PM25_HAZARD_24H)
+    refusal = _insufficient_features(completeness, "pm25_hazard_24h")
+    if refusal is not None:
+        return refusal
+
+    model = loaded.bundle["model"]
+    classes = [int(c) for c in loaded.bundle.get("classes", model.classes_)]
+    if 1 not in classes:
+        return {
+            "available": False,
+            "reason": "artifact was fitted without a positive hazard class",
+        }
+    proba = model.predict_proba(_row_matrix(row, PM25_HAZARD_24H))[0]
+    score = float(proba[classes.index(1)])
+    calibration = str(loaded.bundle.get("calibration", "none"))
+    return {
+        "available": True,
+        "hazard_score": round(score, 4),
+        "calibrated": calibration not in ("", "none"),
+        "calibration": calibration,
+        "threshold_ugm3": float(loaded.bundle.get("hazard_threshold_ugm3", 121.0)),
+        "horizon_hours": int(loaded.bundle.get("primary_horizon_h", 24)),
+        "model_version": loaded.record.version,
+        "feature_completeness": completeness,
+    }
+
+
 def predict_latest(frame: pd.DataFrame, cache: ModelBundleCache) -> dict[str, Any]:
     """Run all champion models over the most recent row of each grid cell.
 
@@ -335,6 +485,8 @@ def predict_latest(frame: pd.DataFrame, cache: ModelBundleCache) -> dict[str, An
                 "anomaly": predict_anomaly(row, cache),
                 "source_likelihood": predict_source_likelihood(row, cache),
                 "forecast": predict_forecast(row, cache),
+                "peak_24h": predict_peak_24h(row, cache),
+                "hazard_24h": predict_hazard_24h(row, cache),
             }
         )
     return {

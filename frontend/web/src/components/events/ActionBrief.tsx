@@ -62,9 +62,15 @@ export function ActionBrief({ event }: ActionBriefProps) {
           <div>
             <p className="text-[10px] uppercase tracking-wider text-text-muted">Exposure</p>
             <p className="font-mono text-lg font-semibold">
-              {formatPopulation(event.populationAtRisk)}
+              {event.provenance?.unavailable?.includes('populationAtRisk')
+                ? '\u2014'
+                : formatPopulation(event.populationAtRisk)}
             </p>
-            <p className="text-xs text-text-muted">in projected plume path</p>
+            <p className="text-xs text-text-muted">
+              {event.provenance?.unavailable?.includes('populationAtRisk')
+                ? 'headcount not exposed by the API'
+                : 'in projected plume path'}
+            </p>
           </div>
         </div>
         <div className="flex items-start gap-2 rounded-md border border-border/80 bg-black/20 p-3">

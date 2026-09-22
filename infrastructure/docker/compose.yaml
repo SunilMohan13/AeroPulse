@@ -24,6 +24,7 @@ services:
       - ../db/migrations/0002_phase3.sql:/docker-entrypoint-initdb.d/0002_phase3.sql:ro
       - ../db/migrations/0003_phase4.sql:/docker-entrypoint-initdb.d/0003_phase4.sql:ro
       - ../db/migrations/0004_raster_observation.sql:/docker-entrypoint-initdb.d/0004_raster_observation.sql:ro
+      - ../db/migrations/0005_shadow_prediction.sql:/docker-entrypoint-initdb.d/0005_shadow_prediction.sql:ro
     ports:
       - "127.0.0.1:5432:5432"
     networks: [aeropulse-backend]
@@ -173,7 +174,19 @@ services:
       dockerfile: Dockerfile
     restart: unless-stopped
     environment:
+      # The browser runs on the host, so this is the host-published API port,
+      # not the compose service name.
       VITE_API_BASE: http://127.0.0.1:8000
+      # Bearer token for live mode. Empty by default: the UI then starts in
+      # demo mode and disables the Live toggle with "no token" rather than
+      # looping on 401s. Mint one and export it before `up`:
+      #   export AEROPULSE_UI_TOKEN=$(uv run python -c "from aeropulse_auth import \
+      #     encode_token, Role; print(encode_token('ui', [Role.VIEWER]))")
+      # Dev-only HS256 (ADR-0003) — a token in a browser bundle is readable
+      # by anyone who loads the page.
+      VITE_API_TOKEN: ${AEROPULSE_UI_TOKEN:-}
+      # Demo is the default so the scripted narrative works with no backend.
+      VITE_DEFAULT_DATA_MODE: ${AEROPULSE_UI_MODE:-demo}
     ports:
       - "127.0.0.1:5173:5173"
     depends_on:

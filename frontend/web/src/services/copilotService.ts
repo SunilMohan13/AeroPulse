@@ -1,4 +1,6 @@
 import type { CopilotMessage } from '../types'
+import { liveCopilot } from '../api/live'
+import { resolve } from './resolve'
 
 const delay = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
@@ -66,7 +68,7 @@ function matchResponse(query: string) {
   return responses.default
 }
 
-export async function queryCopilot(query: string): Promise<CopilotMessage> {
+async function demoAnswer(query: string): Promise<CopilotMessage> {
   await delay(400)
   const matched = matchResponse(query)
   return {
@@ -75,6 +77,14 @@ export async function queryCopilot(query: string): Promise<CopilotMessage> {
     content: matched.content,
     citations: matched.citations,
   }
+}
+
+export async function queryCopilot(query: string): Promise<CopilotMessage> {
+  return resolve(
+    'copilot',
+    () => demoAnswer(query),
+    () => liveCopilot(query),
+  )
 }
 
 export const suggestedQuestions = [

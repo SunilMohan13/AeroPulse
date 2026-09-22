@@ -1,0 +1,153 @@
+- generic [ref=f2e3]:
+  - banner [ref=f2e4]:
+    - generic [ref=f2e5]:
+      - generic [ref=f2e6]:
+        - generic [ref=f2e7]: AP
+        - generic [ref=f2e9]: AeroPulse
+      - generic [ref=f2e10]: ● Live API
+      - generic [ref=f2e11]: Punjab–Haryana–Delhi NCR
+    - generic [ref=f2e12]:
+      - group "Data source" [ref=f2e14]:
+        - button "Demo" [ref=f2e15]
+        - button "Live" [active] [pressed] [ref=f2e20]
+      - generic [ref=f2e27]: 22 Sept 2026, 10:56 pm IST
+      - button "Updated 10s ago" [ref=f2e215]
+      - generic [ref=f2e32]:
+        - button "Judge tour" [ref=f2e33]
+        - button "Map demo" [ref=f2e34]
+      - button "Open command palette" [ref=f2e35]:
+        - generic [ref=f2e38]: ⌘K
+      - button "Notifications" [ref=f2e39]
+      - generic [ref=f2e44]: OP
+  - generic [ref=f2e45]:
+    - complementary [ref=f2e46]:
+      - navigation "Primary" [ref=f2e47]:
+        - link "Overview" [ref=f2e48] [cursor=pointer]:
+          - /url: /
+        - link "Live Map" [ref=f2e55] [cursor=pointer]:
+          - /url: /map
+        - link "Events" [ref=f2e59] [cursor=pointer]:
+          - /url: /events/EVT-1024
+        - link "Forecast" [ref=f2e63] [cursor=pointer]:
+          - /url: /forecast
+        - link "Risk" [ref=f2e68] [cursor=pointer]:
+          - /url: /risk
+        - link "Evidence" [ref=f2e75] [cursor=pointer]:
+          - /url: /evidence
+        - link "Sources" [ref=f2e82] [cursor=pointer]:
+          - /url: /sources
+        - link "Copilot" [ref=f2e88] [cursor=pointer]:
+          - /url: /copilot
+        - link "Citizen" [ref=f2e93] [cursor=pointer]:
+          - /url: /citizen
+      - generic [ref=f2e97]:
+        - button "Collapse sidebar" [ref=f2e98]:
+          - generic [ref=f2e101]: Collapse
+        - link "Settings" [ref=f2e102] [cursor=pointer]:
+          - /url: /sources
+    - main [ref=f2e107]:
+      - generic [ref=f2e109]:
+        - generic [ref=f2e110]:
+          - heading "Air Quality Overview" [level=1] [ref=f2e111]
+          - paragraph [ref=f2e112]: Punjab–Haryana–Delhi NCR
+          - paragraph [ref=f2e113]: Live — read from http://127.0.0.1:8000. Coverage is limited to what the backend has persisted, and models withheld by the promotion gate are served as labelled baselines.
+        - generic [ref=f2e114]:
+          - generic [ref=f2e117]:
+            - generic [ref=f2e118]: AQI
+            - generic [ref=f2e119]: "283"
+            - generic [ref=f2e121]: Severe
+          - generic [ref=f2e124]:
+            - generic [ref=f2e125]: PM2.5
+            - generic [ref=f2e126]:
+              - generic [ref=f2e127]: "186"
+              - generic [ref=f2e128]: µg/m³
+              - generic [ref=f2e129]: ↑
+          - generic [ref=f2e132]:
+            - generic [ref=f2e133]: Active Events
+            - generic [ref=f2e134]: "1"
+            - generic [ref=f2e136]: ↑ 1
+          - generic "The API reports population density per km², not a headcount at risk." [ref=f2e216]:
+            - paragraph [ref=f2e217]: At Risk
+            - paragraph [ref=f2e218]: —
+            - paragraph [ref=f2e219]: headcount not exposed by the API
+        - generic [ref=f2e143]:
+          - generic [ref=f2e144]:
+            - generic [ref=f2e145]: Live Intelligence Map
+            - link "Open full map" [ref=f2e146] [cursor=pointer]:
+              - /url: /map
+          - generic [ref=f2e148]:
+            - generic [ref=f2e149]:
+              - region "Map" [ref=f2e150]
+              - group [ref=f2e220]:
+                - generic "Toggle attribution" [ref=f2e221] [cursor=pointer]
+                - generic [ref=f2e222]:
+                  - text: ©
+                  - link "CARTO" [ref=f2e223] [cursor=pointer]:
+                    - /url: https://carto.com/about-carto/
+                  - text: ", ©"
+                  - link "OpenStreetMap" [ref=f2e224] [cursor=pointer]:
+                    - /url: http://www.openstreetmap.org/about/
+                  - text: contributors
+            - generic [ref=f2e151]:
+              - generic [ref=f2e152]:
+                - button "Zoom in" [ref=f2e153]
+                - button "Zoom out" [ref=f2e156]
+                - button "Toggle globe view" [pressed] [ref=f2e159]
+                - button "Reset view" [ref=f2e166]
+                - button "Expand map to full screen" [ref=f2e170]
+              - generic [ref=f2e176]: z2.1
+            - generic [ref=f2e177]:
+              - group "Map view mode" [ref=f2e178]:
+                - button "Globe" [ref=f2e179]
+                - button "Corridor" [ref=f2e185]
+              - paragraph [ref=f2e188]: Drag to rotate · Tap Corridor for Punjab data
+        - generic [ref=f2e189]:
+          - generic [ref=f2e190]:
+            - generic [ref=f2e191]: Active Events
+            - generic [ref=f2e192]:
+              - link "Biomass burning event · Punjab Punjab HIGH" [ref=f2e225] [cursor=pointer]:
+                - /url: /events/evt_01M351QS61ZP9F6SV4NC1CC13P
+                - generic [ref=f2e228]:
+                  - paragraph [ref=f2e229]: Biomass burning event · Punjab
+                  - paragraph [ref=f2e230]: Punjab
+                - generic [ref=f2e231]: HIGH
+              - link "Regional transport event · Delhi NCR Delhi NCR LOW" [ref=f2e232] [cursor=pointer]:
+                - /url: /events/evt_01M351QS5YY5H6Z4G684HFEQS3
+                - generic [ref=f2e235]:
+                  - paragraph [ref=f2e236]: Regional transport event · Delhi NCR
+                  - paragraph [ref=f2e237]: Delhi NCR
+                - generic [ref=f2e238]: LOW
+          - generic [ref=f2e196]:
+            - generic [ref=f2e197]:
+              - text: Forecast
+              - generic [ref=f2e198]: PREDICTED
+            - generic [ref=f2e240]:
+              - generic [ref=f2e241]: 3h
+              - generic [ref=f2e242]: 186 µg/m³
+        - generic [ref=f2e200]:
+          - generic [ref=f2e201]: Source Health
+          - generic [ref=f2e243]:
+            - generic [ref=f2e244]:
+              - paragraph [ref=f2e245]: CPCB CAAQMS
+              - paragraph [ref=f2e246]: Healthy · unknown
+            - generic [ref=f2e247]:
+              - paragraph [ref=f2e248]: NASA FIRMS VIIRS
+              - paragraph [ref=f2e249]: Healthy · unknown
+            - generic [ref=f2e250]:
+              - paragraph [ref=f2e251]: IMD Weather
+              - paragraph [ref=f2e252]: Healthy · unknown
+            - generic [ref=f2e253]:
+              - paragraph [ref=f2e254]: Sentinel-5P
+              - paragraph [ref=f2e255]: Healthy · unknown
+            - generic [ref=f2e256]:
+              - paragraph [ref=f2e257]: MODIS MAIAC AOD
+              - paragraph [ref=f2e258]: Healthy · unknown
+            - generic [ref=f2e259]:
+              - paragraph [ref=f2e260]: CAMS composition
+              - paragraph [ref=f2e261]: Healthy · unknown
+  - contentinfo [ref=f2e203]:
+    - generic [ref=f2e204]: AeroPulse Intelligence Engine · ● All systems operational
+    - generic [ref=f2e205]:
+      - generic [ref=f2e206]: "Data freshness: 2 min"
+      - generic [ref=f2e207]: "Models: Production"
+      - generic [ref=f2e208]: "Last update: 22 Sept 2026, 10:56 pm IST"

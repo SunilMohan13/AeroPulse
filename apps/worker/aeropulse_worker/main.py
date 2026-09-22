@@ -21,6 +21,10 @@ from aeropulse_contracts.meteo import MeteorologicalObservation
 from aeropulse_contracts.observation import Observation
 from aeropulse_contracts.raster import RasterObservation
 from aeropulse_observability.logging import bind_context, configure_logging, get_logger
+from aeropulse_observability.metrics import (
+    MODEL_FEATURE_COMPLETENESS,
+    SHADOW_PREDICTIONS,
+)
 from aeropulse_observability.telemetry import configure_telemetry
 
 from aeropulse_worker.pipeline import (
@@ -33,6 +37,43 @@ from aeropulse_worker.pipeline import (
 )
 
 logger = get_logger("aeropulse.worker")
+
+#: Challenger scorer, warmed once at start. Module-level because it holds
+#: deserialised model bundles: rebuilding it per message would pay the 1.3 s
+#: cold-load cost on every snapshot. None until `_init_shadow_scorer` runs,
+#: and left as None when no challenger is registered, which is the normal
+#: case and must not be treated as an error.
+_SHADOW_SCORER: Any | None = None
+
+
+def _init_shadow_scorer() -> Any | None:
+    """Build and warm the shadow scorer, or return None if unavailable.
+
+    Shadow scoring is strictly additive observability. Any failure to set it
+    up is logged and swallowed, because a worker that refuses to ingest
+    observations over a challenger it was only going to record is a far worse
+    outcome than having no shadow rows.
+
+    Returns:
+        A warmed ``ShadowScorer``, or None when none could be built.
+    """
+    try:
+        from aeropulse_ml.registry import ModelRegistry
+        from aeropulse_ml.shadow import ShadowScorer
+
+        scorer = ShadowScorer(ModelRegistry())
+        errors = scorer.warm()
+        if errors:
+            logger.warning("worker.shadow.load_errors", **errors)
+        challengers = scorer.challengers
+        if challengers:
+            logger.info("worker.shadow.warmed", **challengers)
+        else:
+            logger.info("worker.shadow.no_challengers")
+        return scorer
+    except Exception:
+        logger.exception("worker.shadow.unavailable")
+        return None
 
 
 def _repository() -> ObservationRepository:
@@ -61,6 +102,8 @@ async def _run() -> None:
     logger.info("worker.starting", kafka=settings.kafka_bootstrap_servers)
     persist = _repository()
     snapshot_repo = persist if isinstance(persist, InMemoryRepository) else InMemoryRepository()
+    global _SHADOW_SCORER
+    _SHADOW_SCORER = _init_shadow_scorer()
 
     try:
         from aiokafka import AIOKafkaConsumer
@@ -156,6 +199,52 @@ def _persist_intelligence(persist: ObservationRepository, snapshot: InMemoryRepo
             persist.upsert_source_health("cpcb", len(snapshot.air_quality))  # type: ignore[attr-defined]
     except Exception:
         logger.exception("worker.intelligence_persist_failed")
+
+    _score_shadow(persist, snapshot)
+
+
+def _score_shadow(persist: ObservationRepository, snapshot: InMemoryRepository) -> None:
+    """Score registered challengers on this pass and record the result.
+
+    Runs *after* the served answer has already been computed and persisted,
+    and catches everything. A challenger must never be able to affect, delay
+    or fail the prediction that reaches a user (LLD §40, integration plan
+    Phase 4).
+
+    Args:
+        persist: Persistence adapter; skipped when it cannot store shadow rows.
+        snapshot: Repository holding this pass's features and predictions.
+    """
+    scorer = _SHADOW_SCORER
+    if scorer is None or not scorer.challengers:
+        return
+    writer = getattr(persist, "upsert_shadow_prediction", None)
+    if writer is None:
+        return
+
+    store = snapshot.event_store
+    try:
+        for grid_id, feature in store.latest_features.items():
+            prediction = store.latest_predictions.get(grid_id)
+            champion_values = {
+                # The deterministic estimator is the incumbent for the only
+                # family with a directly comparable champion today. The peak
+                # and hazard families have no deterministic counterpart, so
+                # their champion value stays None rather than being paired
+                # with an unrelated number.
+                "pm25_estimator": prediction.pm25_estimate if prediction else None,
+            }
+            for row in scorer.score(feature, champion_values=champion_values):
+                writer(row)
+                SHADOW_PREDICTIONS.labels(
+                    model_name=row.model_name,
+                    outcome="error" if row.error else "scored",
+                ).inc()
+                MODEL_FEATURE_COMPLETENESS.labels(model_name=row.model_name).observe(
+                    row.feature_completeness
+                )
+    except Exception:
+        logger.exception("worker.shadow_persist_failed")
 
 
 def main() -> None:

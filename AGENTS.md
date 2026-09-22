@@ -29,6 +29,9 @@ uv run python -c "from aeropulse_auth import encode_token, Role; print(encode_to
 - Google-style docstrings on public functions.
 - structlog JSON; never log secrets or raw PII. Bind `correlation.id`; `trace_id`/`span_id` bind automatically from the active OTel span (`libs/observability/aeropulse_observability/logging.py`), no manual wiring needed.
 - Canonical contracts live in `libs/contracts`. Connectors must not leak source shapes past `normalize()`.
+- A served prediction must state its own provenance: `model_version`, and `degraded` when it came
+  from a deterministic fallback. A hazard score also carries `calibrated`, because an
+  uncalibrated score ranks but is not a probability. Never render an unlabelled number.
 - New sources: implement `DataConnector`, add fixture + contract test, register in `config/sources.yaml` (`enabled: false` actually skips replay — the runner reads this file). Do not change the event engine or UI unless the data type is new.
 - Auth: HS256 JWT in development (`AEROPULSE_JWT_SECRET`). OIDC later.
 - H3 resolution 8 is the 1 km grid.
@@ -40,6 +43,14 @@ uv run python -c "from aeropulse_auth import encode_token, Role; print(encode_to
 
 - `libs/contracts/aeropulse_contracts/feature_spec.py` is the ONLY place a model feature may be
   named. Training and serving both import it. Never write a feature list by hand.
+- A feature DERIVED from a set's target is as much a leak as the target itself. Record every
+  derived feature's inputs in `feature_spec.DERIVED_FROM`; the import-time assertion walks that
+  graph. `pm25_delta_1h` is the worked example — a different name, the same information.
+- Changing any feature set means bumping `ML_FEATURE_VERSION`. `validate_feature_contract`
+  compares it exactly, which is what invalidates stale artifacts instead of silently feeding them
+  a vector that no longer means the same thing.
+- Run `uv run aeropulse-ml parity` after touching `features.py` or `feature_spec.py`. It is the
+  gate that makes offline metrics mean anything; it exits non-zero on divergence.
 - Random train/test splits are forbidden (LLD §19). Use `temporal_split`, `spatial_split` or
   `seasonal_split` from `libs/ml/evaluation.py`.
 - A `FeatureSet` must never contain its own target; an import-time assertion enforces this.
@@ -48,17 +59,45 @@ uv run python -c "from aeropulse_auth import encode_token, Role; print(encode_to
 - Every metric must be reported against an honest baseline (persistence for regression,
   majority-class for classification). A model that cannot beat its baseline must not be promoted.
 - The promotion gate in `libs/ml/train.py` is load-bearing. Do not relax a threshold to make a
-  model pass; fix the model or leave it at VALIDATION.
+  model pass; fix the model or leave it at VALIDATION. Adding a gate is fine; removing one is not.
+- A withheld model belongs at `SHADOW`, not in a response. Shadow scoring runs after the served
+  answer exists and catches everything: a challenger must never be able to affect, delay or fail
+  what a user sees.
 - Model artifacts are pickle-based. `AEROPULSE_MODEL_DIR` must stay deployment-controlled.
 - Open-Meteo air quality is CAMS-derived model output, not ground truth. Never state its metrics
   as station accuracy.
 
+## Frontend (`frontend/web`)
+
+The UI has a **Demo / Live** switch in the top bar. Both are first-class:
+
+- **Demo** serves `src/data/mock*.ts` — a scripted Punjab stubble-burning episode transporting
+  into Delhi NCR. It is a product feature, not a stub: it must keep working with no backend, no
+  token and no network. Do not degrade it to wire something up.
+- **Live** reads the API. Needs `VITE_API_TOKEN` in `frontend/web/.env.local` (see
+  `.env.example`); without it the Live button is disabled and says why.
+
+Rules that matter more than the wiring:
+
+- **Never render a demo value while the header says Live.** Every service call goes through
+  `services/resolve.ts`, which records a fallback so `FallbackBanner` can name the endpoint and
+  the reason. Silent substitution is the worst failure this app can have.
+- **The API supplies strictly less than the demo.** No recommended actions, no population
+  headcount, no source telemetry, no citizen list. Those render as "—" with a reason, never as
+  demo values. `DataProvenance.unavailable` carries the list; `MaybeValue` renders it.
+- **A baseline is not a model.** Hazard and peak currently answer from a persistence rule.
+  `ProvenanceBadge` marks them `degraded`, and `CalibrationNote` marks uncalibrated scores —
+  0.80 is a ranking, not an 80% chance.
+- New nullable API fields go in the UI type as `| null`, not as a sentinel. `-1 min` reaching an
+  operator is the bug that pattern causes.
+- Add `mode` to every React Query key so a fast toggle cannot serve the other mode's cache.
+- Checks: `npm run build` (tsc + vite) and `npm run lint`.
+
 ## Out of this pass
 
-Copilot LLM, citizen CV, ArangoDB client, MLflow, Sentinel/MODIS/CAMS live, SigNoz, Kubernetes,
-Frontend-to-API wiring remains out of this pass. The event API now reads TimescaleDB when
-`AEROPULSE_DATABASE_URL` is configured and falls back to the in-memory test double otherwise.
-Do not change `frontend/web` unless asked.
+Copilot LLM, citizen CV, ArangoDB client, MLflow, Sentinel/MODIS/CAMS live, SigNoz, Kubernetes.
+The event API reads TimescaleDB when `AEROPULSE_DATABASE_URL` is configured and falls back to the
+in-memory test double otherwise.
 Export OpenAPI with `uv run python scripts/export_openapi.py`.
 
 ## Remaining work (honest backlog)
@@ -66,11 +105,23 @@ Export OpenAPI with `uv run python scripts/export_openapi.py`.
 These are the next real tasks that still matter for a production-grade delivery, without pretending
 there are large hidden gaps in the already-implemented backend:
 
-- Scheduled drift monitoring + alerting job for feature and prediction drift.
+- Quantile (P50/P90) fitting for the propagation and peak models. `forecast.v1` already carries
+  `p10`/`p90`; the squared-error point forecast is why extreme recall collapses at longer
+  horizons.
+- Calibration for `pm25_hazard_24h`, so its score can be presented as a probability. It currently
+  reports `calibration: "none"` and `calibrated: false`, which is accurate but limits the UI.
+- Worker-side materialisation of champion hazard/peak predictions, so those routes can serve a
+  promoted model rather than the deterministic baseline.
 - Provider-aware resume semantics beyond the shared `FetchRequest.cursor` contract.
 - OIDC / production auth hardening and secret-store integration.
-- Frontend-to-API wiring and UI integration with real API contracts.
-- Population and exposure source integration for differentiated risk scoring.
+- `GET /api/v1/citizen/reports` — a list route. Its absence is why the Citizen screen stays on
+  demo data in live mode.
+- Layout coordinates on `graph.v1`, or a UI force layout, so the Evidence graph can render live.
+- A per-cell observed-history route, so the forecast chart's observed leg can leave demo data.
+- Source health telemetry on `GET /api/v1/sources` (freshness, latency, quality, record counts).
+- Default OTLP exporter wiring. Domain metrics exist and increment; nothing exports them.
+- Error drift (as opposed to distribution drift), which needs delayed ground truth to be
+  persisted first.
 - Load testing, SLOs, and operational dashboards for API and worker paths.
 - Live connector expansion beyond the credential-free Open-Meteo path.
 

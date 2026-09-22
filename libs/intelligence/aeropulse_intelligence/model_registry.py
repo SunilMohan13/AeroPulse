@@ -1,45 +1,40 @@
-"""Minimal model registry metadata (LLD section 19). No MLflow required."""
+"""Deprecated shim for the former in-process model registry (LLD §19).
+
+This module used to hold a hardcoded list of three baselines, every one of
+them labelled ``PRODUCTION`` unconditionally, and ``GET /api/v1/models`` served
+it. That made the endpoint structurally incapable of reporting a real trained
+champion, and it was a second registry competing with the filesystem one that
+training actually writes to.
+
+The filesystem registry won. The baselines now live in
+``aeropulse_ml.baselines`` as genuine :class:`~aeropulse_ml.registry.ModelRecord`
+entries, which is why this module cannot simply re-export them: ``libs/ml``
+imports ``libs/intelligence`` for the version constants, so importing back the
+other way would be circular.
+
+Nothing in the runtime uses this module. It is kept only so that an external
+caller pinned to the old import fails with an explanation rather than an
+``ImportError``, and it should be deleted once that grace period has passed.
+"""
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from typing import NoReturn
 
-from pydantic import BaseModel
-
-
-class RegisteredModel(BaseModel):
-    """One registered estimator/anomaly/forecast version."""
-
-    model_id: str
-    model_name: str
-    version: str
-    approval_status: str = "PRODUCTION"
-    geography: str = "punjab-haryana-delhi-ncr"
-    registered_at: datetime
+_REPLACEMENT = (
+    "aeropulse_ml.baselines.baseline_records() for the deterministic baselines, "
+    "or aeropulse_ml.registry.ModelRegistry().list_models() for everything"
+)
 
 
-PRODUCTION_MODELS = [
-    RegisteredModel(
-        model_id="baseline-idw-0.1",
-        model_name="pm25_estimator",
-        version="baseline-idw-0.1",
-        registered_at=datetime(2026, 9, 1, tzinfo=UTC),
-    ),
-    RegisteredModel(
-        model_id="quantile-baseline-0.1",
-        model_name="anomaly",
-        version="quantile-baseline-0.1",
-        registered_at=datetime(2026, 9, 1, tzinfo=UTC),
-    ),
-    RegisteredModel(
-        model_id="wind-advection-0.1",
-        model_name="forecast",
-        version="wind-advection-0.1",
-        registered_at=datetime(2026, 9, 1, tzinfo=UTC),
-    ),
-]
+def list_production_models() -> NoReturn:
+    """Raise, pointing the caller at the registry that replaced this one.
 
-
-def list_production_models() -> list[RegisteredModel]:
-    """Return the in-process registry. MLflow URI is optional overlay."""
-    return list(PRODUCTION_MODELS)
+    Raises:
+        NotImplementedError: Always. The hardcoded list it used to return
+            reported baselines as PRODUCTION regardless of what was trained,
+            so returning anything here would reintroduce that untruth.
+    """
+    raise NotImplementedError(
+        f"aeropulse_intelligence.model_registry was removed; use {_REPLACEMENT}"
+    )

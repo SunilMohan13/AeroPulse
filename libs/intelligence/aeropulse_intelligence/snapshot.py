@@ -48,6 +48,12 @@ class FeatureSnapshot:
     _rasters_by_hour: dict[datetime, list[RasterObservation]] | None = field(
         default=None, repr=False, compare=False
     )
+    #: hour -> [(grid_id, lat, lon, pm25)], for the neighbour field. Indexed by
+    #: hour rather than scanned per cell because the neighbour lookup is
+    #: otherwise the one remaining O(cells x observations) path in the builder.
+    _pm25_cells_by_hour: dict[datetime, list[tuple[str, float, float, float]]] | None = field(
+        default=None, repr=False, compare=False
+    )
     _indexed_sizes: tuple[int, int, int] | None = field(default=None, repr=False, compare=False)
 
     def _sizes(self) -> tuple[int, int, int]:
@@ -60,6 +66,7 @@ class FeatureSnapshot:
 
         aq_index: dict[tuple[str, datetime], list[Observation]] = {}
         pm25_index: dict[str, dict[datetime, float]] = {}
+        pm25_cell_index: dict[datetime, dict[str, tuple[str, float, float, float]]] = {}
         for obs in self.air_quality:
             cell = obs.grid_id or to_grid_id(obs.location.lat, obs.location.lon)
             # Cache the resolved cell so repeated H3 lookups are avoided.
@@ -68,6 +75,12 @@ class FeatureSnapshot:
             aq_index.setdefault((cell, bucket), []).append(obs)
             if obs.measurement.parameter == "pm25":
                 pm25_index.setdefault(cell, {})[bucket] = obs.measurement.value
+                pm25_cell_index.setdefault(bucket, {})[cell] = (
+                    cell,
+                    obs.location.lat,
+                    obs.location.lon,
+                    obs.measurement.value,
+                )
 
         weather_index: dict[datetime, list[MeteorologicalObservation]] = {}
         for wx in self.weather:
@@ -81,7 +94,23 @@ class FeatureSnapshot:
         self._pm25_by_cell = pm25_index
         self._weather_by_hour = weather_index
         self._rasters_by_hour = raster_index
+        self._pm25_cells_by_hour = {
+            bucket: list(cells.values()) for bucket, cells in pm25_cell_index.items()
+        }
         self._indexed_sizes = self._sizes()
+
+    def pm25_cells_at(self, hour: datetime) -> list[tuple[str, float, float, float]]:
+        """Return every cell observing PM2.5 in one hour, with its location.
+
+        Args:
+            hour: Hour-floored timestamp.
+
+        Returns:
+            ``(grid_id, lat, lon, pm25)`` per observing cell, empty when none.
+        """
+        self._ensure_index()
+        assert self._pm25_cells_by_hour is not None
+        return self._pm25_cells_by_hour.get(_hour(hour), [])
 
     def air_quality_at(self, grid_id: str, hour: datetime) -> list[Observation]:
         """Return this cell's observations for one hour.

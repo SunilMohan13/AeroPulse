@@ -1,0 +1,78 @@
+- generic [ref=f6e3]:
+  - banner [ref=f6e4]:
+    - generic [ref=f6e5]:
+      - generic [ref=f6e6]:
+        - generic [ref=f6e7]: AP
+        - generic [ref=f6e9]: AeroPulse
+      - generic [ref=f6e10]: ● Demo
+      - generic [ref=f6e11]: Punjab–Haryana–Delhi NCR
+    - generic [ref=f6e12]:
+      - group "Data source" [ref=f6e14]:
+        - button "Demo" [pressed] [ref=f6e15]
+        - button "Live" [ref=f6e20]
+      - generic [ref=f6e27]: 22 Sept 2026, 11:03 pm IST
+      - button "Updated 0s ago" [ref=f6e28]
+      - generic [ref=f6e32]:
+        - button "Judge tour" [ref=f6e33]
+        - button "Map demo" [ref=f6e34]
+      - button "Open command palette" [ref=f6e35]:
+        - generic [ref=f6e38]: ⌘K
+      - button "Notifications" [ref=f6e39]
+      - generic [ref=f6e44]: OP
+  - generic [ref=f6e45]:
+    - complementary [ref=f6e46]:
+      - navigation "Primary" [ref=f6e47]:
+        - link "Overview" [ref=f6e48] [cursor=pointer]:
+          - /url: /
+        - link "Live Map" [ref=f6e55] [cursor=pointer]:
+          - /url: /map
+        - link "Events" [ref=f6e59] [cursor=pointer]:
+          - /url: /events/EVT-1024
+        - link "Forecast" [ref=f6e63] [cursor=pointer]:
+          - /url: /forecast
+        - link "Risk" [ref=f6e68] [cursor=pointer]:
+          - /url: /risk
+        - link "Evidence" [ref=f6e75] [cursor=pointer]:
+          - /url: /evidence
+        - link "Sources" [ref=f6e82] [cursor=pointer]:
+          - /url: /sources
+        - link "Copilot" [ref=f6e88] [cursor=pointer]:
+          - /url: /copilot
+        - link "Citizen" [ref=f6e93] [cursor=pointer]:
+          - /url: /citizen
+      - generic [ref=f6e97]:
+        - button "Collapse sidebar" [ref=f6e98]:
+          - generic [ref=f6e101]: Collapse
+        - link "Settings" [ref=f6e102] [cursor=pointer]:
+          - /url: /sources
+    - main [ref=f6e107]:
+      - generic [ref=f6e109]:
+        - generic [ref=f6e110]:
+          - heading "Citizen Intelligence" [level=1] [ref=f6e111]
+          - paragraph [ref=f6e112]: Crowdsourced environmental observations
+        - generic [ref=f6e113]:
+          - generic [ref=f6e115]:
+            - paragraph [ref=f6e116]: "312"
+            - paragraph [ref=f6e117]: reports today
+          - generic [ref=f6e119]:
+            - paragraph [ref=f6e120]: "27"
+            - paragraph [ref=f6e121]: awaiting verification
+          - generic [ref=f6e123]:
+            - paragraph [ref=f6e124]: "84"
+            - paragraph [ref=f6e125]: correlated with events
+        - generic [ref=f6e126]:
+          - generic [ref=f6e127]: Report Locations
+          - region "Map" [ref=f6e130]
+        - generic [ref=f6e131]:
+          - generic [ref=f6e132]: Recent Reports
+          - generic [ref=f6e135]:
+            - generic [ref=f6e136]:
+              - text: Report Detail
+              - generic [ref=f6e137]: OBSERVED
+            - paragraph [ref=f6e139]: Select a report to view details.
+  - contentinfo [ref=f6e140]:
+    - generic [ref=f6e141]: AeroPulse Intelligence Engine · ● All systems operational
+    - generic [ref=f6e142]:
+      - generic [ref=f6e143]: "Data freshness: 2 min"
+      - generic [ref=f6e144]: "Models: Production"
+      - generic [ref=f6e145]: "Last update: 22 Sept 2026, 11:03 pm IST"

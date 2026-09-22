@@ -15,16 +15,19 @@ import { formatDateTimeIST, formatPopulation } from '../utils/format'
 import { getBandLabel } from '../utils/aqi'
 import { ActionBrief } from '../components/events/ActionBrief'
 import { CitizenCorroboration } from '../components/events/CitizenCorroboration'
+import { useDataMode } from '../context/DataModeContext'
+import { FallbackBanner, MaybeValue, ProvenanceBadge } from '../components/common/Provenance'
 
 export function EventDetail() {
+  const { mode } = useDataMode()
   const { eventId } = useParams<{ eventId: string }>()
   const { data: event, isLoading } = useQuery({
-    queryKey: ['event', eventId],
+    queryKey: ['event', eventId, mode],
     queryFn: () => fetchEvent(eventId!),
     enabled: !!eventId,
   })
   const { data: evidence = [] } = useQuery({
-    queryKey: ['evidence', eventId],
+    queryKey: ['evidence', eventId, mode],
     queryFn: () => fetchEvidence(eventId!),
     enabled: !!eventId,
   })
@@ -37,13 +40,15 @@ export function EventDetail() {
     queryKey: ['observedHistory'],
     queryFn: fetchObservedHistory,
   })
-  const { data: forecast = [] } = useQuery({ queryKey: ['forecast'], queryFn: fetchForecast })
+  const { data: forecast = [] } = useQuery({ queryKey: ['forecast', mode], queryFn: fetchForecast })
 
   if (isLoading) return <LoadingState message="Loading event intelligence..." />
   if (!event) return <div className="p-8">Event not found</div>
 
   return (
     <div className="space-y-4 p-4">
+      <FallbackBanner />
+
       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-2">
         <div className="flex items-center gap-2">
           <Flame className="h-5 w-5 text-fire" />
@@ -168,7 +173,14 @@ export function EventDetail() {
             </div>
             <div>
               <p className="text-xs text-text-muted">Population at risk</p>
-              <p className="font-mono text-2xl font-bold">{formatPopulation(event.populationAtRisk)}</p>
+              <p className="font-mono text-2xl font-bold">
+                <MaybeValue
+                  field="populationAtRisk"
+                  unavailable={event.provenance?.unavailable}
+                  reason="The API reports population density per km², never a headcount at risk."
+                  value={formatPopulation(event.populationAtRisk)}
+                />
+              </p>
             </div>
             <div>
               <p className="text-xs text-text-muted">Fire detections</p>
@@ -182,16 +194,25 @@ export function EventDetail() {
         <CardHeader>
           <span className="text-sm font-medium">Recommended Actions</span>
           <ScientificBadge label="RECOMMENDED" />
+          <ProvenanceBadge provenance={event.provenance} />
         </CardHeader>
         <CardBody>
-          <ul className="space-y-2">
-            {event.recommendedActions.map((action, i) => (
-              <li key={i} className="flex items-start gap-2 text-sm text-text-secondary">
-                <ArrowRight className="mt-0.5 h-4 w-4 shrink-0 text-intel" />
-                {action}
-              </li>
-            ))}
-          </ul>
+          {event.recommendedActions.length > 0 ? (
+            <ul className="space-y-2">
+              {event.recommendedActions.map((action, i) => (
+                <li key={i} className="flex items-start gap-2 text-sm text-text-secondary">
+                  <ArrowRight className="mt-0.5 h-4 w-4 shrink-0 text-intel" />
+                  {action}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="rounded border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
+              No API route supplies recommended actions for an event, so none are shown. The demo
+              narrative carries an authored action list; showing it here while reading live data
+              would present a script as a system recommendation.
+            </p>
+          )}
           <div className="mt-4 flex gap-2">
             <Link
               to="/forecast"

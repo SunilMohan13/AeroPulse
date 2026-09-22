@@ -5,7 +5,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-FEATURE_VERSION = "grid-features-0.4.0"
+FEATURE_VERSION = "grid-features-0.5.0"
 
 
 class SourceLikelihood(BaseModel):
@@ -13,11 +13,11 @@ class SourceLikelihood(BaseModel):
 
     model_config = {"extra": "forbid"}
 
-    biomass_burning: float = Field(0.0, ge=0.0, le=1.0)
-    industrial: float = Field(0.0, ge=0.0, le=1.0)
-    traffic: float = Field(0.0, ge=0.0, le=1.0)
-    dust: float = Field(0.0, ge=0.0, le=1.0)
-    regional_transport: float = Field(0.0, ge=0.0, le=1.0)
+    biomass_burning: float = Field(default=0.0, ge=0.0, le=1.0)
+    industrial: float = Field(default=0.0, ge=0.0, le=1.0)
+    traffic: float = Field(default=0.0, ge=0.0, le=1.0)
+    dust: float = Field(default=0.0, ge=0.0, le=1.0)
+    regional_transport: float = Field(default=0.0, ge=0.0, le=1.0)
 
 
 class GridFeature(BaseModel):
@@ -60,7 +60,7 @@ class GridFeature(BaseModel):
     fire_frp: float = 0.0
     fire_confidence: float | None = None
     fire_persistence: float = 0.0
-    upwind_fire_score: float = Field(0.0, ge=0.0, le=1.0)
+    upwind_fire_score: float = Field(default=0.0, ge=0.0, le=1.0)
 
     crop_probability: float | None = None
     harvested_area_proxy: float | None = None
@@ -79,6 +79,42 @@ class GridFeature(BaseModel):
     # safe for both training and online inference (LLD §17.2).
     pm25_roll_6h: float | None = None
     pm25_roll_24h: float | None = None
+
+    # --- Trailing history extensions (LLD §17.2: rolling max, rate of change,
+    # historical percentile). Every field below is computed from hours strictly
+    # before `timestamp`, so it is safe as an input even for a model whose
+    # target is pm25 at this hour.
+    pm25_roll_max_6h: float | None = None
+    pm25_roll_max_24h: float | None = None
+    pm25_roll_std_24h: float | None = None
+    pm25_trend_3h: float | None = None
+    pm25_trend_24h: float | None = None
+
+    # --- Current-hour derivations. These READ pm25 at `timestamp` and are
+    # therefore forecast-only inputs: handing them to a model that predicts
+    # pm25 would leak the target. `feature_spec.DERIVED_FROM` records that
+    # dependency and the import-time assertion enforces it.
+    pm25_delta_1h: float | None = None
+    pm25_pct_rank_24h: float | None = None
+
+    # --- Dispersion / stagnation (LLD §17.3). Low ventilation is the winter
+    # mechanism that converts a constant emission rate into an episode.
+    ventilation_index: float | None = None
+    stagnation_score: float | None = Field(default=None, ge=0.0, le=1.0)
+
+    # --- Neighbour field. Other cells' concentrations, so these are legitimate
+    # inputs to a nowcast for a cell that has no station of its own.
+    neighbor_pm25_mean: float | None = None
+    neighbor_pm25_max: float | None = None
+    neighbor_count: int = 0
+    upwind_pm25: float | None = None
+
+    # --- Fire rings. `fire_count`/`fire_frp` above stay at the 100 km radius
+    # for backward compatibility; these add the shorter rings the notebooks use.
+    fire_count_25km: int = 0
+    fire_count_50km: int = 0
+    fire_frp_50km: float = 0.0
+    upwind_fire_frp: float = 0.0
 
     pm25_estimate: float | None = None
     estimate_confidence: float | None = Field(default=None, ge=0.0, le=1.0)

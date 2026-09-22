@@ -21,7 +21,15 @@ export function formatDateTimeIST(iso: string): string {
   })
 }
 
-export function formatFreshness(minutes: number): string {
+/**
+ * Human freshness.
+ *
+ * Null means the source genuinely does not report it — the API's source
+ * registry carries no telemetry — so it reads "unknown" rather than a
+ * fabricated or sentinel number.
+ */
+export function formatFreshness(minutes: number | null | undefined): string {
+  if (minutes === null || minutes === undefined) return 'unknown'
   if (minutes < 60) return `${minutes} min`
   const h = Math.floor(minutes / 60)
   const m = minutes % 60

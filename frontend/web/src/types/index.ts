@@ -12,6 +12,74 @@ export type EventStatus =
 
 export type ScientificLabel = 'OBSERVED' | 'INFERRED' | 'PREDICTED' | 'RECOMMENDED'
 
+/**
+ * Where a rendered value came from, and what it is not.
+ *
+ * Attached by the live adapters. Demo records leave it undefined, which the
+ * UI reads as "scripted narrative". The point of `unavailable` is that the
+ * live API supplies strictly less than the demo does — no recommended
+ * actions, no population-at-risk headcount — and a screen that silently
+ * shows demo values for those while claiming to be live would be the worst
+ * failure this app can have.
+ */
+export interface DataProvenance {
+  mode: 'demo' | 'live'
+  /** Model or baseline that produced the value, e.g. `persistence-hazard-0.1`. */
+  modelVersion?: string | null
+  /** True when a deterministic fallback answered instead of a trained model. */
+  degraded?: boolean
+  /** False when a score ranks correctly but is not a probability. */
+  calibrated?: boolean
+  featureVersion?: string | null
+  /** UI field names the live API does not provide. Render these as "—". */
+  unavailable?: string[]
+  /** One line explaining a degraded or partial answer. */
+  note?: string
+}
+
+/** A 24-hour hazard score for one grid cell (hazard.v1). */
+export interface HazardCell {
+  gridId: string
+  lat: number
+  lon: number
+  timestamp: string
+  hazardScore: number
+  thresholdUgm3: number
+  horizonHours: number
+  calibrated: boolean
+  degraded: boolean
+  modelVersion: string
+  observedPm25: number | null
+}
+
+/** A 24-hour peak PM2.5 forecast for one grid cell (peak_forecast.v1). */
+export interface PeakForecastCell {
+  gridId: string
+  lat: number
+  lon: number
+  timestamp: string
+  peakPm25: number
+  horizonHours: number
+  exceedsThreshold: boolean
+  thresholdUgm3: number
+  degraded: boolean
+  modelVersion: string
+  observedPm25: number | null
+}
+
+/** One row of `GET /api/v1/models`. */
+export interface ModelCatalogEntry {
+  modelId: string
+  modelName: string
+  version: string
+  stage: string
+  runtimeRole: string
+  algorithm: string
+  artifactAvailable: boolean
+  gateFailures: string[]
+  notes: string
+}
+
 export interface PollutionEvent {
   id: string
   title: string
@@ -35,6 +103,7 @@ export interface PollutionEvent {
   frpMw: number
   sourceLikelihood: SourceLikelihood[]
   recommendedActions: string[]
+  provenance?: DataProvenance
 }
 
 export interface SourceLikelihood {
@@ -88,6 +157,11 @@ export interface ForecastPoint {
   confidenceHigh: number
   /** Persistence baseline: hold last observed PM2.5 (honest comparison for promotion). */
   baselinePm25?: number
+  /** Upper-decile forecast, for alert thresholding. Null on the deterministic path. */
+  p90?: number | null
+  /** Lower-decile forecast, carried with p90 so uncertainty is not one-sided. */
+  p10?: number | null
+  provenance?: DataProvenance
 }
 
 export interface EvidenceItem {
@@ -119,12 +193,20 @@ export interface SourceHealth {
   id: string
   name: string
   status: 'Healthy' | 'Delayed' | 'Degraded' | 'Offline'
-  freshnessMinutes: number
-  quality: number
-  recordsToday: number
-  lastIngestion: string
-  latencySec: number
-  errorRate: number
+  /**
+   * Operational telemetry. Null where it is genuinely unknown.
+   *
+   * `GET /api/v1/sources` is a *registry* — source id, provider, connector,
+   * enabled flag — and carries none of these. Nullable rather than a
+   * sentinel so the compiler forces every consumer to render "unknown"
+   * instead of printing `-1 min` at an operator.
+   */
+  freshnessMinutes: number | null
+  quality: number | null
+  recordsToday: number | null
+  lastIngestion: string | null
+  latencySec: number | null
+  errorRate: number | null
   connector: string
 }
 

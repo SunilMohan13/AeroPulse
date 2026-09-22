@@ -108,5 +108,11 @@ def test_duplicate_or_leaking_sets_are_rejected() -> None:
 
 
 def test_ml_feature_version_is_pinned() -> None:
-    """Artifacts record this string; changing it must be deliberate."""
-    assert ML_FEATURE_VERSION == "ml-features-1.0.0"
+    """Artifacts record this string; changing it must be deliberate.
+
+    Bumped to 2.0.0 with the servable feature families (integration plan
+    Phase 1). Every 1.0.0 artifact is invalidated by that bump rather than
+    reinterpreted against a vector that no longer means the same thing, which
+    is the behaviour ``validate_feature_contract`` enforces.
+    """
+    assert ML_FEATURE_VERSION == "ml-features-2.0.0"

@@ -1,7 +1,9 @@
 # AeroPulse India — Notebook to Production ML Integration Plan
 
-**Status:** partially implemented; registry visibility landed 2026-09-13, serving integration remains open.
-**Date:** 2026-09-13
+**Status:** Phases 1-4 and 6 implemented 2026-09-22; Phase 5 already complete; Phase 7 out of
+scope by decision; Phase 0 premise no longer holds. See §14 for the per-phase outcome and the
+measured results, which are the part worth reading first.
+**Date:** 2026-09-13, updated 2026-09-22
 **Scope:** how the four research pipelines in `AeroPulse_ML_Notebooks/` become live
 predictive and regression models behind the AeroPulse API and UI.
 
@@ -720,3 +722,272 @@ unblocks the feature store, post-hoc error measurement and drift detection toget
 The single most important measurement in this plan is the Phase 2 parity harness. Every
 metric in section 4 is offline. Until features computed by the production path match the
 features the models were trained on, no production number means anything.
+
+---
+
+## 14. 2026-09-22 — implementation outcome
+
+Scope agreed before starting: backend and ML only. `frontend/web` untouched (Phase 7), no git
+history rewritten (Phase 0). Everything below is verified by `uv run ruff check .`,
+`uv run pyright` (0 errors) and `uv run pytest tests/unit tests/contract -q` — **302 tests**, up
+from 223.
+
+### 14.1 Phase status
+
+| Phase | Status | Note |
+|---|---|---|
+| 0 — git history | **Not needed** | Premise is stale; see §14.2 |
+| 1 — Contract unification | **Done** | `ml-features-2.0.0`; `PM25_PEAK_24H` and `PM25_HAZARD_24H` added; leakage assertion strengthened |
+| 2 — Feature layer + parity | **Done** | 17 new `GridFeature` fields (Route B); parity harness green on 144 grid-hours |
+| 3 — Registry convergence | **Done** | One registry; `ModelRecord` extended; gates added for both new models |
+| 4 — Shadow serving | **Done** | `shadow_prediction` table, worker warm-up, failure isolation verified |
+| 5 — Persistence + read path | **Already done** | Landed 2026-09-14, before this pass. `/alerts` and `/models` gained `limit`/`offset` here |
+| 6 — Prediction endpoints | **Done** | 5 routes, 2 contracts, `p10`/`p90` on `forecast.v1`, OpenAPI re-exported |
+| 7 — Frontend wiring | **Out of scope** | `AGENTS.md` reserves `frontend/web`; unchanged |
+
+### 14.2 Phase 0 was already resolved
+
+This plan states a 1,564 MB blob blocks `git push` and needs `git filter-repo`. Measured:
+
+```text
+largest blob reachable from any ref:  0.35 MB (uv.lock)
+8b71dce -> NOT REACHABLE FROM ANY BRANCH
+82dc497 -> NOT REACHABLE FROM ANY BRANCH
+held only by: 4 reflog entries
+```
+
+Push transmits reachable objects only, so the push is not blocked and no history rewrite is
+required. The remaining 515 MB `.git` is local disk, reclaimable with `git reflog expire
+--expire=now --all && git gc --prune=now --aggressive`. That destroys the recovery path for
+those commits, so it was not run.
+
+### 14.3 The binding constraint, resolved as recommended
+
+§2 finding 1 stated the online path could compute 12 of the 184 features the Phase 7 notebook
+bundle needs, and §5.2 recommended **Route B — retrain on the servable subset** ahead of building
+six ingestion pipelines. Route B was taken.
+
+Seventeen fields were added to `GridFeature`, all derived from data already ingested, prioritised
+by the notebooks' own ablation (PM2.5 history first, then stability, then the neighbour field,
+then fire). Servable feature counts are now 44–47 per model rather than 12.
+
+The prediction the plan made — that dropping the other families would cost little, because SHAP
+put 77.7% of attribution on temporal lags — is **partly borne out and partly not**, and the
+disagreement is the more useful half:
+
+- `source_likelihood` crossed its gate for the first time (macro F1 0.000 on `traffic` → 0.592
+  overall) purely from the added calendar and dispersion features.
+- `pm25_peak_24h` and `pm25_hazard_24h` did **not** reach servable quality on the servable subset.
+  Neither did so for want of features: the peak model reproduces the notebooks' extreme-bias
+  failure mode, and the hazard model loses to its own baseline. See §14.5.
+
+### 14.4 §5.4 reconciliation applied
+
+Two hazard models predicting the same thing at different thresholds (150 vs 121 µg/m³) are
+collapsed to one: `pm25_hazard_24h` at the CPCB "Very Poor" breakpoint of **121**, as the plan
+recommended, because it is the national standard and this is a public-facing alert. There is now
+no path by which two contradictory hazard probabilities can reach one map cell.
+
+### 14.5 Measured on production-shaped data
+
+Live 90-day, 5-cell, 10,920-row Open-Meteo window, 2026-09-22:
+
+| Model | Stage | Gate outcome |
+|---|---|---|
+| `pm25_estimator` | **PRODUCTION** | skill +0.409, R² 0.975 |
+| `source_likelihood` | **PRODUCTION** | macro F1 0.592 |
+| `anomaly_detector` | VALIDATION | detection F1 0.145 < 0.30 |
+| `propagation_forecast` | VALIDATION | 24 h skill −0.106 |
+| `pm25_peak_24h` | VALIDATION | extreme recall 0.049 < 0.70; extreme bias −41.4 µg/m³; held-out-cell recall 0.472 |
+| `pm25_hazard_24h` | VALIDATION | PR-AUC 0.334 vs 0.380 for reading current PM2.5 |
+
+The hazard result is the most important line in this table. **The classifier does not beat simply
+reading the current concentration**, which independently reproduces this plan's own scepticism
+about the model family, on production-shaped data rather than research data. The gate blocks it.
+
+The peak result likewise reproduces §4.1: squared-error regression minimises aggregate loss by
+predicting "no episode", so aggregate skill is healthy (+0.396) while extreme recall collapses
+to 0.049. §4.3 of this plan already identified the fix — **P50 as the point forecast and P90 for
+alerting**. `forecast.v1` now carries `p10`/`p90` fields for exactly that, and fitting quantile
+objectives is the obvious next step; it was not done here because it is new modelling work
+rather than integration.
+
+No threshold was relaxed. One was added: the peak gate also checks spatial generalisation,
+because a model sold as prediction for cells with no station of their own has failed if it only
+works where it was fitted.
+
+### 14.6 Parity harness — what it actually measures
+
+§8 Phase 2 asks the harness to match production features against the notebook Parquet. Those
+notebook artifact directories are empty in this checkout, so that comparison is not runnable, and
+training and serving already share one implementation and one feature list, so the two-codebase
+skew the plan feared is structurally impossible here.
+
+The skew that *is* possible is batch-versus-realtime: training builds a grid-hour from a snapshot
+holding the whole window, while online inference only has data up to that hour. `aeropulse-ml
+parity` rebuilds each grid-hour from a truncated snapshot and diffs. A disagreement means a
+feature is either reading the future into training or missing at inference.
+
+**Result: 144 grid-hours, zero divergence across 47 features.** A test injects a deliberately
+forward-looking feature and confirms the harness catches it and names the affected models, so the
+clean result is evidence rather than an absence of checking. Coverage caveat: the offline fixture
+is 3 days across 2 cells; re-run on a wider live window before treating it as conclusive.
+
+### 14.7 Serving-design notes honoured
+
+- **Feature completeness asserted per prediction** (§9). Predictions below 50% populated are
+  refused with the reason stated, because a tree model returns a confident answer from a vector of
+  nulls rather than an error. Every payload carries the completeness ratio and the missing names.
+- **Cold start handled** (§8 Phase 4). Bundles warm at worker start: 19 ms measured, against the
+  1.3 s cold load the notebooks reported.
+- **Failure isolation verified**, not assumed. A challenger whose estimator raises produces an
+  error row; the served answer is untouched.
+- **Trust boundary unchanged** (§9). Shadow reads the same deployment-controlled
+  `AEROPULSE_MODEL_DIR`; it does not widen what may be deserialised.
+- **A shadow model's output is never served** (§8 Phase 6). The hazard and peak routes answer
+  from a deterministic rule while nothing is promoted, and label every item `degraded: true`.
+  Hazard items also carry `calibrated: false`, since an uncalibrated score ranks hours but its
+  magnitude is not a probability.
+
+### 14.8 Decisions taken, and by what authority
+
+§12 lists six decisions needing a human. Three were settled by the user before work began
+(frontend scope, git history, sklearn over LightGBM/CatBoost). The rest were taken as the plan
+itself recommended, and are flagged here so they can be overridden:
+
+| Decision | Taken | Basis |
+|---|---|---|
+| Hazard threshold | **121 µg/m³** | §12.1 calls it "the defensible public default" |
+| Route A or B | **B** | §5.2 recommendation |
+| Which horizons | **3/6/12/24 h unchanged** | No product input; existing set retained rather than guessed at |
+| 48% abstention | **Accepted** | Abstain-by-default is already the serving design |
+| P50 point forecast | **Not switched** | `p10`/`p90` contract fields added; fitting quantile objectives is modelling work, deliberately left rather than half-done |
+
+### 14.9 What remains
+
+- Anomaly, 24 h propagation, peak and hazard all sit at VALIDATION. Each needs either an
+  operator-agreed false-alert budget or real CPCB ground truth. Moving a threshold to clear them
+  is precisely what the gate exists to prevent.
+- Quantile (P50/P90) fitting for the propagation and peak models — the contract is ready.
+- Worker-side materialisation of champion hazard/peak predictions, so the routes can serve a
+  promoted model instead of the baseline. Deliberately not built speculatively while both models
+  are withheld.
+- Phase 7 frontend wiring.
+- Every metric here is against Open-Meteo, which is CAMS-derived **model output, not ground
+  measurement**. §5.6 of this plan remains true and unaddressed: these numbers validate the
+  pipeline, not station accuracy.
+
+---
+
+## 15. 2026-09-22 (second pass) — Phase 7 implemented
+
+Phase 7 was previously out of scope. It is now done, with one deliberate change to its brief:
+the plan says to switch `src/services/*` off mocks "keeping the mock as the offline/demo
+fallback". The demo is instead a **first-class, user-selectable mode**, not a fallback, because
+the scripted narrative is what the product demonstrates and burying it behind a failure path
+would make it unreachable when the backend is healthy.
+
+### 15.1 Deliverables against §8 Phase 7
+
+| Plan deliverable | Status |
+|---|---|
+| API client with `VITE_API_URL` and JWT attachment | Done. `src/api/client.ts`; reads `VITE_API_BASE` (what Compose already sets) or `VITE_API_URL` |
+| snake_case ↔ camelCase adapter layer | Done. `src/api/contracts.ts` (wire shapes) + `src/api/adapters.ts` (mapping) |
+| `EventSeverity: 'SEVERE'` vs contract `CRITICAL` | Done. `toSeverity()` maps it; a straight cast rendered the top band unstyled |
+| Services switched off mocks, demo retained | Done via `services/resolve.ts`; every demo path is byte-identical to before |
+| Scripted demo mode keeps working | Done and verified: all 9 routes render with the backend stopped |
+| Uncertainty and provenance surfaced, not hidden | Done — see §15.3, the part that took the most care |
+| **Acceptance:** every screen renders from the API with mocks disabled | Met for 6 of 9 screens; 3 are structurally blocked and labelled — §15.4 |
+| **Acceptance:** demo mode still runs offline | Met |
+
+### 15.2 The toggle
+
+Top-bar Demo / Live switch. Live is *disabled*, not merely unselected, when no token is
+configured or `/health` does not answer, with the reason in the tooltip — a toggle that can be
+clicked into a broken state and then silently shows demo data is worse than one that explains
+why it will not move. The choice persists in `sessionStorage`, and a restored `live` choice is
+dropped back to demo when the backend turns out to be unreachable, so the header can never claim
+Live while every panel is on a fallback.
+
+Every React Query key carries the mode, so a fast toggle cannot serve the other mode's cache.
+
+### 15.3 Provenance, which is the substance of this phase
+
+The plan's warning — "a hazard probability shown without its confidence, or a baseline fallback
+shown as a model prediction, is the failure mode that matters most in a public air-quality
+tool" — drove most of the work. Four mechanisms:
+
+- **`ProvenanceBadge`** on any model-derived surface: `Demo`, `Baseline` (deterministic
+  fallback) or `Live`, with the model version in the title.
+- **`CalibrationNote`** wherever a hazard score appears. The score is uncalibrated, so 0.80 is a
+  ranking, not an 80% chance, and the UI says exactly that.
+- **`MaybeValue` + `DataProvenance.unavailable`** for fields the API does not have. These render
+  `—` with a reason instead of the demo's value.
+- **`FallbackBanner`** naming every endpoint that fell back and why.
+
+Three findings came out of running it rather than reading it, each a defect this pass
+introduced and then caught:
+
+1. `At Risk: 0.0M people` in live mode. `fetchTotalExposure` returned null and the tile
+   coalesced it to zero — a *false* claim, strictly worse than "unknown". Now an explicit dash
+   with the reason: the API reports density per km², and summing it would invent the most
+   quotable number on the page.
+2. `Healthy · -1 min` on every source. A `-1` sentinel for "unknown" leaked straight to the
+   screen. `SourceHealth`'s telemetry fields are now `number | null`, which made the compiler
+   list all seven consumers.
+3. Duplicate `cr_4`/`cr_5` keys when the demo citizen reports were extended, which would have
+   broken React list reconciliation. Renumbered, with a duplicate-key check across every demo
+   dataset.
+
+### 15.4 Three screens stay on demo data in live mode, and say so
+
+Not oversight — each is blocked by a missing API capability, and each renders a notice naming
+it rather than passing curated data off as live:
+
+| Screen | Blocker | Closed by |
+|---|---|---|
+| Citizen Intelligence | No list route; only `POST /reports`, `POST /reports/{id}/media`, `GET /reports/{id}` | `GET /api/v1/citizen/reports` with the standard list shape |
+| Evidence graph | `graph.v1` carries lineage edges without layout coordinates for the hand-laid diagram | Coordinates on the contract, or a client-side force layout |
+| Forecast observed-history leg | No per-cell observed series route | A history endpoint, or deriving it from `grid-features` by cell and time |
+
+The live **evidence list** on an event's detail page *is* wired; only the graph view is not.
+
+### 15.5 Demo data enhanced
+
+Requested alongside the wiring, and extended to make the corridor narrative carry more:
+
+| Dataset | Before | After |
+|---|---|---|
+| Events | 3 | 5 — adds a dust event (PM10/PM2.5 ≈ 2.3, the coarse-mode signature) and a declining overnight transport event |
+| Evidence | 6 | 8 — adds a citizen corroboration at `Weak` strength, and an *absent* MODIS retrieval under 78% cloud, so the panel is not six sources all agreeing |
+| Citizen reports | 5 | 10 — including one uncorroborated and one rejected, which is where the "a report alone changes nothing" rule becomes visible |
+| Exposure areas | 5 | 8 |
+| Industrial sites | 3 | 6 |
+| Timeline steps | 6 | 9 — through citizen corroboration, alert dispatch and the GRAP recommendation |
+
+### 15.6 New surfaces for the hazard work
+
+The hazard and peak endpoints added earlier had no UI at all. Now:
+
+- **24-Hour Hazard Outlook** on the Forecast page. Cells are ranked by projected peak rather
+  than hazard score, because the score saturates at 1.00 for every cell already above the
+  threshold and would otherwise list five identical rows.
+- **Model Registry** on the Sources page, rendering each model's stage and its *gate failures*
+  as first-class content. A dashboard showing six green models would be the opposite of what
+  this system is for.
+
+### 15.7 Verified
+
+Backend: `ruff`, `pyright` (0 errors), 303 tests. Frontend: `tsc -b` clean, `vite build` clean,
+`oxlint` 0 errors (2 new warnings, both of types already present five times in this codebase).
+
+In a real browser against a real API (local TimescaleDB seeded through the connector → worker
+path, one ACTIVE HIGH event):
+
+- All 9 routes render in demo mode with zero console errors.
+- All 8 non-parameterised routes render in live mode with zero console errors and no fallbacks.
+- Killing the API mid-session: Live disables with "The AeroPulse API did not answer /health",
+  the stored mode reconciles to demo, and the header stops claiming Live.
+- Stopping only the database (API up, `/health` 200, storage routes 503): the banner reads
+  `risk-areas — backend storage unavailable (503) — showing demo data` for each affected
+  endpoint. Nothing substitutes silently.

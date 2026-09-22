@@ -20,12 +20,16 @@ import { fetchForecastSeries } from '../services/forecastService'
 import { useApp } from '../context/AppContext'
 import { useReducedMotion } from '../hooks/useReducedMotion'
 import { getPollutionSwatch, getBandLabel } from '../utils/aqi'
+import { useDataMode } from '../context/DataModeContext'
+import { FallbackBanner, ModeContextNote } from '../components/common/Provenance'
+import { HazardOutlook } from '../components/events/HazardOutlook'
 
 const horizons = [0, 1, 3, 6, 12, 24, 48]
 
 export function Forecast() {
+  const { mode } = useDataMode()
   const { data: series = [] } = useQuery({
-    queryKey: ['forecastSeries'],
+    queryKey: ['forecastSeries', mode],
     queryFn: fetchForecastSeries,
   })
   const { hourOffset, setHourOffset } = useApp()
@@ -84,10 +88,13 @@ export function Forecast() {
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-3 p-4">
+      <FallbackBanner />
+
       <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
+        <div className="space-y-1">
           <h1 className="text-xl font-semibold">Forecast</h1>
           <p className="text-sm text-text-secondary">Where pollution will move</p>
+          <ModeContextNote />
         </div>
         <div className="flex items-center gap-3">
           <div className="text-right">
@@ -289,6 +296,8 @@ export function Forecast() {
           </CardBody>
         </Card>
       </div>
+
+      <HazardOutlook />
     </div>
   )
 }

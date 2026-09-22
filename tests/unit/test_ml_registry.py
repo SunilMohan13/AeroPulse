@@ -27,6 +27,10 @@ def _record(model_id: str, name: str = "pm25_estimator", **kw: object) -> ModelR
         "model_name": name,
         "version": model_id,
         "training_time": datetime(2026, 9, 8, tzinfo=UTC),
+        # A trained model always has an artifact, and `champion()` only
+        # returns records it could actually load, so omitting this would make
+        # every record in these tests invisible to champion resolution.
+        "artifact_uri": f"{model_id}.joblib",
     }
     payload.update(kw)
     return ModelRecord(**payload)  # type: ignore[arg-type]
@@ -147,3 +151,42 @@ def test_lld_metadata_fields_are_present(registry: ModelRegistry) -> None:
     ):
         assert hasattr(record, attribute)
     assert record.metrics["temporal"]["mae"] == 1.0
+
+
+def test_champion_skips_artifactless_baseline_records(registry: ModelRegistry) -> None:
+    """A deterministic baseline sits at PRODUCTION but has nothing to load.
+
+    Returning it from ``champion()`` would hand the bundle loader a record
+    with an empty ``artifact_uri`` and convert a clean "fall back to the
+    baseline" into a spurious load error.
+    """
+    registry.register(_record("baseline-idw-0.1", stage=ModelStage.PRODUCTION, artifact_uri=""))
+
+    assert registry.champion("pm25_estimator") is None
+    # It is still catalogued, because the endpoint must report what serves.
+    assert [r.model_id for r in registry.list_models()] == ["baseline-idw-0.1"]
+
+
+def test_promoting_a_trained_model_retires_the_baseline(registry: ModelRegistry) -> None:
+    """The baseline is superseded, and the registry says so."""
+    registry.register(_record("baseline-idw-0.1", stage=ModelStage.PRODUCTION, artifact_uri=""))
+    registry.register(_record("trained-1"))
+    registry.promote_to_production("trained-1")
+
+    champion = registry.champion("pm25_estimator")
+    assert champion is not None
+    assert champion.model_id == "trained-1"
+    baseline = registry.get("baseline-idw-0.1")
+    assert baseline is not None
+    assert baseline.stage is ModelStage.RETIRED
+
+
+def test_stage_models_returns_loadable_challengers_only(registry: ModelRegistry) -> None:
+    """Shadow lookup must not offer a record the loader cannot open."""
+    registry.register(_record("shadow-1", stage=ModelStage.SHADOW))
+    registry.register(_record("shadow-noartifact", stage=ModelStage.SHADOW, artifact_uri=""))
+    registry.register(_record("validation-1", stage=ModelStage.VALIDATION))
+
+    found = registry.stage_models("pm25_estimator", ModelStage.SHADOW)
+
+    assert [r.model_id for r in found] == ["shadow-1"]

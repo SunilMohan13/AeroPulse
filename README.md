@@ -11,9 +11,11 @@ Connector replay (CPCB, FIRMS, IMD)  +  LIVE Open-Meteo (no credential)
         → canonical contracts (observation.v1 / meteo.v1 / raster.v1)
         → quality + H3 grid
         → grid features (shared feature spec, point-in-time safe)
-        → trained models: PM2.5 estimator · anomaly · source likelihood · forecast
+        → trained models: PM2.5 estimator · anomaly · source likelihood
+                        · forecast · 24h peak · 24h hazard
         → model registry with an enforced promotion gate
-        → pollution events (event.v1) → forecast.v1 + graph.v1
+        → shadow serving: challengers scored beside the champion, never served
+        → pollution events (event.v1) → forecast.v1 + graph.v1 + hazard.v1
 FastAPI /api/v1  (OpenAPI at /openapi.json)
 ```
 
@@ -96,7 +98,7 @@ JSON logs via structlog. Required fields: `timestamp`, `level`, `service.name`, 
 
 ## Machine learning
 
-Four models train on **live, credential-free** Open-Meteo data and register with full provenance:
+Six models train on **live, credential-free** Open-Meteo data and register with full provenance:
 
 ```bash
 # Offline, from the committed fixture (no network)
@@ -107,15 +109,35 @@ AEROPULSE_CONNECTOR_MODE=live uv run aeropulse-ml train --model all --live --day
 
 uv run aeropulse-ml models          # registry and stages
 uv run aeropulse-ml predict --live  # champion inference, JSON on stdout
+uv run aeropulse-ml parity          # offline/online feature parity gate
+uv run aeropulse-ml drift           # one scheduled drift sweep (exits 2 on drift)
 ```
+
+`parity` is the gate that makes every other number meaningful. Training builds a grid-hour from a
+snapshot holding the whole window; online inference only has data up to that hour. The harness
+rebuilds each grid-hour from a truncated snapshot and diffs, so a feature that reads the future
+into training, or that is missing at inference, is measured rather than assumed. Measured
+2026-09-22: **144 grid-hours, zero divergence across 47 features.**
 
 Evaluation uses temporal, spatial and seasonal holdouts only — LLD §19 forbids random splits on
 spatially and temporally correlated data, and no random split is reachable in this codebase.
 
-A **promotion gate** blocks any model that fails its own metrics. On the 2026-09-08 run only the
-PM2.5 estimator earned `PRODUCTION` (temporal MAE 3.90 µg/m³, R² 0.975, skill +0.435 vs
-persistence); the other three were held at `VALIDATION` with reasons recorded. That is the intended
-behaviour — see `docs/AeroPulse_ML_Architecture.md` for every metric and caveat.
+A **promotion gate** blocks any model that fails its own metrics. On the 2026-09-22 live 90-day
+run (10,920 rows, 5 corridor cells):
+
+| Model | Stage | Gate outcome |
+|---|---|---|
+| `pm25_estimator` | `PRODUCTION` | skill +0.409 vs persistence, R² 0.975 |
+| `source_likelihood` | `PRODUCTION` | macro F1 0.592 |
+| `anomaly_detector` | `VALIDATION` | detection F1 0.145 < 0.30 |
+| `propagation_forecast` | `VALIDATION` | 24 h skill −0.106 |
+| `pm25_peak_24h` | `VALIDATION` | extreme recall 0.049 < 0.70; extreme bias −41.4 µg/m³ |
+| `pm25_hazard_24h` | `VALIDATION` | PR-AUC 0.334 does not beat reading current PM2.5 (0.380) |
+
+Four of six refusing to serve, each with its reason recorded, is the intended behaviour. The
+hazard result is the one to read: the classifier **loses to simply reading the current
+concentration**, and the gate blocks it rather than shipping it. See
+`docs/AeroPulse_ML_Architecture.md` for every metric and caveat.
 
 > **Scientific caveat.** Open-Meteo air quality is CAMS-derived **model output, not ground
 > measurement**. It validates the pipeline end to end; it does not validate accuracy against CPCB
@@ -126,7 +148,54 @@ behaviour — see `docs/AeroPulse_ML_Architecture.md` for every metric and cavea
 Live satellite HTTP (Sentinel-5P/MODIS/CAMS are **replay fixtures**), MLflow, live LLM Copilot,
 citizen CV models, ArangoDB client, SigNoz, OIDC, Kubernetes. CAMS blend is optional `cams_applied`.
 
-**Known not working:** the frontend uses mock data and never calls the API. Event, evidence,
+**Shadow serving.** A model held at `VALIDATION` can be moved to `SHADOW`
+(`uv run aeropulse-ml promote <id> --stage SHADOW`). The worker then scores it on live traffic
+beside the deterministic champion and writes both to `shadow_prediction`, with a hash of the
+feature vector both saw. A challenger never affects the served answer: its exceptions become
+error rows. Measured: 960 rows over 480 grid-hours, zero failures, 19 ms warm-up.
+
+## Frontend: Demo and Live
+
+The UI ships a **Demo / Live** switch in the top bar, and both modes are supported paths.
+
+| | Demo | Live |
+|---|---|---|
+| Source | `frontend/web/src/data/mock*.ts` | the AeroPulse API |
+| Needs a backend | no | yes, plus `VITE_API_TOKEN` |
+| Timeline scrubber | scrubs the scripted episode | inert — the API serves one snapshot |
+| Coverage | 5 events, 8 evidence items, 10 citizen reports, 8 exposure areas | whatever is persisted |
+
+Demo is the default and is a product feature: a scripted Punjab stubble-burning episode
+transporting into Delhi NCR, reproducible with no network. Live reads the API and is bounded by
+what the backend actually holds.
+
+```bash
+cp frontend/web/.env.example frontend/web/.env.local
+# then put a token in it:
+uv run python -c "from aeropulse_auth import encode_token, Role; print(encode_token('ui', [Role.VIEWER]))"
+cd frontend/web && npm install && npm run dev
+```
+
+Under Compose, export `AEROPULSE_UI_TOKEN` before `up` to enable live mode in the container.
+
+**What live mode will not show you, and says so.** The API supplies strictly less than the demo
+narrative, and the UI marks each gap rather than filling it:
+
+| Surface | In live mode | Why |
+|---|---|---|
+| Population at risk | `—` | The API reports density per km², never a headcount |
+| Recommended actions | explained absence | No API route supplies them |
+| Source freshness / latency / quality | `unknown` | `/api/v1/sources` is a registry, not a health feed |
+| Citizen reports | demo data, labelled | No list route exists (only POST and GET by id) |
+| Evidence graph | demo data, labelled | `graph.v1` has no layout coordinates |
+| Hazard / peak | `baseline` badge | Both models are withheld by the promotion gate |
+
+Where a live call fails, the UI serves demo data **and names the endpoint and reason in a
+banner**. It never substitutes silently — verified by stopping the database with the API up:
+health returns 200, the storage routes return 503, and the banner reads
+`risk-areas — backend storage unavailable (503) — showing demo data`.
+
+**Known not working:** nothing in the UI writes to the API; it is read-only. Event, evidence,
 forecast, graph, grid-feature, grid-prediction, and model-catalog APIs now read persisted/runtime
 state. Operational air-quality, fire, weather, forecast, and H3 grid map layers are database-backed;
 satellite/raster metadata is persisted and served as product footprints. Live satellite HTTP is

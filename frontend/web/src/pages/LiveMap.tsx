@@ -1,7 +1,9 @@
 import { useSearchParams } from 'react-router-dom'
 import { AeroMap } from '../components/map/AeroMap'
+import { useDataMode } from '../context/DataModeContext'
 
 export function LiveMap() {
+  const { mode } = useDataMode()
   const [searchParams] = useSearchParams()
   const sceneParam = searchParams.get('scene')
   const sceneRequest =
@@ -14,6 +16,18 @@ export function LiveMap() {
         </h1>
         <p className="text-[11px] text-text-muted">
           Globe for world context · Corridor for Punjab plume and layers
+        </p>
+        <p className="text-[11px]">
+          {mode === 'demo' ? (
+            <span className="text-intel">
+              Demo · scripted episode. The timeline scrubs through the narrative.
+            </span>
+          ) : (
+            <span className="text-emerald-300">
+              Live · latest persisted grid-hour. The API serves one snapshot, so the timeline
+              scrubber does not move live data.
+            </span>
+          )}
         </p>
       </div>
       <div className="relative min-h-0 flex-1">

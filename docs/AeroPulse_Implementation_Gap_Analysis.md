@@ -243,3 +243,228 @@ flushes both after every detection pass.
 **[Updated 2026-09-14]** Four read APIs now query `grid_feature`/`grid_prediction`; the remaining gap
 is that no drift job consumes the feature/prediction history.
 
+
+---
+
+## 11. 2026-09-22 addendum — ML serving path, feature layer, and the last P1 items
+
+This pass implemented the open phases of
+`docs/AeroPulse_Notebook_to_Production_ML_Integration_Plan.md` (1–4 and 6) and closed the
+remaining P1 items that did not require a credential or a frontend change. Scope was agreed as
+backend/ML only: `frontend/web` was not touched (P1-1 stays open by decision, per `AGENTS.md`),
+and no git history was rewritten.
+
+Verification for everything below: `uv run ruff check .`, `uv run ruff format --check .`,
+`uv run pyright` (0 errors), `uv run pytest tests/unit tests/contract -q` — **302 tests**, up
+from 223 at the start of the pass.
+
+### 11.1 Corrections to this document
+
+Three entries above were stale and are corrected here rather than silently left:
+
+| Entry | Stated | Actually |
+|---|---|---|
+| §3 §7.1 | "`checkpoint.py` still absent" | `libs/connector_sdk/aeropulse_connector_sdk/checkpoint.py` exists and implements cursor-offset replay |
+| §3 §20 / §32 | "`Redis(` is never instantiated anywhere. No caching exists" | `apps/api/aeropulse_api/cache.py` is a fail-open Redis response cache over 10 bounded read routes |
+| §6 P2 | "no pagination on list endpoints" (partially) | `/api/v1/alerts` and `/api/v1/models` gained `limit`/`offset` this pass; events and sources already had it |
+
+**Phase 0 of the integration plan is also stale, and this matters because it was listed as
+blocking everything else.** That plan states a 1,564 MB blob in commits `8b71dce` and `82dc497`
+blocks `git push` and requires a history rewrite. Measured on this checkout:
+
+```text
+largest blob reachable from any ref:  0.35 MB  (uv.lock)
+8b71dce -> NOT REACHABLE FROM ANY BRANCH
+82dc497 -> NOT REACHABLE FROM ANY BRANCH
+held only by: 4 reflog entries
+```
+
+Push transmits reachable objects only, so **no history rewrite is needed and `git push` is not
+blocked**. What remains is a 515 MB local `.git`, which is a disk-space matter reclaimable with
+`git reflog expire --expire=now --all && git gc --prune=now --aggressive`. That command destroys
+the recovery path for those commits, so it was **not run** — it is the repository owner's call.
+
+### 11.2 Closed this pass
+
+| ID | Finding | Resolution |
+|---|---|---|
+| P1-4 | No population connector; exposure rests on a constant (`risk.py:7`) | **FIXED.** `libs/geospatial/aeropulse_geospatial/population.py` resolves density from a 28-point Census-2011-derived district reference layer for the corridor, overridable via `AEROPULSE_POPULATION_DATA`. `score_risk` takes `lat`/`lon`, `GridFeature.population` is populated, and every result carries `population_measured` so an assumption is never mistaken for an estimate. Formula version `risk-0.2`; the density ceiling moved 20,000 → 40,000/km² because NE Delhi (36,155) saturated the old scale. Delivered as a **static reference layer, not a connector** — population is not a time series, and modelling it as `raster.v1` observations would have been ceremony. Tests: `tests/unit/test_risk.py` (8) |
+| P1-9 | No custom OTel/domain metrics | **FIXED** (metrics half). Nine domain metrics in `libs/observability/.../metrics.py` covering ingestion, quality, features, events, ML inference and shadow, all with bounded labels, all **wired and incrementing** in `apps/worker`. Tests: `tests/unit/test_domain_metrics.py`. Default OTLP exporter wiring remains absent |
+| P1-12 | Drift monitoring incomplete — no scheduled job | **FIXED** (scheduled half). `libs/ml/aeropulse_ml/drift_monitor.py` sweeps every whitelisted signal, compares a 24 h window against the preceding 7 days, and emits structured alerts. `uv run aeropulse-ml drift` exits 2 on drift so a scheduler can branch without parsing JSON. One unreadable signal cannot abort the sweep, and `INSUFFICIENT_DATA` is reported separately from `STABLE`. Error drift still needs delayed ground truth. Tests: `tests/unit/test_drift_monitor.py` (7) |
+| §5.5 (plan) | Two registries; `GET /api/v1/models` cannot report reality | **FIXED.** `aeropulse_intelligence.model_registry` is a raising deprecation shim. The deterministic baselines are real `ModelRecord` entries (`aeropulse_ml/baselines.py`) in the filesystem registry, so one read reports both what serves and what was withheld. `champion()` skips artifact-less records, and `sync_baselines` registers a baseline as `RETIRED` when a trained champion already holds the family — preserving the single-champion invariant. Tests: `tests/unit/test_baselines_registry.py` (5), `test_ml_registry.py` (+3) |
+| §3 §17.2 | Rolling max / rate of change / historical percentile absent | **FIXED** as part of the feature expansion below |
+
+### 11.3 Feature layer expansion (plan Phases 1–2)
+
+`ML_FEATURE_VERSION` is bumped to **`ml-features-2.0.0`** and `FEATURE_VERSION` to
+`grid-features-0.5.0`. The bump is mandatory and deliberate: `validate_feature_contract` compares
+it exactly, so every 1.0.0 artifact is invalidated rather than reinterpreted against a vector
+that no longer means the same thing.
+
+Seventeen fields added to `GridFeature`, all computable from data already ingested (the plan's
+**Route B**, chosen over building six new ingestion pipelines):
+
+| Family | Fields | Why |
+|---|---|---|
+| Trailing history | `pm25_roll_max_{6,24}h`, `pm25_roll_std_24h`, `pm25_trend_{3,24}h` | LLD §17.2; strictly trailing, so safe even where pm2.5(t) is the target |
+| Current-hour derived | `pm25_delta_1h`, `pm25_pct_rank_24h` | Forecast-only; see the leakage note below |
+| Dispersion | `ventilation_index`, `stagnation_score` | The winter mechanism that turns constant emissions into an episode |
+| Neighbour field | `neighbor_pm25_{mean,max}`, `neighbor_count`, `upwind_pm25` | Other cells' concentrations — the signal a nowcast for a station-less cell actually needs |
+| Fire rings | `fire_count_{25,50}km`, `fire_frp_50km`, `upwind_fire_frp` | A single 100 km ring cannot separate "next village" from "edge of domain" |
+| Calendar (derived, not stored) | `is_weekend`, `is_stubble_season` | Crop-calendar prior, named so it is not mistaken for an ICAR observation |
+
+**Leakage safety was strengthened, not just extended.** Name-level exclusion is insufficient:
+`pm25_delta_1h` is `pm25 - pm25_lag_1h`, so its name differs from the target while revealing it
+exactly. `feature_spec.DERIVED_FROM` now records each derived feature's upstream columns and the
+import-time assertion walks that graph transitively. A feature computed *from* a set's target is
+refused as firmly as the target itself, with a test that proves the refusal fires.
+
+**Neighbour radius is 100 km, not the H3 k-ring.** At resolution 8 an adjacent cell is ~1 km
+away and two stations are almost never that close, so a k-ring neighbour field would be
+permanently empty on real data.
+
+### 11.4 Offline/online parity harness (plan Phase 2 — its stated gate)
+
+The plan calls this "the single most important measurement". `libs/ml/aeropulse_ml/parity.py`
+and `uv run aeropulse-ml parity` implement it, though **not the comparison the plan described**,
+and the difference is worth stating:
+
+- The plan asks to diff production features against the notebook Parquet. Those notebook artifact
+  directories are empty in this checkout (§0 of this document records that), so that comparison
+  is not runnable.
+- Training and serving already share one implementation and one feature list, so the classic
+  two-codebase skew is structurally impossible here.
+- The skew that **is** possible is batch-versus-realtime: training materialises a grid-hour from a
+  snapshot holding the whole window; online inference only has data up to that hour. The harness
+  rebuilds each grid-hour with a truncated snapshot and diffs. A disagreement means either a
+  feature is reading the future into the training frame, or it is unavailable at inference time.
+
+Measured, this pass: **144 grid-hours compared, zero divergence across all 47 features.** A test
+injects a deliberately forward-looking feature and confirms the harness catches it and names the
+affected models, so the clean result is evidence rather than an absence of checking.
+
+Caveat on coverage: the offline fixture is 3 days across 2 cells. The harness should be re-run on
+a wider live window before its result is treated as conclusive.
+
+### 11.5 Two new models, and what they measured
+
+`pm25_peak_24h` (forward 24 h maximum) and `pm25_hazard_24h` (P(peak ≥ 121 µg/m³ within 24 h))
+implement the plan's §5.4 reconciliation: **one hazard model at one threshold**. The CPCB
+"Very Poor" breakpoint of 121 was chosen over the research pipeline's 150 because it is the
+national standard and this is a public-facing alert. Two hazard probabilities on one map cell is
+a product defect regardless of which is more accurate.
+
+Measured on a live 90-day, 5-cell, 10,920-row Open-Meteo window (2026-09-22):
+
+| Model | Stage | Gate outcome |
+|---|---|---|
+| `pm25_estimator` | **PRODUCTION** | skill +0.409 vs persistence, R² 0.975 |
+| `source_likelihood` | **PRODUCTION** | macro F1 0.592 (was 0.000 on `traffic` and withheld before the feature expansion) |
+| `anomaly_detector` | VALIDATION | detection F1 0.145 < 0.30 (was 0.086) |
+| `propagation_forecast` | VALIDATION | 24 h skill −0.106 (was −0.119) |
+| `pm25_peak_24h` | VALIDATION | extreme recall 0.049 < 0.70; extreme bias −41.4 µg/m³; held-out-cell recall 0.472 |
+| `pm25_hazard_24h` | VALIDATION | PR-AUC 0.334 does **not** beat reading current PM2.5 (0.380) |
+
+Two results deserve emphasis because they are the pass's most useful findings:
+
+1. **`source_likelihood` earned PRODUCTION.** The expanded feature set (calendar + dispersion)
+   lifted macro F1 from below the 0.50 floor to 0.592 without any threshold being relaxed.
+2. **The hazard classifier loses to its own baseline.** PR-AUC 0.334 against 0.380 for simply
+   reading the current concentration. The gate blocks it, which is the correct outcome and
+   independently reproduces the notebooks' concern about this model family. The peak model
+   likewise reproduces the notebooks' extreme-bias finding (−41.4 here, −32.4 there): squared-error
+   regression minimises aggregate loss by predicting "no episode", so aggregate MAE improves
+   (skill +0.396) while episode recall collapses to 0.049.
+
+No threshold was lowered to make anything pass. One threshold was **added**: the peak gate also
+checks spatial generalisation, because a model sold as hyper-local prediction for cells with no
+station of their own has failed at its purpose if it only works where it was fitted.
+
+### 11.6 Shadow serving (plan Phase 4)
+
+`SHADOW` and `CANARY` were recorded stages that nothing routed traffic to. `libs/ml/aeropulse_ml/shadow.py`
+plus a `shadow_prediction` hypertable (`infrastructure/db/migrations/0005_shadow_prediction.sql`)
+close that. The worker warms challenger bundles at start and scores them after the served answer
+is already computed.
+
+Verified with the real trained models above: **960 shadow rows over 480 grid-hours, zero
+failures, 93.7% mean feature completeness, 19 ms warm-up.** Failure isolation was tested by
+replacing a challenger's estimator with one that raises — the exception becomes an error row and
+the served path is untouched.
+
+Also added, from the plan's §9: **feature completeness is asserted per prediction and recorded.**
+Gradient boosting handles NaN natively, which is convenient and dangerous, because a silently
+all-null feature family yields a confident answer rather than an error. Predictions below 50%
+populated are refused with the reason stated.
+
+### 11.7 New endpoints (plan Phase 6)
+
+`peak_forecast.v1` and `hazard.v1` contracts, `p10`/`p90` on `forecast.v1`, and five routes:
+`/api/v1/grid-hazard`, `/api/v1/grid-hazard/{grid_id}/latest`, `/api/v1/grid-peak`,
+`/api/v1/grid-peak/{grid_id}/latest`, `/api/v1/map/hazard`. OpenAPI re-exported — 36 paths, up
+from 31.
+
+The plan's binding constraint for this phase is honoured: **a shadow model's output is never
+returned as a served prediction.** These routes answer from a deterministic persistence rule
+while no hazard or peak model is promoted, and every item carries `degraded: true` plus a
+`persistence-*` `model_version`. Hazard items additionally carry `calibrated: false`, because an
+uncalibrated gradient-boosting score ranks hours correctly but its magnitude is not a frequency,
+and rendering 0.8 as "80% chance" would be wrong. A cell with no observed PM2.5 is omitted
+rather than scored zero — "no data" and "no hazard" must not render identically on a map.
+
+### 11.8 Still open after this pass
+
+| ID | Item | Why it is still open |
+|---|---|---|
+| ~~P1-1~~ | ~~Frontend never calls the API~~ | **FIXED 2026-09-22.** All 8 service modules are mode-aware; a Demo/Live toggle selects between the scripted narrative and the API. See §12 |
+| P1-5/6/7 | Anomaly, forecast-24h and hazard fail their gates | These need an operator-agreed false-alert budget or real CPCB ground truth. Moving a threshold to make them pass is exactly what the gate exists to prevent |
+| P1-10 | 15 of 19 Kafka topics unused; DLQ is a table | Unchanged |
+| P1-9 (part) | No default OTLP exporter; SigNoz absent | Metrics now exist and increment; export wiring does not |
+| §3 §12.3 | PostGIS geometry columns unpopulated | Unchanged |
+| §3 §9 | No OpenAQ or ERA5 connector | Both need credentials that do not exist in this environment |
+| §3 §11 | MinIO writes no-op without credentials | Unchanged; logs a warning since 2026-09-09 |
+| — | Champion hazard/peak predictions are not materialised by the worker | The routes serve the deterministic baseline and say so. Wiring a promoted champion through to these layers is the next step, and is deliberately not speculative work while both models sit at VALIDATION |
+
+The scientific caveat is unchanged and applies to every number in §11.5: Open-Meteo air quality
+is CAMS-derived **model output, not ground measurement**. These metrics validate the pipeline
+end to end; they do not validate accuracy against CPCB stations.
+
+---
+
+## 12. 2026-09-22 addendum (2) — P1-1 closed: the frontend reads the API
+
+P1-1 ("Frontend never calls the API; all 8 services return `mock*` imports; `VITE_API_BASE` is
+inert") is fixed. The full write-up is §15 of
+`docs/AeroPulse_Notebook_to_Production_ML_Integration_Plan.md`; what matters for this document:
+
+**The demo is a mode, not a fallback.** A top-bar Demo / Live switch selects between the
+scripted Punjab→Delhi episode and the API. Demo remains the default and still works with no
+backend, no token and no network — it is what the product demonstrates, and burying it behind a
+failure path would make it unreachable whenever the backend is healthy.
+
+**`VITE_API_BASE` is now load-bearing**, alongside a new `VITE_API_TOKEN` (dev-only HS256, per
+ADR-0003) and `VITE_DEFAULT_DATA_MODE`. All three are wired in `infrastructure/docker/compose.yaml`;
+`frontend/web/.env.example` documents them.
+
+**Three screens stay on demo data in live mode** because the API cannot serve them, and each
+says so on screen rather than passing curated data off as live. These are now the concrete
+backend gaps the UI work surfaced:
+
+| Gap | Effect | Closed by |
+|---|---|---|
+| No `GET /api/v1/citizen/reports` | The Citizen screen cannot enumerate reports | A list route with the standard `items`/`total`/`limit`/`offset` shape |
+| `graph.v1` has no layout coordinates | The Evidence graph cannot be drawn from live lineage | Coordinates on the contract, or a client-side force layout |
+| No per-cell observed-history route | The forecast chart's observed leg stays scripted | A history endpoint, or deriving from `grid-features` by cell and time |
+| `GET /api/v1/sources` is a registry, not a health feed | Freshness, latency, quality and record counts read "unknown" | Telemetry fields on the source route |
+| `event.v1` carries no recommended actions or population-at-risk | Both render as "—" with a reason | Product decision on whether the API should own either |
+
+**Two defects this pass introduced and caught by running it:** `At Risk: 0.0M people` (a null
+coalesced to zero, which is a *false* claim rather than an unknown one) and `Healthy · -1 min`
+(a sentinel leaking to screen). Both are fixed, and `SourceHealth`'s telemetry fields are now
+`number | null` so the compiler — not a reviewer — finds the next such case.
+
+**The no-silent-substitution property is verified, not assumed.** With the API up and the
+database stopped, `/health` returns 200 while the storage routes return 503; the UI serves demo
+data and names each endpoint and reason in a banner. With the API stopped entirely, the Live
+toggle disables itself with the reason and a restored "live" session choice reconciles back to
+demo, so the header can never claim Live while every panel is on a fallback.

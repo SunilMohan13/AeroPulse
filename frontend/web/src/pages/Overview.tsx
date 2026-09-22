@@ -14,19 +14,25 @@ import { fetchSources } from '../services/sourceService'
 import { formatFreshness } from '../utils/format'
 import { getBandLabel } from '../utils/aqi'
 import { HERO_EVENT_ID } from '../data/mockEvents'
+import { useDataMode } from '../context/DataModeContext'
+import { FallbackBanner, ModeContextNote } from '../components/common/Provenance'
 
 export function Overview() {
-  const { data: events = [] } = useQuery({ queryKey: ['events'], queryFn: fetchEvents })
-  const { data: forecast = [] } = useQuery({ queryKey: ['forecast'], queryFn: fetchForecast })
-  const { data: sources = [] } = useQuery({ queryKey: ['sources'], queryFn: fetchSources })
+  const { mode } = useDataMode()
+  const { data: events = [] } = useQuery({ queryKey: ['events', mode], queryFn: fetchEvents })
+  const { data: forecast = [] } = useQuery({ queryKey: ['forecast', mode], queryFn: fetchForecast })
+  const { data: sources = [] } = useQuery({ queryKey: ['sources', mode], queryFn: fetchSources })
   const { data: totalExposure } = useQuery({
-    queryKey: ['totalExposure'],
+    queryKey: ['totalExposure', mode],
     queryFn: fetchTotalExposure,
   })
 
   const hero = events.find((e) => e.id === HERO_EVENT_ID) ?? events[0]
   const activeCount = events.filter((e) => e.status === 'ACTIVE').length
-  const totalAtRisk = totalExposure ?? 0
+  // Null means the API cannot supply a headcount, which is different from
+  // zero people being at risk. Rendering 0.0M would be a false claim, so the
+  // tile shows an explicit dash instead.
+  const exposureKnown = totalExposure !== null && totalExposure !== undefined
 
   return (
     <div className="flex h-full flex-col gap-4 p-4">
@@ -37,7 +43,10 @@ export function Overview() {
       >
         <h1 className="text-xl font-semibold tracking-tight">Air Quality Overview</h1>
         <p className="text-sm text-text-secondary">Punjab–Haryana–Delhi NCR</p>
+        <ModeContextNote className="pt-1" />
       </motion.div>
+
+      <FallbackBanner />
 
       <motion.div
         initial={{ opacity: 0, y: 12 }}
@@ -62,13 +71,21 @@ export function Overview() {
         </Card>
         <Card>
           <CardBody>
-            <KpiStat
-              label="At Risk"
-              value={Math.round(totalAtRisk / 100_000) / 10}
-              unit="M people"
-              sublabel="population exposure"
-              decimals={1}
-            />
+            {exposureKnown ? (
+              <KpiStat
+                label="At Risk"
+                value={Math.round((totalExposure as number) / 100_000) / 10}
+                unit="M people"
+                sublabel="population exposure"
+                decimals={1}
+              />
+            ) : (
+              <div title="The API reports population density per km², not a headcount at risk.">
+                <p className="text-xs text-text-muted">At Risk</p>
+                <p className="font-mono text-3xl font-bold text-text-muted">&mdash;</p>
+                <p className="text-[10px] text-amber-400/80">headcount not exposed by the API</p>
+              </div>
+            )}
           </CardBody>
         </Card>
       </motion.div>

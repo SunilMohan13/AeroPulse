@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react'
 import { Bell, Command, Play, Pause, Menu } from 'lucide-react'
 import { StatusBadge } from '../common/Badge'
 import { useApp } from '../../context/AppContext'
+import { useDataMode } from '../../context/DataModeContext'
+import { DataModeToggle } from './DataModeToggle'
 import { formatDateTimeIST } from '../../utils/format'
 
 export function TopBar() {
@@ -20,6 +22,7 @@ export function TopBar() {
     exitDemo,
     setMobileNavOpen,
   } = useApp()
+  const { mode } = useDataMode()
   const [now, setNow] = useState(() => new Date())
 
   useEffect(() => {
@@ -46,13 +49,17 @@ export function TopBar() {
           </div>
           <span className="text-lg font-semibold tracking-tight">AeroPulse</span>
         </div>
-        <StatusBadge variant="live">● Live</StatusBadge>
+        <StatusBadge variant={mode === 'live' ? 'live' : 'default'}>
+          {mode === 'live' ? '● Live API' : '● Demo'}
+        </StatusBadge>
         <span className="hidden text-sm text-text-secondary md:inline">
           Punjab–Haryana–Delhi NCR
         </span>
       </div>
 
       <div className="flex items-center gap-3">
+        <DataModeToggle />
+
         <span className="hidden font-mono text-sm text-text-secondary sm:inline">
           {formatDateTimeIST(now.toISOString())} IST
         </span>
