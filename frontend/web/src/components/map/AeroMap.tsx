@@ -59,6 +59,7 @@ import {
 import { CORRIDOR_LOCATIONS, PUNJAB_FIRE_CENTER, TRANSPORT_BEARING_DEG, type NamedLocation } from '../../utils/geo'
 import { attachBasemapFallback } from './basemapStyle'
 import { useAnimationClock } from '../../hooks/useAnimationClock'
+import { useDataMode } from '../../context/DataModeContext'
 const CORRIDOR_VIEW = {
   longitude: 76.2,
   latitude: 29.8,
@@ -153,6 +154,7 @@ export function AeroMap({
   showGlobeBar: showGlobeBarProp,
   className,
 }: AeroMapProps) {
+  const { mode } = useDataMode()
   const showGlobeBar = showGlobeBarProp ?? !compact
   const mapContainerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<maplibregl.Map | null>(null)
@@ -234,7 +236,7 @@ export function AeroMap({
   const transportBearing = TRANSPORT_BEARING_DEG + windBearingOffset
 
   const { data: grid = [] } = useQuery({
-    queryKey: ['airQuality', hourOffset, demoIntensity, boundsKey, windBearingOffset],
+    queryKey: ['airQuality', mode, hourOffset, demoIntensity, boundsKey, windBearingOffset],
     queryFn: () => fetchAirQuality(hourOffset, demoIntensity, bounds, transportBearing),
     placeholderData: (previous) => previous,
     // Each snapshot is tens of MB and every hour/viewport combination is a
@@ -245,11 +247,11 @@ export function AeroMap({
     staleTime: 10_000,
   })
   const { data: fires = [] } = useQuery({
-    queryKey: ['fires', hourOffset, demoIntensity],
+    queryKey: ['fires', mode, hourOffset, demoIntensity],
     queryFn: () => fetchFires(hourOffset, demoIntensity),
     placeholderData: (previous) => previous,
   })
-  const { data: wind = [] } = useQuery({ queryKey: ['wind'], queryFn: fetchWeather })
+  const { data: wind = [] } = useQuery({ queryKey: ['wind', mode], queryFn: fetchWeather })
   const { data: industries = [] } = useQuery({
     queryKey: ['industries'],
     queryFn: fetchIndustries,

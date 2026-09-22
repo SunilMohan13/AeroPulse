@@ -11,6 +11,7 @@ Worker
     → grid features → IDW PM2.5 → anomaly → source likelihood
     → pollution events + evidence + lineage graph
     → wind-advection forecast.v1
+    → shadow scoring of registered challengers -> shadow_prediction
 API FastAPI /api/v1
 ```
 
@@ -18,11 +19,18 @@ API FastAPI /api/v1
 
 | Component | Version |
 | --- | --- |
-| Grid features | `grid-features-0.4.0` |
+| Grid features | `grid-features-0.5.0` |
 | PM2.5 estimator | `baseline-idw-0.1` |
 | Anomaly | `quantile-baseline-0.1` |
 | Source likelihood | `source-likelihood-0.1` |
 | Forecast | `wind-advection-0.1` (`cams_applied: false`) |
+| 24h hazard (served) | `persistence-hazard-0.1` (deterministic, `degraded: true`) |
+| 24h peak (served) | `persistence-peak-0.1` (deterministic, `degraded: true`) |
+| ML feature spec | `ml-features-2.0.0` |
+
+Trained models are registered but serve only when promoted. A model at `SHADOW` is scored on
+live traffic and written to `shadow_prediction`; it never reaches a response. The hazard and peak
+routes therefore answer from the deterministic rules above and label every item `degraded`.
 
 LLM Copilot is **not** on this path (LLD §5.4 / §61 Decision 6).
 

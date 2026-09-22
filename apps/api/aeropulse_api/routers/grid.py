@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 
 from aeropulse_api.deps import get_claims
 from aeropulse_api.grid_store import GridReader, get_grid_reader
+from aeropulse_api.hazard_store import hazard_cells, peak_forecasts
 
 router = APIRouter(prefix="/api/v1", tags=["grid-intelligence"])
 
@@ -77,3 +78,86 @@ def latest_grid_prediction(
     if item is None:
         raise HTTPException(status_code=404, detail=f"No prediction found for grid {grid_id}")
     return item.model_dump(mode="json")
+
+
+@router.get("/grid-hazard")
+def list_grid_hazard(
+    _claims: TokenClaims = Depends(get_claims),
+    reader: GridReader = Depends(get_grid_reader),
+    grid_id: str | None = Query(default=None),
+    limit: int = Query(default=100, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+) -> dict:
+    """List 24-hour hazard scores per cell, from persisted features.
+
+    Serves the deterministic baseline while no hazard model is promoted, and
+    says so on every item (``degraded``) and once in ``provenance``. A model
+    being scored in shadow is deliberately not served here.
+    """
+    features, total = reader.list_features(grid_id, None, None, limit, offset)
+    items, provenance = hazard_cells(list(features))
+    return {
+        "items": [item.model_dump(mode="json") for item in items],
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+        "provenance": provenance,
+    }
+
+
+@router.get("/grid-hazard/{grid_id}/latest")
+def latest_grid_hazard(
+    grid_id: str,
+    _claims: TokenClaims = Depends(get_claims),
+    reader: GridReader = Depends(get_grid_reader),
+) -> dict:
+    """Return the latest hazard score for one grid cell."""
+    feature = reader.latest_feature(grid_id)
+    if feature is None:
+        raise HTTPException(status_code=404, detail=f"No feature found for grid {grid_id}")
+    items, provenance = hazard_cells([feature])
+    if not items:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Grid {grid_id} has no observed PM2.5, so hazard is undefined",
+        )
+    return {**items[0].model_dump(mode="json"), "provenance": provenance}
+
+
+@router.get("/grid-peak")
+def list_grid_peak(
+    _claims: TokenClaims = Depends(get_claims),
+    reader: GridReader = Depends(get_grid_reader),
+    grid_id: str | None = Query(default=None),
+    limit: int = Query(default=100, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+) -> dict:
+    """List 24-hour peak PM2.5 forecasts per cell, from persisted features."""
+    features, total = reader.list_features(grid_id, None, None, limit, offset)
+    items, provenance = peak_forecasts(list(features))
+    return {
+        "items": [item.model_dump(mode="json") for item in items],
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+        "provenance": provenance,
+    }
+
+
+@router.get("/grid-peak/{grid_id}/latest")
+def latest_grid_peak(
+    grid_id: str,
+    _claims: TokenClaims = Depends(get_claims),
+    reader: GridReader = Depends(get_grid_reader),
+) -> dict:
+    """Return the latest 24-hour peak forecast for one grid cell."""
+    feature = reader.latest_feature(grid_id)
+    if feature is None:
+        raise HTTPException(status_code=404, detail=f"No feature found for grid {grid_id}")
+    items, provenance = peak_forecasts([feature])
+    if not items:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Grid {grid_id} has no observed PM2.5, so a peak cannot be projected",
+        )
+    return {**items[0].model_dump(mode="json"), "provenance": provenance}

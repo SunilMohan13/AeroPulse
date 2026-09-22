@@ -252,3 +252,57 @@ def test_risk_endpoint(client: TestClient, settings: Settings) -> None:
         industry = client.get("/api/v1/map/industry", headers=headers)
         assert industry.status_code == 200
         assert industry.json()["features"][0]["properties"]["source_id"] == "industry"
+
+
+def test_risk_areas_returns_ranked_cells_with_provenance(
+    client: TestClient, settings: Settings
+) -> None:
+    """`/risk/areas` had no coverage, and a merge silently broke its call.
+
+    `score_risk`'s density parameter was renamed while this endpoint was
+    being added on another branch; the merge produced a `TypeError` on every
+    request that no test caught. This is that test.
+    """
+    response = client.get("/api/v1/risk/areas?pm25=180", headers=_auth(settings, Role.VIEWER))
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["items"], "the population fixture should yield at least one cell"
+
+    ranks = [item["rank"] for item in body["items"]]
+    assert ranks == sorted(ranks) == list(range(1, len(ranks) + 1))
+    risks = [item["population_risk"] for item in body["items"]]
+    assert risks == sorted(risks, reverse=True), "areas must be ranked by risk"
+
+    # Denser cells must carry more exposure at identical concentration, or the
+    # endpoint is reporting severity twice under two names.
+    assert body["items"][0]["population_density"] > body["items"][-1]["population_density"]
+
+    # Provenance is the point of this fixture: it is explicitly not licensed
+    # for operational use, and the response has to say so.
+    source = body["population_source"]
+    assert source["provider"]
+    assert source["license"] == "replace-before-production"
+
+
+def test_map_industry_returns_geojson(client: TestClient, settings: Settings) -> None:
+    """The industry layer the UI reads in live mode."""
+    response = client.get("/api/v1/map/industry", headers=_auth(settings, Role.VIEWER))
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["type"] == "FeatureCollection"
+    for feature in body["features"]:
+        assert feature["geometry"]["type"] in {"Point", "Polygon"}
+
+
+def test_citizen_reports_list_is_paginated_and_empty_by_default(
+    client: TestClient, settings: Settings
+) -> None:
+    """The list route that unblocked the Citizen screen in live mode."""
+    response = client.get("/api/v1/citizen/reports", headers=_auth(settings, Role.VIEWER))
+
+    assert response.status_code == 200
+    body = response.json()
+    assert set(body) >= {"items", "total"}
+    assert body["total"] == len(body["items"])

@@ -8,6 +8,9 @@ import type { SourceHealth } from '../types'
 import { formatFreshness, formatDateTimeIST } from '../utils/format'
 import { ErrorState } from '../components/common/States'
 import { Sparkline } from '../components/charts/Sparkline'
+import { useDataMode } from '../context/DataModeContext'
+import { FallbackBanner, ModeContextNote } from '../components/common/Provenance'
+import { ModelRegistryPanel } from '../components/events/ModelRegistryPanel'
 
 function statusVariant(status: SourceHealth['status']) {
   if (status === 'Healthy') return 'success' as const
@@ -16,7 +19,8 @@ function statusVariant(status: SourceHealth['status']) {
 }
 
 export function Sources() {
-  const { data: sources = [] } = useQuery({ queryKey: ['sources'], queryFn: fetchSources })
+  const { mode } = useDataMode()
+  const { data: sources = [] } = useQuery({ queryKey: ['sources', mode], queryFn: fetchSources })
   const [selected, setSelected] = useState<SourceHealth | null>(null)
 
   const delayed = sources.find((s) => s.status === 'Delayed')
@@ -26,7 +30,17 @@ export function Sources() {
       <div>
         <h1 className="text-xl font-semibold">Source Health</h1>
         <p className="text-sm text-text-secondary">Data ingestion observability</p>
+        <ModeContextNote className="pt-1" />
+        {mode === 'live' && (
+          <p className="pt-1 text-xs text-amber-400/80">
+            <code className="font-mono">GET /api/v1/sources</code> is a registry, not a health
+            feed: it carries no freshness, latency, quality or record counts, so those columns
+            read &ldquo;unknown&rdquo; here.
+          </p>
+        )}
       </div>
+
+      <FallbackBanner />
 
       {delayed && (
         <ErrorState
@@ -73,11 +87,13 @@ export function Sources() {
                     <StatusBadge variant={statusVariant(s.status)}>● {s.status}</StatusBadge>
                   </td>
                   <td className="px-4 py-3 text-text-secondary">{formatFreshness(s.freshnessMinutes)}</td>
-                  <td className="px-4 py-3 font-mono">{s.quality}%</td>
+                  <td className="px-4 py-3 font-mono">
+                    {s.quality === null ? <span className="text-text-muted">&mdash;</span> : `${s.quality}%`}
+                  </td>
                   <td className="px-4 py-3">
                     <Sparkline
                       seed={s.id}
-                      quality={s.quality}
+                      quality={s.quality ?? 0}
                       color={s.status === 'Healthy' ? '#22d3ee' : '#f97316'}
                     />
                   </td>
@@ -87,6 +103,8 @@ export function Sources() {
           </table>
         </CardBody>
       </Card>
+
+      <ModelRegistryPanel />
 
       {selected && (
         <div className="fixed inset-x-0 bottom-0 z-40 max-h-[70vh] overflow-y-auto border-t border-border bg-bg-panel shadow-2xl sm:inset-y-0 sm:left-auto sm:right-0 sm:max-h-none sm:w-80 sm:border-l sm:border-t-0">
@@ -99,15 +117,23 @@ export function Sources() {
           <div className="space-y-4 p-4 text-sm">
             <div className="flex justify-between">
               <span className="text-text-muted">Records today</span>
-              <span className="font-mono">{selected.recordsToday.toLocaleString()}</span>
+              <span className="font-mono">
+                {selected.recordsToday === null
+                  ? '\u2014'
+                  : selected.recordsToday.toLocaleString()}
+              </span>
             </div>
             <div className="flex justify-between">
               <span className="text-text-muted">Last ingestion</span>
-              <span>{formatDateTimeIST(selected.lastIngestion)}</span>
+              <span>
+                {selected.lastIngestion ? formatDateTimeIST(selected.lastIngestion) : '\u2014'}
+              </span>
             </div>
             <div className="flex justify-between">
               <span className="text-text-muted">Latency</span>
-              <span className="font-mono">{selected.latencySec} sec</span>
+              <span className="font-mono">
+                {selected.latencySec === null ? '\u2014' : `${selected.latencySec} sec`}
+              </span>
             </div>
             <div className="flex justify-between">
               <span className="text-text-muted">Error rate</span>

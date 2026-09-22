@@ -14,6 +14,7 @@ from typing import Any
 
 import numpy as np
 import pandas as pd
+from sklearn.metrics import average_precision_score, roc_auc_score
 
 DEFAULT_TRAIN_FRACTION = 0.8
 
@@ -325,4 +326,40 @@ def detection_metrics(y_true: Any, y_pred: Any) -> dict[str, float]:
         # Fraction of quiet hours that produced an alert.
         "false_alert_rate": round(fp / (fp + tn), 6) if (fp + tn) else 0.0,
         "alert_rate": round(float(np.mean(pred)), 6),
+    }
+
+
+def ranking_metrics(y_true: Any, scores: Any) -> dict[str, float]:
+    """Threshold-free quality of a probability score for a rare binary label.
+
+    PR-AUC is reported alongside ROC-AUC and the positive base rate because
+    ROC-AUC flatters a rare-event classifier: with 2% positives a model can
+    score 0.88 ROC-AUC while its precision at any usable recall is poor.
+    PR-AUC against the base rate is the honest comparison, so ``lift`` states
+    how many times better than chance the ranking is.
+
+    Args:
+        y_true: True binary labels.
+        scores: Predicted probability of the positive class.
+
+    Returns:
+        ``pr_auc``, ``roc_auc``, ``base_rate``, ``lift`` and ``positives``.
+        Empty when the label has only one class, where neither metric is
+        defined and returning a number would invent information.
+    """
+    true = np.asarray(y_true).astype(int)
+    score = np.asarray(scores, dtype=float)
+    if true.size == 0 or len(set(true.tolist())) < 2:
+        return {}
+    base_rate = float(np.mean(true))
+    pr_auc = float(average_precision_score(true, score))
+    return {
+        "n": float(true.size),
+        "positives": float(int(np.sum(true))),
+        "base_rate": round(base_rate, 6),
+        "pr_auc": round(pr_auc, 6),
+        "roc_auc": round(float(roc_auc_score(true, score)), 6),
+        # A PR-AUC equal to the base rate is a coin flip, so lift is the
+        # number that says whether the ranking carries information at all.
+        "lift": round(pr_auc / base_rate, 6) if base_rate else 0.0,
     }

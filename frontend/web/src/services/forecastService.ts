@@ -1,44 +1,49 @@
 import { getForecastSeries, mockForecast, mockObservedHistory } from '../data/mockForecast'
 import type { ForecastPoint } from '../types'
-import { fetchApiJson } from './api'
+import { liveForecast } from '../api/live'
+import { resolve } from './resolve'
 
 const delay = (ms = 80) => new Promise((r) => setTimeout(r, ms))
 
+/**
+ * Observed PM2.5 leading up to detection.
+ *
+ * No API route returns a per-cell observed history as a series; the closest
+ * is `/api/v1/grid-features` filtered by cell and time, which the forecast
+ * chart would have to re-derive. Left on the demo series until a history
+ * endpoint exists, rather than faking one from a single latest value.
+ */
 export async function fetchObservedHistory(): Promise<{ hour: number; pm25: number }[]> {
   await delay(60)
   return mockObservedHistory
 }
 
-export async function fetchForecast(eventId?: string): Promise<ForecastPoint[]> {
-  if (eventId && (import.meta.env.VITE_API_TOKEN as string | undefined ?? '').trim()) {
-    const data = await fetchApiJson<{
-      generated_at?: string
-      grid_predictions?: Record<string, unknown>[]
-      horizons?: number[]
-      horizon_hours?: number
-    }>(`/api/v1/events/${eventId}/forecast`, { grid_predictions: [] })
-    const predictions = data.grid_predictions ?? []
-    if (predictions.length > 0) {
-      const generatedAt = data.generated_at ? new Date(data.generated_at).getTime() : Date.now()
-      const horizon = Number(data.horizon_hours ?? data.horizons?.[0] ?? 0)
-      return predictions.map((prediction, index) => {
-        const pm25 = Number(prediction.pm25 ?? 0)
-        const confidence = Number(prediction.confidence ?? 0)
-        return {
-          hour: horizon || index,
-          timestamp: new Date(generatedAt + (horizon || index) * 3600000).toISOString(),
-          pm25,
-          confidenceLow: Math.max(0, pm25 * (1 - (1 - confidence) * 0.25)),
-          confidenceHigh: pm25 * (1 + (1 - confidence) * 0.25),
-        }
-      })
-    }
-  }
+async function demoForecast(): Promise<ForecastPoint[]> {
   await delay()
   return mockForecast
 }
 
-export async function fetchForecastSeries(): Promise<ForecastPoint[]> {
+async function demoForecastSeries(): Promise<ForecastPoint[]> {
   await delay()
   return getForecastSeries()
+}
+
+/**
+ * Forecast series.
+ *
+ * @param eventId Scope to one event. Omitted, live mode picks the most
+ *   recently updated active event, which is what the Overview wants; the
+ *   event detail page passes its own id so it cannot show another event's
+ *   plume.
+ */
+export async function fetchForecast(eventId?: string): Promise<ForecastPoint[]> {
+  return resolve(
+    'forecast',
+    demoForecast,
+    () => liveForecast(eventId),
+  )
+}
+
+export async function fetchForecastSeries(eventId?: string): Promise<ForecastPoint[]> {
+  return resolve('forecast-series', demoForecastSeries, () => liveForecast(eventId))
 }

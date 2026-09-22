@@ -192,6 +192,99 @@ def cmd_predict(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_parity(args: argparse.Namespace) -> int:
+    """Check that batch features match point-in-time replay.
+
+    Exits non-zero on any disagreement. A feature that differs between the two
+    paths is either leaking future observations into training or is absent at
+    inference time, and both invalidate the offline metrics that promotion
+    decisions rest on.
+    """
+    from aeropulse_ml.parity import check_parity
+
+    if args.live:
+        os.environ["AEROPULSE_CONNECTOR_MODE"] = "live"
+    air_quality, weather, rasters = load_observations_from_openmeteo(
+        fixture_path=Path(args.fixture) if args.fixture else None,
+        live=args.live,
+        days=args.days,
+    )
+    report = check_parity(
+        air_quality,
+        weather,
+        rasters=rasters,
+        sample=args.sample,
+        tolerance=args.tolerance,
+    )
+    print(json.dumps(report.to_dict(), indent=2, default=str))
+    if not report.rows_compared:
+        print("no grid-hours compared; parity is unproven", file=sys.stderr)
+        return 1
+    if not report.passed:
+        print(
+            f"feature parity FAILED: {len(report.failing)} features disagree "
+            f"across {report.rows_compared} grid-hours",
+            file=sys.stderr,
+        )
+        return 1
+    print(
+        f"feature parity OK: {report.rows_compared} grid-hours, no divergence",
+        file=sys.stderr,
+    )
+    return 0
+
+
+def cmd_drift(args: argparse.Namespace) -> int:
+    """Run one scheduled drift sweep over the persisted signal whitelist.
+
+    Intended to be invoked on a timer (cron, a Compose sidecar, or a
+    Kubernetes CronJob). Exits 2 when any signal is drifting, so a scheduler
+    can distinguish "ran and found nothing" from "ran and found something"
+    without parsing the JSON.
+    """
+    from aeropulse_common.settings import get_settings
+
+    from aeropulse_ml.drift_monitor import evaluate_drift
+
+    database_url = get_settings().database_url
+    if not database_url:
+        print("AEROPULSE_DATABASE_URL is not set; drift needs persisted history", file=sys.stderr)
+        return 1
+
+    try:
+        import psycopg
+        from aeropulse_api.drift_store import DRIFT_SIGNALS, TimescaleDriftReader
+    except ImportError as exc:
+        print(f"drift dependencies unavailable: {exc}", file=sys.stderr)
+        return 1
+
+    signals = args.signals or sorted(DRIFT_SIGNALS)
+    unknown = [s for s in signals if s not in DRIFT_SIGNALS]
+    if unknown:
+        print(f"unknown signals: {unknown}; known: {sorted(DRIFT_SIGNALS)}", file=sys.stderr)
+        return 1
+
+    with psycopg.connect(database_url) as connection:
+        report = evaluate_drift(
+            TimescaleDriftReader(connection),
+            signals,
+            current_hours=args.current_hours,
+            reference_hours=args.reference_hours,
+            grid_id=args.grid_id,
+            min_samples=args.min_samples,
+        )
+
+    print(json.dumps(report.to_dict(), indent=2, default=str))
+    if report.alerts:
+        print(
+            f"drift detected on {len(report.alerts)} signal(s): "
+            + ", ".join(f.signal for f in report.alerts),
+            file=sys.stderr,
+        )
+        return 2
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     """Construct the argument parser."""
     parser = argparse.ArgumentParser(
@@ -236,6 +329,40 @@ def build_parser() -> argparse.ArgumentParser:
     predict = sub.add_parser("predict", help="predict with champion models")
     add_data_args(predict)
     predict.set_defaults(func=cmd_predict)
+
+    parity = sub.add_parser("parity", help="verify batch features match point-in-time replay")
+    parity.add_argument(
+        "--sample",
+        type=int,
+        default=200,
+        help="grid-hours to check, spread across the window (default: %(default)s)",
+    )
+    parity.add_argument(
+        "--tolerance",
+        type=float,
+        default=1e-4,
+        help="absolute numeric tolerance (default: %(default)s)",
+    )
+    add_data_args(parity)
+    parity.set_defaults(func=cmd_parity)
+
+    drift = sub.add_parser("drift", help="run one scheduled drift sweep")
+    drift.add_argument(
+        "--signals",
+        nargs="*",
+        default=None,
+        help="signals to evaluate (default: every whitelisted signal)",
+    )
+    drift.add_argument("--current-hours", type=int, default=24)
+    drift.add_argument("--reference-hours", type=int, default=168)
+    drift.add_argument("--grid-id", default=None)
+    drift.add_argument(
+        "--min-samples",
+        type=int,
+        default=30,
+        help="rows required per window before a verdict (default: %(default)s)",
+    )
+    drift.set_defaults(func=cmd_drift)
     return parser
 
 

@@ -100,6 +100,26 @@ class ModelRecord(BaseModel):
     artifact_uri: str = ""
     notes: str = ""
 
+    # --- Fields the notebook bundle schema already carried and the production
+    # one did not. The convergence extends this record rather than flattening
+    # the richer artifact, so nothing a research run measured is discarded on
+    # the way into the registry.
+    #: Hash of the training frame. Two records with the same fingerprint were
+    #: fitted on identical data, which is what makes a rerun verifiable.
+    dataset_fingerprint: str = ""
+    #: Probability calibration applied, e.g. ``isotonic``, ``sigmoid``,
+    #: ``beta`` or ``none``. ``none`` on a classifier means its scores rank
+    #: but are not probabilities.
+    calibration: str = ""
+    #: Estimator hyperparameters and target construction, for reproduction.
+    regression_config: dict[str, Any] = Field(default_factory=dict)
+    #: Lead time this model is built for, in hours. ``None`` for nowcasts.
+    primary_horizon_h: int | None = None
+    #: Why this record is not serving, when it is not. Populated from the
+    #: promotion gate so a reader never has to guess whether a VALIDATION
+    #: record was blocked or merely not yet considered.
+    gate_failures: list[str] = Field(default_factory=list)
+
 
 class ModelRegistry:
     """Append-only registry of model versions rooted at a directory.
@@ -236,20 +256,46 @@ class ModelRegistry:
         return record
 
     def champion(self, model_name: str) -> ModelRecord | None:
-        """Return the PRODUCTION model for a family, if any.
+        """Return the loadable PRODUCTION model for a family, if any.
+
+        Records with no ``artifact_uri`` are skipped. Since the deterministic
+        baselines were registered as real records they sit at PRODUCTION —
+        correctly, because they are what serves — but their behaviour lives in
+        ``libs/intelligence`` rather than in a pickle. Returning one here would
+        hand the bundle loader a record with nothing to load and turn a clean
+        "no trained champion, use the baseline" into a spurious load error.
 
         Args:
             model_name: Model family, e.g. ``pm25_estimator``.
 
         Returns:
-            The champion record, or None when nothing is promoted. Callers must
-            treat None as "fall back to the deterministic baseline" rather than
-            as an error (LLD §40).
+            The champion record, or None when no trained model is promoted.
+            Callers must treat None as "fall back to the deterministic
+            baseline" rather than as an error (LLD §40).
         """
         for record in self.list_models(model_name=model_name):
-            if record.stage is ModelStage.PRODUCTION:
+            if record.stage is ModelStage.PRODUCTION and record.artifact_uri:
                 return record
         return None
+
+    def stage_models(self, model_name: str, stage: ModelStage) -> list[ModelRecord]:
+        """Return a family's loadable records at one stage, newest first.
+
+        Used by the shadow path to find challengers. Artifact-less records are
+        excluded for the same reason as in :meth:`champion`.
+
+        Args:
+            model_name: Model family.
+            stage: Stage to filter on.
+
+        Returns:
+            Matching records with a resolvable artifact.
+        """
+        return [
+            record
+            for record in self.list_models(model_name=model_name)
+            if record.stage is stage and record.artifact_uri
+        ]
 
     def artifact_path(self, record: ModelRecord) -> Path:
         """Resolve a record's artifact to a local path.

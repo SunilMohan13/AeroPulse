@@ -1,5 +1,6 @@
 import type { CopilotMessage } from '../types'
-import { fetchApiJson } from './api'
+import { liveCopilot } from '../api/live'
+import { resolve } from './resolve'
 
 const delay = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
@@ -67,28 +68,7 @@ function matchResponse(query: string) {
   return responses.default
 }
 
-export async function queryCopilot(query: string): Promise<CopilotMessage> {
-  if ((import.meta.env.VITE_API_TOKEN as string | undefined ?? '').trim()) {
-    const data = await fetchApiJson<{
-      answer?: string
-      content?: string
-      evidence?: { source?: string; observed_at?: string; time?: string }[]
-    }>('/api/v1/copilot/query', { answer: '', evidence: [] }, {
-      method: 'POST',
-      body: JSON.stringify({ question: query }),
-    })
-    if (data.answer || data.content) {
-      return {
-        id: `msg_${Date.now()}`,
-        role: 'assistant',
-        content: data.answer ?? data.content ?? '',
-        citations: (data.evidence ?? []).map((item) => ({
-          source: item.source ?? 'AeroPulse evidence',
-          time: item.time ?? item.observed_at ?? '',
-        })),
-      }
-    }
-  }
+async function demoAnswer(query: string): Promise<CopilotMessage> {
   await delay(400)
   const matched = matchResponse(query)
   return {
@@ -97,6 +77,14 @@ export async function queryCopilot(query: string): Promise<CopilotMessage> {
     content: matched.content,
     citations: matched.citations,
   }
+}
+
+export async function queryCopilot(query: string): Promise<CopilotMessage> {
+  return resolve(
+    'copilot',
+    () => demoAnswer(query),
+    () => liveCopilot(query),
+  )
 }
 
 export const suggestedQuestions = [

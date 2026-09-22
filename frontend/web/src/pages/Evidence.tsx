@@ -10,6 +10,7 @@ import { EvidenceGraphView } from '../components/evidence/EvidenceGraphView'
 import { fetchEvidenceGraph } from '../services/evidenceService'
 import type { EvidenceNode } from '../types'
 import { HERO_EVENT_ID } from '../data/mockEvents'
+import { DemoOnlyNotice } from '../components/common/DemoOnlyNotice'
 
 export function Evidence() {
   const [searchParams] = useSearchParams()
@@ -35,6 +36,8 @@ export function Evidence() {
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-4 p-4">
+      <DemoOnlyNotice reason="GET /api/v1/events/{id}/graph returns lineage edges without layout coordinates, so the live graph cannot be drawn in this view. The live evidence list on an event's detail page is wired to the API." />
+
       <motion.header
         initial={{ opacity: 0, y: 8 }}
         animate={{ opacity: 1, y: 0 }}

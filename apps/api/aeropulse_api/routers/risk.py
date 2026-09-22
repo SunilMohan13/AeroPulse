@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 
 from aeropulse_auth.jwt import TokenClaims
-from aeropulse_intelligence.risk import score_risk
+from aeropulse_intelligence.risk import risk_band, score_risk
 from fastapi import APIRouter, Depends, Query
 
 from aeropulse_api.deps import get_claims
@@ -25,14 +25,24 @@ def _population_fixture() -> dict:
 def get_risk(
     pm25: float = Query(..., ge=0),
     exposure_hours: float = Query(6.0, ge=0),
-    population_density: float = Query(5000.0, ge=0),
+    lat: float | None = Query(None, ge=-90, le=90),
+    lon: float | None = Query(None, ge=-180, le=180),
+    population_density: float | None = Query(None, ge=0),
     _claims: TokenClaims = Depends(get_claims),
 ) -> dict:
-    """Return pollution_severity vs population_risk. Defaults are documented."""
+    """Return pollution_severity vs population_risk for a location.
+
+    Supplying ``lat``/``lon`` resolves population density from the reference
+    layer. Without them the response still answers, using the documented
+    fallback, and reports ``population_measured: false`` so the caller can
+    tell an exposure estimate from an exposure assumption.
+    """
     return score_risk(
         pm25,
         exposure_duration_hours=exposure_hours,
-        population_density=population_density,
+        population_density_per_km2=population_density,
+        lat=lat,
+        lon=lon,
     ).model_dump(mode="json")
 
 
@@ -46,10 +56,13 @@ def get_risk_areas(
     population = _population_fixture()
     areas = []
     for cell in population.get("cells", []):
+        # The fixture supplies a real density for the cell, so it is passed
+        # explicitly rather than looked up from lat/lon: an explicit value
+        # always wins, and `population_measured` comes back true.
         result = score_risk(
             pm25,
             exposure_duration_hours=exposure_hours,
-            population_density=float(cell["density_per_km2"]),
+            population_density_per_km2=float(cell["density_per_km2"]),
         )
         areas.append(
             {
@@ -59,13 +72,7 @@ def get_risk_areas(
                 "lon": cell["lon"],
                 "population": cell["population"],
                 "population_density": cell["density_per_km2"],
-                "risk": "SEVERE"
-                if result.population_risk >= 0.5
-                else "HIGH"
-                if result.population_risk >= 0.2
-                else "MEDIUM"
-                if result.population_risk >= 0.05
-                else "LOW",
+                "risk": risk_band(result.population_risk),
                 "population_risk": result.population_risk,
                 "pollution_severity": result.pollution_severity,
             }
@@ -76,6 +83,16 @@ def get_risk_areas(
     return {
         "items": areas,
         "total": len(areas),
+        "risk_bands": {
+            "note": (
+                "Presentation thresholds over a bounded composite index, not a validated "
+                "risk classification. The index range depends on the exposure window, so "
+                "these are calibrated for the endpoint's default."
+            ),
+            "severe": 0.10,
+            "high": 0.05,
+            "medium": 0.02,
+        },
         "population_source": {
             "provider": population.get("provider"),
             "provider_version": population.get("provider_version"),

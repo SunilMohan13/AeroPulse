@@ -1,0 +1,108 @@
+- generic [ref=f10e3]:
+  - banner [ref=f10e4]:
+    - generic [ref=f10e5]:
+      - generic [ref=f10e6]:
+        - generic [ref=f10e7]: AP
+        - generic [ref=f10e9]: AeroPulse
+      - generic [ref=f10e10]: ● Demo
+      - generic [ref=f10e11]: Punjab–Haryana–Delhi NCR
+    - generic [ref=f10e12]:
+      - group "Data source" [ref=f10e14]:
+        - button "Demo" [pressed] [ref=f10e15]
+        - button "Live" [ref=f10e20]
+      - generic [ref=f10e27]: 22 Sept 2026, 11:05 pm IST
+      - button "Updated 0s ago" [ref=f10e28]
+      - generic [ref=f10e32]:
+        - button "Judge tour" [ref=f10e33]
+        - button "Map demo" [ref=f10e34]
+      - button "Open command palette" [ref=f10e35]:
+        - generic [ref=f10e38]: ⌘K
+      - button "Notifications" [ref=f10e39]
+      - generic [ref=f10e44]: OP
+  - generic [ref=f10e45]:
+    - complementary [ref=f10e46]:
+      - navigation "Primary" [ref=f10e47]:
+        - link "Overview" [ref=f10e48] [cursor=pointer]:
+          - /url: /
+        - link "Live Map" [ref=f10e55] [cursor=pointer]:
+          - /url: /map
+        - link "Events" [ref=f10e59] [cursor=pointer]:
+          - /url: /events/EVT-1024
+        - link "Forecast" [ref=f10e63] [cursor=pointer]:
+          - /url: /forecast
+        - link "Risk" [ref=f10e68] [cursor=pointer]:
+          - /url: /risk
+        - link "Evidence" [ref=f10e75] [cursor=pointer]:
+          - /url: /evidence
+        - link "Sources" [ref=f10e82] [cursor=pointer]:
+          - /url: /sources
+        - link "Copilot" [ref=f10e88] [cursor=pointer]:
+          - /url: /copilot
+        - link "Citizen" [ref=f10e93] [cursor=pointer]:
+          - /url: /citizen
+      - generic [ref=f10e97]:
+        - button "Collapse sidebar" [ref=f10e98]:
+          - generic [ref=f10e101]: Collapse
+        - link "Settings" [ref=f10e102] [cursor=pointer]:
+          - /url: /sources
+    - main [ref=f10e107]:
+      - generic [ref=f10e109]:
+        - generic [ref=f10e110]:
+          - heading "Air Quality Overview" [level=1] [ref=f10e111]
+          - paragraph [ref=f10e112]: Punjab–Haryana–Delhi NCR
+          - paragraph [ref=f10e113]: Demo — a scripted Punjab stubble-burning episode transporting into Delhi NCR. Every figure is illustrative and reproducible offline.
+        - generic [ref=f10e114]:
+          - generic [ref=f10e117]:
+            - generic [ref=f10e118]: AQI
+            - generic [ref=f10e119]: "290"
+            - generic [ref=f10e121]: Severe
+          - generic [ref=f10e124]:
+            - generic [ref=f10e125]: PM2.5
+            - generic [ref=f10e126]:
+              - generic [ref=f10e127]: "185"
+              - generic [ref=f10e128]: µg/m³
+              - generic [ref=f10e129]: ↑
+          - generic [ref=f10e132]:
+            - generic [ref=f10e133]: Active Events
+            - generic [ref=f10e134]: "0"
+            - generic [ref=f10e136]: ↑ 0
+          - generic "The API reports population density per km², not a headcount at risk." [ref=f10e139]:
+            - paragraph [ref=f10e140]: At Risk
+            - paragraph [ref=f10e141]: —
+            - paragraph [ref=f10e142]: headcount not exposed by the API
+        - generic [ref=f10e143]:
+          - generic [ref=f10e144]:
+            - generic [ref=f10e145]: Live Intelligence Map
+            - link "Open full map" [ref=f10e146] [cursor=pointer]:
+              - /url: /map
+          - generic [ref=f10e148]:
+            - region "Map" [ref=f10e150]
+            - generic [ref=f10e151]:
+              - generic [ref=f10e152]:
+                - button "Zoom in" [ref=f10e153]
+                - button "Zoom out" [ref=f10e156]
+                - button "Toggle globe view" [pressed] [ref=f10e159]
+                - button "Reset view" [ref=f10e166]
+                - button "Expand map to full screen" [ref=f10e170]
+              - generic [ref=f10e176]: z2.1
+            - generic [ref=f10e177]:
+              - group "Map view mode" [ref=f10e178]:
+                - button "Globe" [ref=f10e179]
+                - button "Corridor" [ref=f10e185]
+              - paragraph [ref=f10e188]: Drag to rotate · Tap Corridor for Punjab data
+        - generic [ref=f10e189]:
+          - generic [ref=f10e190]:
+            - generic [ref=f10e191]: Active Events
+            - generic [ref=f10e193]:
+              - paragraph [ref=f10e194]: No active pollution events
+              - paragraph [ref=f10e195]: Environmental conditions are currently within normal operating ranges.
+          - generic [ref=f10e197]:
+            - text: Forecast
+            - generic [ref=f10e198]: PREDICTED
+        - generic [ref=f10e200]: Source Health
+  - contentinfo [ref=f10e203]:
+    - generic [ref=f10e204]: AeroPulse Intelligence Engine · ● All systems operational
+    - generic [ref=f10e205]:
+      - generic [ref=f10e206]: "Data freshness: 2 min"
+      - generic [ref=f10e207]: "Models: Production"
+      - generic [ref=f10e208]: "Last update: 22 Sept 2026, 11:05 pm IST"

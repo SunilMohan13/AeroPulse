@@ -1,4 +1,4 @@
-"""Trainers for the four AeroPulse models.
+"""Trainers for the six AeroPulse models.
 
 Estimator choice: scikit-learn's ``HistGradientBoosting*`` is used rather than
 LightGBM (LLD §18.1). It is the same gradient-boosted-histogram family, but
@@ -25,6 +25,7 @@ baselines and are reported as such; see ``docs/AeroPulse_ML_Architecture.md``.
 
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -37,6 +38,8 @@ from aeropulse_contracts.feature_spec import (
     ANOMALY_RESIDUAL,
     ML_FEATURE_VERSION,
     PM25_ESTIMATOR,
+    PM25_HAZARD_24H,
+    PM25_PEAK_24H,
     PROPAGATION_FORECAST,
     SOURCE_LIKELIHOOD,
     FeatureSet,
@@ -49,6 +52,7 @@ from sklearn.ensemble import (
 from aeropulse_ml.evaluation import (
     classification_metrics,
     detection_metrics,
+    ranking_metrics,
     regression_metrics,
     seasonal_split,
     skill_score,
@@ -97,6 +101,13 @@ class TrainingResult:
     artifact_path: Path | None = None
     feature_names: list[str] = field(default_factory=list)
     notes: str = ""
+    #: Probability calibration applied. Empty for regressors; ``none`` on a
+    #: classifier is a deliberate statement that the scores are uncalibrated.
+    calibration: str = ""
+    #: Estimator and target construction, recorded so a run can be reproduced.
+    regression_config: dict[str, Any] = field(default_factory=dict)
+    #: Lead time in hours, or None for a nowcast.
+    primary_horizon_h: int | None = None
 
 
 def _require_rows(frame: pd.DataFrame, model_name: str) -> None:
@@ -226,6 +237,31 @@ def _fit_final(frame: pd.DataFrame, feature_set: FeatureSet, target: str) -> Any
     model = _regressor()
     model.fit(_matrix(frame, feature_set), frame[target].to_numpy(dtype=float))
     return model
+
+
+def dataset_fingerprint(frame: pd.DataFrame) -> str:
+    """Return a stable hash of the training frame's contents.
+
+    Two runs producing the same fingerprint were fitted on identical rows,
+    which is what lets a reviewer tell "the metrics moved because the model
+    changed" from "the metrics moved because the trailing window moved". The
+    hash covers shape, column names and the value bytes, so a reordering of
+    rows that pandas considers equivalent still hashes the same.
+
+    Args:
+        frame: Training frame.
+
+    Returns:
+        Short hex digest, or ``"empty"`` for a frame with no rows.
+    """
+    if frame.empty:
+        return "empty"
+    ordered = frame.reindex(sorted(frame.columns), axis=1)
+    digest = hashlib.sha256()
+    digest.update(f"{ordered.shape}".encode())
+    digest.update("|".join(map(str, ordered.columns)).encode())
+    digest.update(pd.util.hash_pandas_object(ordered, index=False).values.tobytes())
+    return digest.hexdigest()[:16]
 
 
 def _season_label(frame: pd.DataFrame) -> str:
@@ -760,11 +796,304 @@ def train_propagation_forecast(
     )
 
 
+# --- Models 5 and 6: 24-hour peak and hazard ------------------------------
+#
+# Both are the "Route B" retrain from the integration plan: the notebook Phase
+# 7 bundle needs 184 features of which the online path can supply 12, so rather
+# than serving a model that would be fed 94% nulls, the same two targets are
+# re-fitted on the servable feature set. The notebooks' own SHAP result -
+# temporal lags carry 77.7% of attribution - is the reason to expect the loss
+# from dropping the other families to be small; `peak_lift_vs_persistence` in
+# the metrics is where that expectation is actually tested.
+#
+# The plan's §5.4 reconciliation is applied here: the two competing hazard
+# definitions (150 ug/m3 from the pm25 pipeline, 121 from the anomaly pipeline)
+# collapse to one, at the CPCB "Very Poor" breakpoint of 121, so the product
+# cannot show two contradictory hazard probabilities for one cell.
+
+#: Horizon over which the peak and hazard targets are computed.
+PEAK_HORIZON_HOURS = 24
+
+
+def build_peak_frame(frame: pd.DataFrame, horizon_hours: int = PEAK_HORIZON_HOURS) -> pd.DataFrame:
+    """Attach the forward maximum PM2.5 and its hazard label.
+
+    The target is the maximum over hours ``t+1 .. t+horizon``, so the current
+    hour is excluded: including it would let a model that has already seen an
+    episode begin trivially "predict" it.
+
+    Args:
+        frame: Training frame, one row per grid-hour.
+        horizon_hours: Length of the forward window.
+
+    Returns:
+        Rows with a resolvable forward window, carrying ``pm25_peak_24h_target``,
+        ``hazard_extreme_24h`` and the persistence baseline. Rows whose window
+        is only partially observed are dropped rather than filled, because a
+        partial maximum understates the peak and would look like a model that
+        under-predicts episodes.
+    """
+    local = frame.dropna(subset=["pm25"]).copy()
+    if local.empty:
+        return local.assign(pm25_peak_24h_target=[], hazard_extreme_24h=[], persistence=[])
+
+    future = local[["grid_id", "timestamp", "pm25"]]
+    windows: list[pd.DataFrame] = []
+    for offset in range(1, horizon_hours + 1):
+        shifted = future.rename(columns={"pm25": f"fwd_{offset}"}).copy()
+        shifted["timestamp"] = shifted["timestamp"] - pd.Timedelta(hours=offset)
+        windows.append(shifted)
+
+    merged = local
+    for shifted in windows:
+        merged = merged.merge(shifted, on=["grid_id", "timestamp"], how="left")
+
+    forward_columns = [f"fwd_{offset}" for offset in range(1, horizon_hours + 1)]
+    observed = merged[forward_columns].notna().sum(axis=1)
+    # Require the whole window. A maximum taken over 3 of 24 hours is a
+    # different quantity from the one the model is asked to predict.
+    merged = merged[observed == horizon_hours].copy()
+    if merged.empty:
+        return merged.drop(columns=forward_columns, errors="ignore").assign(
+            pm25_peak_24h_target=[], hazard_extreme_24h=[], persistence=[]
+        )
+
+    merged["pm25_peak_24h_target"] = merged[forward_columns].max(axis=1)
+    merged["hazard_extreme_24h"] = (merged["pm25_peak_24h_target"] >= CPCB_VERY_POOR_PM25).astype(
+        int
+    )
+    merged["persistence"] = merged["pm25"]
+    return merged.drop(columns=forward_columns)
+
+
+def train_pm25_peak_24h(frame: pd.DataFrame, registry: ModelRegistry) -> TrainingResult:
+    """Train the 24-hour peak PM2.5 regressor.
+
+    Predicting the forward maximum rather than the forward mean is the point:
+    an alert is about the worst hour a person will breathe, and a squared-error
+    model fitted on the point value minimises aggregate loss by predicting
+    "no episode", which is exactly the failure the notebooks measured.
+
+    Args:
+        frame: Training frame.
+        registry: Registry to write the artifact into.
+
+    Returns:
+        The training result.
+
+    Raises:
+        InsufficientDataError: If too few complete forward windows resolve.
+    """
+    data = build_peak_frame(frame)
+    _require_rows(data, "pm25_peak_24h")
+
+    metrics: dict[str, Any] = {}
+    for split in (temporal_split(data), spatial_split(data)):
+        if not split.usable:
+            metrics[split.name] = {"evaluated": False, "reason": split.detail}
+            continue
+        model = _regressor()
+        model.fit(
+            _matrix(split.train, PM25_PEAK_24H),
+            split.train["pm25_peak_24h_target"].to_numpy(dtype=float),
+        )
+        predicted = model.predict(_matrix(split.test, PM25_PEAK_24H))
+        actual = split.test["pm25_peak_24h_target"].to_numpy(dtype=float)
+        persistence = split.test["persistence"].to_numpy(dtype=float)
+
+        model_metrics = regression_metrics(actual, predicted)
+        persistence_metrics = regression_metrics(actual, persistence)
+        extreme = actual >= CPCB_VERY_POOR_PM25
+        metrics[split.name] = {
+            "evaluated": True,
+            "detail": split.detail,
+            "model": model_metrics,
+            "persistence_baseline": persistence_metrics,
+            "skill_vs_persistence": skill_score(
+                model_metrics.get("mae", float("inf")),
+                persistence_metrics.get("mae", 0.0),
+            ),
+            # Aggregate MAE hides how a model behaves on the hours that
+            # matter, so the bias on extreme rows is reported separately.
+            "extreme_rows": float(int(extreme.sum())),
+            "extreme_bias": (
+                round(float(np.mean(predicted[extreme] - actual[extreme])), 6)
+                if extreme.any()
+                else None
+            ),
+            "extreme_recall": (
+                round(
+                    float(np.mean(predicted[extreme] >= CPCB_VERY_POOR_PM25)),
+                    6,
+                )
+                if extreme.any()
+                else None
+            ),
+        }
+
+    final = _regressor()
+    final.fit(
+        _matrix(data, PM25_PEAK_24H),
+        data["pm25_peak_24h_target"].to_numpy(dtype=float),
+    )
+    residuals = data["pm25_peak_24h_target"].to_numpy(dtype=float) - final.predict(
+        _matrix(data, PM25_PEAK_24H)
+    )
+
+    version = f"hgb-peak-{datetime.now(UTC):%Y%m%d%H%M}"
+    bundle = {
+        "model": final,
+        "feature_names": list(PM25_PEAK_24H.names),
+        "target": PM25_PEAK_24H.target,
+        "ml_feature_version": ML_FEATURE_VERSION,
+        "residual_std": float(np.std(residuals)) if residuals.size else 0.0,
+        "primary_horizon_h": PEAK_HORIZON_HOURS,
+        "exceedance_threshold": CPCB_VERY_POOR_PM25,
+    }
+    path = _save_bundle(bundle, registry, f"{version}.joblib")
+    return TrainingResult(
+        model_name="pm25_peak_24h",
+        version=version,
+        algorithm="sklearn.HistGradientBoostingRegressor (forward 24h maximum)",
+        metrics=metrics,
+        artifact_path=path,
+        feature_names=list(PM25_PEAK_24H.names),
+        primary_horizon_h=PEAK_HORIZON_HOURS,
+        regression_config={
+            "estimator": "HistGradientBoostingRegressor",
+            "target": "max pm25 over t+1..t+24",
+            "exceedance_threshold_ugm3": CPCB_VERY_POOR_PM25,
+            "random_state": RANDOM_STATE,
+        },
+        notes=(
+            "Predicts the maximum PM2.5 over the next 24 hours. extreme_bias "
+            "on rows above the CPCB Very Poor breakpoint matters more than "
+            "aggregate MAE: a model that is accurate on quiet hours and "
+            "under-predicts episodes is worse than useless for alerting."
+        ),
+    )
+
+
+def train_pm25_hazard_24h(frame: pd.DataFrame, registry: ModelRegistry) -> TrainingResult:
+    """Train the reconciled 24-hour hazard classifier.
+
+    One hazard model at one threshold, per integration plan §5.4. The
+    threshold is the CPCB "Very Poor" breakpoint rather than the 150 ug/m3 the
+    pm25 notebook used, because a public-facing alert should fire on the
+    national standard and because two hazard probabilities for one cell is a
+    product defect regardless of which is more accurate.
+
+    The honest baseline is the current concentration used directly as a score:
+    "it is bad now, so it will be bad later" is a strong predictor at 24 hours,
+    and a classifier that cannot beat it has learned nothing worth serving.
+
+    Args:
+        frame: Training frame.
+        registry: Registry to write the artifact into.
+
+    Returns:
+        The training result.
+
+    Raises:
+        InsufficientDataError: If too few complete forward windows resolve.
+    """
+    data = build_peak_frame(frame)
+    _require_rows(data, "pm25_hazard_24h")
+
+    metrics: dict[str, Any] = {}
+    for split in (temporal_split(data), spatial_split(data)):
+        if not split.usable:
+            metrics[split.name] = {"evaluated": False, "reason": split.detail}
+            continue
+        y_train = split.train["hazard_extreme_24h"].to_numpy(dtype=int)
+        y_test = split.test["hazard_extreme_24h"].to_numpy(dtype=int)
+        if len(set(y_train.tolist())) < 2:
+            metrics[split.name] = {
+                "evaluated": False,
+                "reason": "training partition holds a single hazard class",
+            }
+            continue
+
+        model = HistGradientBoostingClassifier(random_state=RANDOM_STATE)
+        model.fit(_matrix(split.train, PM25_HAZARD_24H), y_train)
+        proba = model.predict_proba(_matrix(split.test, PM25_HAZARD_24H))
+        fitted_classes = [int(c) for c in np.asarray(model.classes_).tolist()]
+        positive_index = fitted_classes.index(1) if 1 in fitted_classes else None
+        if positive_index is None:
+            metrics[split.name] = {
+                "evaluated": False,
+                "reason": "model never saw a positive hazard row",
+            }
+            continue
+        scores = proba[:, positive_index]
+
+        metrics[split.name] = {
+            "evaluated": True,
+            "detail": split.detail,
+            "model": ranking_metrics(y_test, scores),
+            # The baseline is the current concentration, not a constant: at a
+            # 24h horizon persistence of "already bad" is the bar to clear.
+            "current_pm25_baseline": ranking_metrics(
+                y_test, split.test["pm25"].to_numpy(dtype=float)
+            ),
+            "detection_at_0.5": detection_metrics(y_test, scores >= 0.5),
+        }
+
+    y_all = data["hazard_extreme_24h"].to_numpy(dtype=int)
+    if len(set(y_all.tolist())) < 2:
+        raise InsufficientDataError(
+            "pm25_hazard_24h: the window holds a single hazard class, so no "
+            "classifier can be fitted or evaluated honestly"
+        )
+    final = HistGradientBoostingClassifier(random_state=RANDOM_STATE)
+    final.fit(_matrix(data, PM25_HAZARD_24H), y_all)
+
+    version = f"hgb-hazard-{datetime.now(UTC):%Y%m%d%H%M}"
+    bundle = {
+        "model": final,
+        "feature_names": list(PM25_HAZARD_24H.names),
+        "target": PM25_HAZARD_24H.target,
+        "ml_feature_version": ML_FEATURE_VERSION,
+        "classes": [int(c) for c in np.asarray(final.classes_).tolist()],
+        "hazard_threshold_ugm3": CPCB_VERY_POOR_PM25,
+        "primary_horizon_h": PEAK_HORIZON_HOURS,
+        # Uncalibrated. Recorded explicitly so a consumer does not read the
+        # score as a calibrated probability before isotonic/Platt fitting on a
+        # held-out window has been run and measured.
+        "calibration": "none",
+    }
+    path = _save_bundle(bundle, registry, f"{version}.joblib")
+    return TrainingResult(
+        model_name="pm25_hazard_24h",
+        version=version,
+        algorithm="sklearn.HistGradientBoostingClassifier (P(peak >= 121 within 24h))",
+        metrics=metrics,
+        artifact_path=path,
+        feature_names=list(PM25_HAZARD_24H.names),
+        primary_horizon_h=PEAK_HORIZON_HOURS,
+        calibration="none",
+        regression_config={
+            "estimator": "HistGradientBoostingClassifier",
+            "target": f"peak pm25 over t+1..t+24 >= {CPCB_VERY_POOR_PM25}",
+            "random_state": RANDOM_STATE,
+        },
+        notes=(
+            f"Single reconciled hazard definition at the CPCB Very Poor "
+            f"breakpoint ({CPCB_VERY_POOR_PM25:.0f} ug/m3). Scores are "
+            "uncalibrated, so they rank hours correctly but must not be "
+            "presented as probabilities until calibration is fitted and its "
+            "ECE measured on a held-out window."
+        ),
+    )
+
+
 TRAINERS = {
     "pm25_estimator": train_pm25_estimator,
     "anomaly_detector": train_anomaly_detector,
     "source_likelihood": train_source_likelihood,
     "propagation_forecast": train_propagation_forecast,
+    "pm25_peak_24h": train_pm25_peak_24h,
+    "pm25_hazard_24h": train_pm25_hazard_24h,
 }
 
 #: Minimum detection F1 before an anomaly detector may serve. A detector that
@@ -774,6 +1103,26 @@ MIN_DETECTION_F1 = 0.30
 #: A weakly supervised classifier must beat always-guess-the-majority-class by
 #: this margin, measured on macro F1 rather than accuracy.
 MIN_MACRO_F1 = 0.50
+
+#: Peak-model gates, carried over from the notebooks' own Phase 7 criteria so
+#: that the production gate is no easier to pass than the research one.
+#: `extreme recall 0.675 < 0.70` is one of the two gates the notebook bundle
+#: failed; keeping the threshold means this trainer must actually improve on
+#: it rather than be waved through.
+MIN_PEAK_EXTREME_RECALL = 0.70
+#: Under-predicting an episode is the dangerous direction, so the tolerated
+#: negative bias on extreme rows is bounded. The notebook peak model measured
+#: -32.4 ug/m3 and the concentration model -70.6; both would fail this.
+MAX_PEAK_EXTREME_BIAS = -25.0
+
+#: A hazard classifier must rank hazardous hours better than simply reading
+#: the current concentration, which is a strong 24-hour predictor on its own.
+#: Expressed as a required PR-AUC margin over that baseline rather than an
+#: absolute floor, because the achievable PR-AUC depends on the base rate.
+MIN_HAZARD_PR_AUC_MARGIN = 0.05
+#: An alerting model that fires on more than this fraction of quiet hours will
+#: be ignored by operators regardless of its recall (LLD §45).
+MAX_HAZARD_FALSE_ALERT_RATE = 0.10
 
 
 def evaluate_promotion_gate(result: TrainingResult) -> list[str]:
@@ -852,6 +1201,68 @@ def evaluate_promotion_gate(result: TrainingResult) -> list[str]:
         if negative:
             failures.append("horizons at or below persistence skill: " + ", ".join(negative))
 
+    elif result.model_name == "pm25_peak_24h":
+        temporal = metrics.get("temporal", {})
+        if not temporal.get("evaluated"):
+            failures.append("temporal holdout was not evaluable")
+        else:
+            skill = temporal.get("skill_vs_persistence")
+            if skill is not None and skill <= 0:
+                failures.append(f"temporal skill vs persistence is {skill:+.4f} (must exceed 0)")
+            if not temporal.get("extreme_rows"):
+                failures.append(
+                    "the temporal holdout contains no rows above the CPCB Very Poor "
+                    "breakpoint, so episode behaviour is unmeasured and cannot be cleared"
+                )
+            else:
+                recall = temporal.get("extreme_recall")
+                if recall is None or recall < MIN_PEAK_EXTREME_RECALL:
+                    failures.append(
+                        f"extreme recall is {recall} (must reach {MIN_PEAK_EXTREME_RECALL}); "
+                        "episodes would be missed"
+                    )
+                bias = temporal.get("extreme_bias")
+                if bias is not None and bias < MAX_PEAK_EXTREME_BIAS:
+                    failures.append(
+                        f"extreme bias is {bias:+.1f} ug/m3 (must not fall below "
+                        f"{MAX_PEAK_EXTREME_BIAS}); the model under-predicts episodes"
+                    )
+        # The spatial holdout is gated too, unlike the older models. This one
+        # is sold as hyper-local prediction for cells with no station of their
+        # own, so a model that only works in cells it was fitted on has failed
+        # at the thing it exists to do. Time-only validation cannot see that.
+        spatial = metrics.get("spatial", {})
+        if spatial.get("evaluated") and spatial.get("extreme_rows"):
+            spatial_recall = spatial.get("extreme_recall")
+            if spatial_recall is None or spatial_recall < MIN_PEAK_EXTREME_RECALL:
+                failures.append(
+                    f"extreme recall on held-out cells is {spatial_recall} "
+                    f"(must reach {MIN_PEAK_EXTREME_RECALL}); the model does not "
+                    "generalise to cells it was not fitted on"
+                )
+
+    elif result.model_name == "pm25_hazard_24h":
+        temporal = metrics.get("temporal", {})
+        if not temporal.get("evaluated"):
+            failures.append("temporal holdout was not evaluable")
+        else:
+            model_pr = (temporal.get("model") or {}).get("pr_auc")
+            baseline_pr = (temporal.get("current_pm25_baseline") or {}).get("pr_auc")
+            if model_pr is None:
+                failures.append("PR-AUC was not computable; the holdout has a single class")
+            elif baseline_pr is not None and model_pr < baseline_pr + MIN_HAZARD_PR_AUC_MARGIN:
+                failures.append(
+                    f"PR-AUC {model_pr:.4f} does not beat the current-pm25 baseline "
+                    f"{baseline_pr:.4f} by {MIN_HAZARD_PR_AUC_MARGIN}; reading the "
+                    "current concentration would do as well"
+                )
+            false_alerts = (temporal.get("detection_at_0.5") or {}).get("false_alert_rate")
+            if false_alerts is not None and false_alerts > MAX_HAZARD_FALSE_ALERT_RATE:
+                failures.append(
+                    f"false-alert rate is {false_alerts:.4f} at the 0.5 operating point "
+                    f"(must not exceed {MAX_HAZARD_FALSE_ALERT_RATE})"
+                )
+
     return failures
 
 
@@ -903,6 +1314,11 @@ def register_result(
         metrics=result.metrics,
         artifact_uri=str(result.artifact_path) if result.artifact_path else "",
         notes=notes,
+        dataset_fingerprint=dataset_fingerprint(frame),
+        calibration=result.calibration,
+        regression_config=result.regression_config,
+        primary_horizon_h=result.primary_horizon_h,
+        gate_failures=gate_failures,
     )
     registry.register(record)
 

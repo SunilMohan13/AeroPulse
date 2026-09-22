@@ -59,7 +59,9 @@ Missing event → 404. Forecast/graph are **not** 501 when the event exists in t
 
 ## Models
 
-`GET /api/v1/models` returns both deterministic serving baselines and filesystem-registry records.
+`GET /api/v1/models` reads one registry. The deterministic baselines are registered in it as real
+records rather than merged in from a literal, so a single read reports what serves and what was
+withheld, and the two cannot disagree. Takes `limit`/`offset`.
 Use `runtime_role` to distinguish `PRIMARY_BASELINE`, `PRIMARY_MODEL`, and `REGISTERED_ONLY`;
 `artifact_available` reports whether the local artifact resolves. Registry visibility does not
 change serving: only a `PRODUCTION` record may be labelled `PRIMARY_MODEL`.
@@ -79,6 +81,33 @@ These authenticated routes require `AEROPULSE_DATABASE_URL`; missing/unavailable
 Local populated-DB smoke test (2026-09-14, 50 sequential requests per route): events p95 15.88 ms,
 grid features p95 11.47 ms, grid predictions p95 18.74 ms. This is developer-machine evidence,
 not a production concurrency/SLO certification.
+
+## Hazard and peak forecasts
+
+Added 2026-09-22 (integration plan Phase 6). Both read persisted `grid_feature` rows; neither
+triggers inference synchronously.
+
+| Path | Returns |
+|---|---|
+| `GET /api/v1/grid-hazard` | 24 h hazard score per cell (`hazard.v1`), `grid_id`/`limit`/`offset` |
+| `GET /api/v1/grid-hazard/{grid_id}/latest` | Latest hazard for one cell, 404 when PM2.5 is unobserved |
+| `GET /api/v1/grid-peak` | 24 h peak PM2.5 forecast per cell (`peak_forecast.v1`) |
+| `GET /api/v1/grid-peak/{grid_id}/latest` | Latest peak for one cell |
+| `GET /api/v1/map/hazard` | The hazard layer as GeoJSON points |
+
+**Read the labels before the numbers.** While no hazard or peak model is promoted these routes
+serve a deterministic persistence rule, and say so:
+
+- `degraded: true` and a `persistence-*` `model_version` on every item, plus a `provenance` block
+  on the collection stating why.
+- `calibrated: false` on hazard items. An uncalibrated score ranks hours correctly but its
+  magnitude is not a frequency, so it must not be rendered as a percentage.
+- A cell with no observed PM2.5 is **omitted**, not scored zero. "No data" and "no hazard" must
+  not render identically.
+
+A model being scored in `SHADOW` changes none of these responses. One hazard threshold exists —
+121 µg/m³, the CPCB "Very Poor" breakpoint — so two contradictory hazard probabilities cannot
+reach the same cell.
 
 ## Drift
 
@@ -101,12 +130,19 @@ are persisted.
 
 ## Alerts and risk
 
-`GET /api/v1/alerts` — HIGH/CRITICAL events only, `channel=log`.
-`GET /api/v1/risk?pm25=` — `pollution_severity` vs `population_risk` (`risk-0.1`).
+`GET /api/v1/alerts` — HIGH/CRITICAL events only, `channel=log`. Takes `limit`/`offset`;
+omitting both reproduces the previous response.
+
+`GET /api/v1/risk?pm25=` — `pollution_severity` vs `population_risk` (`risk-0.2`). Supplying
+`lat`/`lon` resolves population density from the reference layer; without them the response still
+answers and reports `population_measured: false`, so an exposure assumption is never mistaken for
+an estimate. `population_density` may still be passed explicitly to override the lookup.
+
 `GET /api/v1/risk/areas?pm25=&exposure_hours=` — ranked population cells with per-area risk,
 population counts, density, and population-source provenance. The checked-in reference fixture is
 marked `replace-before-production`; configure a licensed WorldPop or Census extract before using
 the values for operational decisions.
+
 `GET /api/v1/map/industry` — replayed Industry/OCEMS asset locations as GeoJSON.
 
 ## Errors

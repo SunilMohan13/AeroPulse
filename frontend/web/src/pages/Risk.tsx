@@ -6,13 +6,20 @@ import { AeroMap } from '../components/map/AeroMap'
 import { fetchRiskAreas, fetchTotalExposure } from '../services/riskService'
 import { PopulationRiskBars } from '../components/charts/PopulationRiskBars'
 import { formatPopulation } from '../utils/format'
+import { useDataMode } from '../context/DataModeContext'
+import { FallbackBanner, ModeContextNote } from '../components/common/Provenance'
 
 export function Risk() {
-  const { data: areas = [] } = useQuery({ queryKey: ['riskAreas'], queryFn: fetchRiskAreas })
-  const { data: total = 2_400_000 } = useQuery({
-    queryKey: ['totalExposure'],
+  const { mode } = useDataMode()
+  const { data: areas = [] } = useQuery({
+    queryKey: ['riskAreas', mode],
+    queryFn: fetchRiskAreas,
+  })
+  const { data: total } = useQuery({
+    queryKey: ['totalExposure', mode],
     queryFn: fetchTotalExposure,
   })
+  const isLive = mode === 'live'
 
   const riskVariant = (risk: string) => {
     if (risk === 'HIGH' || risk === 'SEVERE') return 'severe' as const
@@ -22,21 +29,34 @@ export function Risk() {
 
   return (
     <div className="space-y-4 p-4">
-      <div>
+      <div className="space-y-1">
         <h1 className="text-xl font-semibold">Population Exposure</h1>
         <p className="text-sm text-text-secondary">Who may be affected by current pollution</p>
+        <ModeContextNote />
       </div>
+
+      <FallbackBanner />
 
       <Card>
         <CardBody className="flex items-center justify-between">
           <div>
             <ScientificBadge label="PREDICTED" />
-            <KpiStat
-              label="People potentially exposed"
-              value={total / 1_000_000}
-              unit="M"
-              className="mt-2"
-            />
+            {total !== null && total !== undefined ? (
+              <KpiStat
+                label="People potentially exposed"
+                value={total / 1_000_000}
+                unit="M"
+                className="mt-2"
+              />
+            ) : (
+              <div className="mt-2">
+                <p className="font-mono text-3xl font-bold text-text-muted">&mdash;</p>
+                <p className="text-xs text-text-muted">People potentially exposed</p>
+                <p className="mt-2 max-w-md text-xs text-amber-400/80">
+                  No population cells were returned, so exposure cannot be summed.
+                </p>
+              </div>
+            )}
           </div>
         </CardBody>
       </Card>
@@ -68,7 +88,10 @@ export function Risk() {
                     {a.rank}. {a.name}
                   </span>
                   <div className="flex items-center gap-3">
-                    <span className="font-mono text-xs text-text-muted">
+                    <span
+                      className="font-mono text-xs text-text-muted"
+                      title="Population in the affected area"
+                    >
                       {formatPopulation(a.population)}
                     </span>
                     <StatusBadge variant={riskVariant(a.risk)}>{a.risk}</StatusBadge>
@@ -103,6 +126,16 @@ export function Risk() {
             <p className="mt-4 text-xs text-text-muted">
               Exposure estimates combine predicted PM2.5 severity with gridded population data.
             </p>
+            {isLive && (
+              <p className="mt-2 text-xs text-amber-400/80">
+                The counts above are demo figures. No API route supplies sensitive-population
+                breakdowns, so they do not change in live mode. The ranked areas and the exposure
+                total above <em>are</em> live, from{' '}
+                <code className="font-mono">/api/v1/risk/areas</code> — but its population layer
+                ships as a fixture licensed <code className="font-mono">replace-before-production</code>,
+                so treat the headcounts as structurally correct and not yet operationally sourced.
+              </p>
+            )}
           </CardBody>
         </Card>
       </div>

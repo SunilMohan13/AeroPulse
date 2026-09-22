@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { fetchSources } from '../../services/sourceService'
 import { formatFreshness } from '../../utils/format'
 import { cn } from '../../utils/cn'
+import { useDataMode } from '../../context/DataModeContext'
 
 interface MapFusionStripProps {
   className?: string
@@ -9,8 +10,9 @@ interface MapFusionStripProps {
 
 /** Live-style connector freshness + fusion agreement for the map chrome. */
 export function MapFusionStrip({ className }: MapFusionStripProps) {
+  const { mode } = useDataMode()
   const { data: sources = [] } = useQuery({
-    queryKey: ['sources'],
+    queryKey: ['sources', mode],
     queryFn: fetchSources,
     staleTime: 15_000,
   })

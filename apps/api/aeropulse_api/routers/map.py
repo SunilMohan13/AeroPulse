@@ -10,6 +10,8 @@ from aeropulse_auth.jwt import TokenClaims
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from aeropulse_api.deps import get_claims
+from aeropulse_api.grid_store import GridReader, get_grid_reader
+from aeropulse_api.hazard_store import hazard_cells
 from aeropulse_api.map_store import MapReader, get_map_reader
 
 router = APIRouter(prefix="/api/v1/map", tags=["map"])
@@ -175,6 +177,39 @@ def grid(
 ) -> dict:
     """Return latest persisted H3 grid cells as GeoJSON polygons."""
     return _collection(reader.grid(limit))
+
+
+@router.get("/hazard")
+def hazard(
+    limit: int = Query(default=500, ge=1, le=2000),
+    _claims: TokenClaims = Depends(get_claims),
+    reader: GridReader = Depends(get_grid_reader),
+) -> dict:
+    """Return the 24-hour hazard layer as GeoJSON points.
+
+    Every feature carries ``degraded`` and ``calibrated`` in its properties.
+    A hazard number rendered without them would be the most consequential
+    mislabelling this API can produce: an uncalibrated ranking shown as a
+    probability, or a persistence rule shown as a model forecast.
+    """
+    features, _ = reader.list_features(None, None, None, limit, 0)
+    cells, provenance = hazard_cells(list(features))
+    collection = _collection(
+        [
+            {
+                "type": "Feature",
+                "geometry": {
+                    "type": "Point",
+                    "coordinates": [cell.center_lon, cell.center_lat],
+                },
+                "properties": cell.model_dump(mode="json", exclude={"center_lat", "center_lon"}),
+            }
+            for cell in cells
+            if cell.center_lat is not None and cell.center_lon is not None
+        ]
+    )
+    collection["provenance"] = provenance
+    return collection
 
 
 @router.get("/industry")

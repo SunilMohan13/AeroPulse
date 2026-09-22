@@ -117,3 +117,6 @@ optuna.db
 # Raw provider caches written by the acquisition notebooks
 **/data/pm25/raw/
 **/raw/stations/
+
+# Playwright MCP session artifacts (snapshots, console logs).
+.playwright-mcp/

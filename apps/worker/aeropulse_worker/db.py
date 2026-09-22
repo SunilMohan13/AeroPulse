@@ -111,6 +111,25 @@ ON CONFLICT (time, grid_id, model_version) DO UPDATE SET
     confidence = EXCLUDED.confidence
 """
 
+UPSERT_SHADOW_PREDICTION = """
+INSERT INTO shadow_prediction (
+    time, grid_id, model_name, model_version, stage, shadow_value,
+    champion_value, feature_hash, feature_completeness, error, payload
+) VALUES (
+    %(time)s, %(grid_id)s, %(model_name)s, %(model_version)s, %(stage)s,
+    %(shadow_value)s, %(champion_value)s, %(feature_hash)s,
+    %(feature_completeness)s, %(error)s, %(payload)s
+)
+ON CONFLICT (time, grid_id, model_name, model_version) DO UPDATE SET
+    stage = EXCLUDED.stage,
+    shadow_value = EXCLUDED.shadow_value,
+    champion_value = EXCLUDED.champion_value,
+    feature_hash = EXCLUDED.feature_hash,
+    feature_completeness = EXCLUDED.feature_completeness,
+    error = EXCLUDED.error,
+    payload = EXCLUDED.payload
+"""
+
 UPSERT_RASTER = """
 INSERT INTO raster_observation (
     acquisition_time, observation_id, source_id, source_record_id, product_id,
@@ -289,6 +308,37 @@ class TimescaleRepository:
                     "prediction_interval_low": prediction.prediction_interval_low,
                     "prediction_interval_high": prediction.prediction_interval_high,
                     "confidence": prediction.confidence,
+                },
+            )
+        self.conn.commit()
+
+    def upsert_shadow_prediction(self, prediction: Any) -> None:
+        """Record one challenger's output beside the champion's.
+
+        Rows carrying an ``error`` are written rather than skipped: a
+        challenger that produced nothing all season is a finding, and dropping
+        those rows would make it look identical to one never registered.
+
+        Args:
+            prediction: A ``ShadowPrediction`` from ``aeropulse_ml.shadow``.
+                Typed as ``Any`` so the worker's persistence layer does not
+                take a hard dependency on ``libs/ml``.
+        """
+        with self.conn.cursor() as cur:
+            cur.execute(
+                UPSERT_SHADOW_PREDICTION,
+                {
+                    "time": prediction.timestamp,
+                    "grid_id": prediction.grid_id,
+                    "model_name": prediction.model_name,
+                    "model_version": prediction.model_version,
+                    "stage": prediction.stage,
+                    "shadow_value": prediction.shadow_value,
+                    "champion_value": prediction.champion_value,
+                    "feature_hash": prediction.feature_hash,
+                    "feature_completeness": prediction.feature_completeness,
+                    "error": prediction.error,
+                    "payload": json.dumps(prediction.payload, default=str),
                 },
             )
         self.conn.commit()

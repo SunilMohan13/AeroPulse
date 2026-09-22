@@ -6,6 +6,8 @@ import { StatusBadge, ScientificBadge } from '../components/common/Badge'
 import { fetchCitizenStats } from '../services/citizenService'
 import { CitizenReportMap } from '../components/map/CitizenReportMap'
 import type { CitizenReport } from '../types'
+import { LiveCaveatNotice } from '../components/common/DemoOnlyNotice'
+import { CITIZEN_LIVE_CAVEAT } from '../services/citizenService'
 
 export function CitizenReports() {
   const [searchParams] = useSearchParams()
@@ -27,6 +29,8 @@ export function CitizenReports() {
         <h1 className="text-xl font-semibold">Citizen Intelligence</h1>
         <p className="text-sm text-text-secondary">Crowdsourced environmental observations</p>
       </div>
+
+      <LiveCaveatNotice reason={CITIZEN_LIVE_CAVEAT} />
 
       <div className="grid grid-cols-3 gap-4">
         <Card>

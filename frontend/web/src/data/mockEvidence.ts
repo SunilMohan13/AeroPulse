@@ -62,6 +62,32 @@ export const mockEvidence: EvidenceItem[] = [
     supports: HERO_EVENT_ID,
     strength: 'Strong',
   },
+  {
+    id: 'ev_7',
+    category: 'Citizen',
+    source: 'Citizen report cr_4',
+    observation: 'Geotagged smoke photo near Sangrur, 11 km from fire cluster',
+    time: '2026-09-08T08:20:00Z',
+    confidence: 62,
+    supports: HERO_EVENT_ID,
+    // Deliberately Weak. A citizen report raises confidence only where
+    // independent evidence already agrees, and never opens an event on its
+    // own — showing it as Strong would misrepresent how it is used.
+    strength: 'Weak',
+  },
+  {
+    id: 'ev_8',
+    category: 'Counter-signal',
+    source: 'MODIS MAIAC AOD',
+    observation: 'AOD retrieval unavailable over source region — 78% cloud cover',
+    time: '2026-09-08T07:10:00Z',
+    confidence: 41,
+    supports: HERO_EVENT_ID,
+    // An absent observation is evidence about coverage, not about pollution.
+    // Listing it keeps the panel from reading as six sources all agreeing
+    // when one of them simply could not see.
+    strength: 'Weak',
+  },
 ]
 
 export const evidenceNodes: EvidenceNode[] = [
@@ -90,4 +116,7 @@ export const eventTimeline: TimelineEvent[] = [
   { id: 't4', time: '08:40', label: 'Event confirmed — HIGH severity', icon: 'check' },
   { id: 't5', time: '08:42', label: 'Forecast plume generated', icon: 'forecast' },
   { id: 't6', time: '08:45', label: 'Population exposure calculated', icon: 'risk' },
+  { id: 't7', time: '08:47', label: 'Citizen photo corroborated (+6% source conf.)', icon: 'fire' },
+  { id: 't8', time: '08:52', label: 'Authority alert dispatched — Delhi NCR', icon: 'alert' },
+  { id: 't9', time: '09:05', label: 'GRAP Stage II recommended to CAQM', icon: 'check' },
 ]
