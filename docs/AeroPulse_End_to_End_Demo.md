@@ -186,11 +186,9 @@ Optional connector workers: `--profile connectors`.
 
 Stated plainly so that nothing here is oversold.
 
-1. **[FIXED 2026-09-14] The event API is database-backed.** Actual fixture input was verified through connector -> Kafka -> worker -> TimescaleDB -> authenticated event/evidence/forecast/graph endpoints. Map routes and the frontend remain disconnected from this persisted path.
-  **Update:** AQ/fire/weather/forecast/grid map routes are now connected too; only satellite metadata
-  was pending. **A later 2026-09-14 update persisted raster metadata and connected the satellite
-  footprint route as well.** The frontend still uses mocks.
-2. **The frontend does not call the API.** All 8 frontend services return static mock imports; `VITE_API_BASE` is set in compose and never read. The UI is a design demo.
+1. **[FIXED 2026-09-14] The event API is database-backed.** Actual fixture input was verified through connector -> Kafka -> worker -> TimescaleDB -> authenticated event/evidence/forecast/graph endpoints. AQ/fire/weather/forecast/grid map routes and persisted satellite footprints are connected too.
+  The frontend now consumes live events, sources, event evidence/forecasts, and grid/fire/weather map data when `VITE_API_TOKEN` is configured; other screens retain demo fallback data.
+2. **The frontend is partially live, not fully live.** `VITE_API_BASE` and `VITE_API_TOKEN` are read by the frontend API client. Event, source, evidence, forecast, grid, fire, weather, evidence graph, citizen reports, copilot, risk-area, and industry services use authenticated API responses when available. Population values are reference-fixture data until a licensed provider extract is configured.
 3. **[FIXED 2026-09-14] Features and predictions are persisted and queryable.** Four authenticated
 list/latest endpoints return the canonical contracts from TimescaleDB. Drift consumers remain open.
 4. **Three of four models do not serve.** By design — they failed their gates. Fixing them is calibration work (anomaly threshold, per-horizon forecast promotion) and a data problem (source labels).

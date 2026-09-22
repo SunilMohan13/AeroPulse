@@ -28,10 +28,22 @@ async function demoForecastSeries(): Promise<ForecastPoint[]> {
   return getForecastSeries()
 }
 
-export async function fetchForecast(): Promise<ForecastPoint[]> {
-  return resolve('forecast', demoForecast, liveForecast)
+/**
+ * Forecast series.
+ *
+ * @param eventId Scope to one event. Omitted, live mode picks the most
+ *   recently updated active event, which is what the Overview wants; the
+ *   event detail page passes its own id so it cannot show another event's
+ *   plume.
+ */
+export async function fetchForecast(eventId?: string): Promise<ForecastPoint[]> {
+  return resolve(
+    'forecast',
+    demoForecast,
+    () => liveForecast(eventId),
+  )
 }
 
-export async function fetchForecastSeries(): Promise<ForecastPoint[]> {
-  return resolve('forecast-series', demoForecastSeries, liveForecast)
+export async function fetchForecastSeries(eventId?: string): Promise<ForecastPoint[]> {
+  return resolve('forecast-series', demoForecastSeries, () => liveForecast(eventId))
 }

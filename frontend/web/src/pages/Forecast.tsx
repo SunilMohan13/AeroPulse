@@ -30,7 +30,10 @@ export function Forecast() {
   const { mode } = useDataMode()
   const { data: series = [] } = useQuery({
     queryKey: ['forecastSeries', mode],
-    queryFn: fetchForecastSeries,
+    // Wrapped, not passed by reference: React Query hands `queryFn` a context
+    // object, which would arrive as the optional `eventId` argument and
+    // request /api/v1/events/[object Object]/forecast.
+    queryFn: () => fetchForecastSeries(),
   })
   const { hourOffset, setHourOffset } = useApp()
   const [playing, setPlaying] = useState(false)

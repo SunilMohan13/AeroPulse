@@ -555,7 +555,7 @@ notebooks' metrics, computed on production data rather than research data.
 **Status update 2026-09-14:** event/evidence/latest forecast/latest graph reads are implemented and
 verified with actual connector replay input. `grid_feature`/`grid_prediction` gained authenticated,
 filterable list/latest routes on 2026-09-14. Operational map routes now consume the same persisted
-AQ/fire/weather/forecast/grid state. The frontend remains mock-only.
+AQ/fire/weather/forecast/grid state. The frontend now consumes the authenticated event, source, map, evidence, citizen, and copilot paths; population risk remains mock-backed until a population source is integrated.
 
 **Goal:** the API serves what the worker computed. This is independent of the ML work
 and is called out in `AeroPulse_MLOps_Architecture.md` §8 as the highest-value single
@@ -991,3 +991,90 @@ path, one ACTIVE HIGH event):
 - Stopping only the database (API up, `/health` 200, storage routes 503): the banner reads
   `risk-areas — backend storage unavailable (503) — showing demo data` for each affected
   endpoint. Nothing substitutes silently.
+
+---
+
+## 16. 2026-09-22 (third pass) — merging `main`, and what the two branches disagreed about
+
+`main` (PR #6) landed a parallel implementation of the same Phase 7 wiring, plus backend work
+that closes gaps §15.4 had listed as blockers. Fourteen files conflicted. This records what was
+kept from each side and why, because several of the decisions are not obvious from the diff.
+
+### 16.1 Frontend: one architecture, the other side's endpoints
+
+Both branches wired the services to the API. The architectures differ in one decisive way, so
+they were not split down the middle:
+
+| | `main` | `sunil` (kept) |
+|---|---|---|
+| Mode selection | implicit — live if a token exists | explicit Demo/Live toggle |
+| On a failed call | silent `console.warn`, serve demo | record the endpoint and reason, show a banner |
+| Missing API fields | filled with literals | `—` with a reason |
+
+`main`'s `mapLiveEvent` illustrates the difference: a live event was given a hardcoded source
+attribution (`Regional transport 62%`, `Biomass 48%` …), `populationAtRisk ?? 1_200_000`, two
+authored recommended actions, and `type: 'traffic'` unconditionally. Those are demo values
+rendered under a live banner — the substitution §8 Phase 7 names as the failure that matters
+most. The `sunil` adapters were kept for that reason, and because the toggle is what this
+session set out to build.
+
+**`main`'s backend work was adopted wholesale**, and it is what makes live mode worth using:
+`GET /api/v1/citizen/reports`, `GET /api/v1/risk/areas`, `GET /api/v1/map/industry`, a
+registered population fixture, and a Bruno collection. Three of the four gaps §15.4 listed as
+blocking live screens are closed by it. `/risk/areas` also replaced a client-side N+1 loop with
+one ranked request computed where the population data lives.
+
+`main`'s per-event `fetchForecast(eventId)` was adopted over the branch's unparameterised
+version: an event detail page showing the most recently active event's forecast is quietly
+wrong on every other page.
+
+### 16.2 Four defects the merge introduced, none caught by existing tests
+
+1. **`/api/v1/risk/areas` raised `TypeError` on every request.** `score_risk`'s density
+   parameter was renamed on one branch while the endpoint calling it was written on the other;
+   git merged both cleanly. Fixed, and `test_risk_areas_returns_ranked_cells_with_provenance`
+   now covers it — verified by reintroducing the bug and watching the test fail.
+2. **Two population datasets disagreed.** `fixtures/population/density.json` (urban cores) and
+   an embedded 28-point district table gave Ghaziabad 9,800 and 3,971 per km² respectively, so
+   `/api/v1/risk` and `/api/v1/risk/areas` would have reported different densities for the same
+   city. Unified on the registered fixture; the embedded table was deleted. The cost is
+   coverage — five corridor cells instead of 28 districts — which surfaces honestly as
+   `population_measured: false` outside them, and is asserted by a test rather than left to be
+   discovered.
+3. **Every exposure area read `LOW`.** `main`'s bands (SEVERE ≥ 0.5) were written against a
+   different density scale than the one this branch had changed; at the endpoint's 6-hour
+   default the index tops out near 0.04, so no area could exceed MEDIUM. Bands now live in
+   `risk_band()` beside the formula they depend on, calibrated to the index's real range and
+   documented as presentation thresholds rather than a validated classification.
+4. **A docstring survived its own code.** Git spliced this branch's "the API has no citizen list
+   route" comment directly above `main`'s call to that list route. Rewritten.
+
+### 16.3 Two drift monitors became one
+
+`main` added a long-running `aeropulse-drift-monitor` service; this branch had added a one-shot
+sweep with a CLI. Both computed "recent window vs reference window", which is exactly the kind
+of duplicated geometry that drifts apart unnoticed. `monitor_once` now delegates to
+`aeropulse_ml.drift_monitor.evaluate_drift`; `main`'s scheduling loop, settings and compose
+service are kept, and `drift_monitor_min_samples` — previously unread — is now honoured by both
+entry points.
+
+### 16.4 Compose
+
+`main` baked a valid VIEWER token so the Docker demo works with no setup; this branch defaulted
+the token empty and the mode to demo. Both were kept: the token makes the Live half of the
+toggle clickable out of the box, `VITE_DEFAULT_DATA_MODE=demo` keeps the scripted narrative as
+the landing state, and both `AEROPULSE_WEB_TOKEN` and `AEROPULSE_UI_TOKEN` are accepted because
+the two branches named it differently. The token is signed with the dev secret that sits in the
+same file; it is not a production credential and the comment says so.
+
+### 16.5 Verified after the merge
+
+Backend: `ruff`, `ruff format`, `pyright` (0 errors), **312 tests**. Frontend: `tsc -b` clean,
+`vite build` clean, `oxlint` 0 errors. OpenAPI regenerated — **38 paths**, both sides' routes
+present.
+
+Against a live API with a seeded database, in a browser: the toggle switches the Risk page from
+the demo's 8 authored areas to the API's 5 ranked cells with the `replace-before-production`
+caveat visible; the Citizen screen reads live and correctly shows `0 reports today` for an empty
+backend, with the "no CV model is deployed" caveat rather than the stale "demo only" notice.
+Zero console errors in either mode.

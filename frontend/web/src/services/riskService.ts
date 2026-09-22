@@ -16,15 +16,25 @@ export async function fetchRiskAreas(): Promise<PopulationRiskArea[]> {
 }
 
 /**
- * Total population in the ranked exposure areas.
+ * Total population across the ranked exposure areas.
  *
- * Demo only. In live mode the `population` field is density per km² from the
- * reference layer, not a headcount, so summing it would produce a number
- * with no meaning presented as "people at risk" — the most quotable figure
- * on the Overview. Live returns null and the KPI renders "—".
+ * Previously demo-only: the grid-feature path exposes population *density*
+ * per km2, and summing that would have produced a meaningless figure under
+ * the label "people at risk". `GET /api/v1/risk/areas` supplies a real
+ * per-cell headcount from the population reference layer, so the KPI is now
+ * answerable in live mode too.
+ *
+ * The caveat moves rather than disappears: the reference layer ships as a
+ * fixture licensed `replace-before-production`, so the number is structurally
+ * correct but not operationally sourced until a licensed WorldPop or Census
+ * extract replaces it. `usePopulationProvenance` surfaces that.
  */
 export async function fetchTotalExposure(): Promise<number | null> {
-  if (!isDemo()) return null
-  await delay(50)
-  return mockRiskAreas.reduce((sum, a) => sum + a.population, 0)
+  if (isDemo()) {
+    await delay(50)
+    return mockRiskAreas.reduce((sum, a) => sum + a.population, 0)
+  }
+  const areas = await fetchRiskAreas()
+  if (areas.length === 0) return null
+  return areas.reduce((sum, a) => sum + a.population, 0)
 }

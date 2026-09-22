@@ -56,6 +56,13 @@ sources:
     enabled: true
     schedule: "0 */6 * * *"
     fixture: fixtures/industry/assets.json
+  - id: population
+    connector: population_density
+    enabled: true
+    schedule: "0 3 * * *"
+    fixture: fixtures/population/density.json
+    live_capable: true
+    auth_ref: population_provider_token
   - id: osm
     connector: osm
     enabled: true

@@ -178,17 +178,22 @@ cd frontend/web && npm install && npm run dev
 
 Under Compose, export `AEROPULSE_UI_TOKEN` before `up` to enable live mode in the container.
 
-**What live mode will not show you, and says so.** The API supplies strictly less than the demo
+**What live mode will not show you, and says so.** The API supplies less than the demo
 narrative, and the UI marks each gap rather than filling it:
 
 | Surface | In live mode | Why |
 |---|---|---|
-| Population at risk | `—` | The API reports density per km², never a headcount |
+| Population at risk | live, with a caveat | `/api/v1/risk/areas` supplies real headcounts, but its population layer ships as a fixture licensed `replace-before-production` |
 | Recommended actions | explained absence | No API route supplies them |
 | Source freshness / latency / quality | `unknown` | `/api/v1/sources` is a registry, not a health feed |
-| Citizen reports | demo data, labelled | No list route exists (only POST and GET by id) |
-| Evidence graph | demo data, labelled | `graph.v1` has no layout coordinates |
+| Citizen reports | live, with a caveat | Reports are real; no CV model runs, so every one is `cv_class=unknown`, `moderation=pending` |
+| Evidence graph | demo data, labelled | `graph.v1` has no layout coordinates for this diagram |
 | Hazard / peak | `baseline` badge | Both models are withheld by the promotion gate |
+
+Population coverage is corridor-urban only: five Delhi-to-Karnal cells. A point in Punjab
+resolves no reference cell and correctly reports `population_measured: false` rather than
+stretching a nearest neighbour 200 km. Replacing the fixture with a licensed WorldPop or Census
+extract closes this.
 
 Where a live call fails, the UI serves demo data **and names the endpoint and reason in a
 banner**. It never substitutes silently — verified by stopping the database with the API up:

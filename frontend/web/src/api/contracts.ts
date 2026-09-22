@@ -191,6 +191,53 @@ export interface ApiRisk {
   population_reference: string | null
 }
 
+/** One item of `GET /api/v1/risk/areas` */
+export interface ApiRiskArea {
+  cell_id: string
+  name: string
+  lat: number
+  lon: number
+  population: number
+  population_density: number
+  risk: string
+  population_risk: number
+  pollution_severity: number
+  rank: number
+}
+
+/** Provenance envelope on `GET /api/v1/risk/areas`. */
+export interface ApiPopulationSource {
+  provider: string | null
+  provider_version: string | null
+  license: string | null
+  source_uri: string | null
+}
+
+/** `citizen_report.v1` */
+export interface ApiCitizenReport {
+  schema_version: 'citizen_report.v1'
+  report_id: string
+  lat: number
+  lon: number
+  observed_at: string
+  observation_type: string
+  notes: string | null
+  media_uri: string | null
+  cv_class: 'smoke' | 'fire' | 'dust' | 'haze' | 'clear' | 'unknown'
+  moderation: 'pending' | 'accepted' | 'rejected'
+  grid_id: string | null
+  correlated_event_id: string | null
+}
+
+/** Properties on `/map/industry` features. */
+export interface ApiIndustryProperties {
+  source_id?: string
+  asset_id?: string
+  name?: string
+  product_id?: string
+  resolution?: string
+}
+
 /** `copilot.v1` */
 export interface ApiCopilot {
   answer: string

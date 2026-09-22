@@ -53,9 +53,7 @@ export function Risk() {
                 <p className="font-mono text-3xl font-bold text-text-muted">&mdash;</p>
                 <p className="text-xs text-text-muted">People potentially exposed</p>
                 <p className="mt-2 max-w-md text-xs text-amber-400/80">
-                  The API exposes population <em>density</em> per km&sup2;, never a headcount at
-                  risk. Summing it would invent the most quotable number on this page, so it is
-                  withheld in live mode.
+                  No population cells were returned, so exposure cannot be summed.
                 </p>
               </div>
             )}
@@ -92,15 +90,9 @@ export function Risk() {
                   <div className="flex items-center gap-3">
                     <span
                       className="font-mono text-xs text-text-muted"
-                      title={
-                        isLive
-                          ? 'Population density (persons per km²) from the reference layer'
-                          : 'Population in the affected area'
-                      }
+                      title="Population in the affected area"
                     >
-                      {isLive
-                        ? `${a.population.toLocaleString()}/km²`
-                        : formatPopulation(a.population)}
+                      {formatPopulation(a.population)}
                     </span>
                     <StatusBadge variant={riskVariant(a.risk)}>{a.risk}</StatusBadge>
                   </div>
@@ -137,7 +129,11 @@ export function Risk() {
             {isLive && (
               <p className="mt-2 text-xs text-amber-400/80">
                 The counts above are demo figures. No API route supplies sensitive-population
-                breakdowns, so they do not change in live mode.
+                breakdowns, so they do not change in live mode. The ranked areas and the exposure
+                total above <em>are</em> live, from{' '}
+                <code className="font-mono">/api/v1/risk/areas</code> — but its population layer
+                ships as a fixture licensed <code className="font-mono">replace-before-production</code>,
+                so treat the headcounts as structurally correct and not yet operationally sourced.
               </p>
             )}
           </CardBody>

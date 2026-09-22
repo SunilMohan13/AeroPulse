@@ -8,6 +8,7 @@
 
 import type {
   ApiAqProperties,
+  ApiCitizenReport,
   ApiCopilot,
   ApiEvent,
   ApiEvidence,
@@ -15,20 +16,24 @@ import type {
   ApiForecast,
   ApiGridFeature,
   ApiHazardCell,
+  ApiIndustryProperties,
   ApiModel,
   ApiPeakForecast,
+  ApiPopulationSource,
   ApiProvenance,
-  ApiRisk,
+  ApiRiskArea,
   ApiSource,
   ApiWeatherProperties,
 } from './contracts'
 import type {
+  CitizenReport,
   CopilotMessage,
   EvidenceItem,
   FireObservation,
   ForecastPoint,
   GridCell,
   HazardCell,
+  IndustrySite,
   ModelCatalogEntry,
   PeakForecastCell,
   PollutionEvent,
@@ -101,10 +106,10 @@ async function primaryEventId(): Promise<string | null> {
   return (active ?? response.items[0])?.event_id ?? null
 }
 
-export async function liveForecast(): Promise<ForecastPoint[]> {
-  const eventId = await primaryEventId()
-  if (!eventId) return []
-  const forecast = await apiGet<ApiForecast>(`/api/v1/events/${eventId}/forecast`)
+export async function liveForecast(eventId?: string): Promise<ForecastPoint[]> {
+  const target = eventId ?? (await primaryEventId())
+  if (!target) return []
+  const forecast = await apiGet<ApiForecast>(`/api/v1/events/${target}/forecast`)
   return toForecastPoints(forecast)
 }
 
@@ -186,46 +191,98 @@ export async function livePeak(): Promise<LivePeak> {
 }
 
 /**
- * Ranked exposure areas, built from persisted cells plus the risk endpoint.
+ * Ranked exposure areas from `GET /api/v1/risk/areas`.
  *
- * `GET /api/v1/risk` scores one point at a time, so this queries it per cell
- * and ranks the results. `population` here is the reference layer's density
- * per km², not a headcount: the UI must label it as such, because a column
- * headed "population" showing 11,320 for Delhi would read as a city count.
+ * Replaces an earlier client-side approach that scored each grid cell with
+ * its own `/api/v1/risk` call: one request instead of N, and the ranking is
+ * computed where the population data lives rather than being re-derived in
+ * the browser.
+ *
+ * `population` here is a real headcount from the reference layer, not a
+ * density — unlike the grid-feature path, where only density exists.
  */
 export async function liveRiskAreas(): Promise<PopulationRiskArea[]> {
-  const features = await apiGet<ListResponse<ApiGridFeature>>('/api/v1/grid-features', {
-    limit: 25,
-  })
-  const scored = await Promise.all(
-    features.items
-      .filter((f) => f.pm25 !== null)
-      .map(async (f) => {
-        const risk = await apiGet<ApiRisk>('/api/v1/risk', {
-          pm25: f.pm25 ?? 0,
-          lat: f.center_lat,
-          lon: f.center_lon,
-        })
-        return { feature: f, risk }
-      }),
+  const response = await apiGet<{
+    items: ApiRiskArea[]
+    population_source?: ApiPopulationSource
+  }>('/api/v1/risk/areas', { pm25: 180, exposure_hours: 6 })
+
+  return response.items.map((area) => ({
+    rank: area.rank,
+    name: area.name,
+    risk: toRiskBand(area.risk),
+    population: area.population,
+    lat: area.lat,
+    lon: area.lon,
+  }))
+}
+
+/** Population provenance, so the UI can state which provider backs a number. */
+export async function livePopulationSource(): Promise<ApiPopulationSource | null> {
+  const response = await apiGet<{ population_source?: ApiPopulationSource }>(
+    '/api/v1/risk/areas',
+    { pm25: 180, exposure_hours: 6 },
   )
-  return scored
-    .sort((a, b) => b.risk.population_risk - a.risk.population_risk)
-    .map(({ feature, risk }, index) => ({
-      rank: index + 1,
-      name: risk.population_reference ?? feature.grid_id.slice(0, 10),
-      risk:
-        risk.population_risk >= 0.6
-          ? 'SEVERE'
-          : risk.population_risk >= 0.35
-            ? 'HIGH'
-            : risk.population_risk >= 0.15
-              ? 'MEDIUM'
-              : 'LOW',
-      population: Math.round(risk.population_density),
-      lat: feature.center_lat,
-      lon: feature.center_lon,
-    }))
+  return response.population_source ?? null
+}
+
+function toRiskBand(value: string): PopulationRiskArea['risk'] {
+  const upper = value.toUpperCase()
+  if (upper === 'SEVERE' || upper === 'HIGH' || upper === 'MEDIUM') return upper
+  return 'LOW'
+}
+
+/**
+ * Citizen reports from `GET /api/v1/citizen/reports`.
+ *
+ * Every report the API returns is `moderation=pending` with
+ * `cv_class=unknown` until a CV model is deployed, so `classification` will
+ * read "unknown" and confidence stays low. That is the true state of the
+ * pipeline, not a mapping defect.
+ */
+export async function liveCitizenReports(): Promise<CitizenReport[]> {
+  const response = await apiGet<ListResponse<ApiCitizenReport>>('/api/v1/citizen/reports')
+  return response.items.map((report) => ({
+    id: report.report_id,
+    type: report.observation_type,
+    location: `${report.lat.toFixed(3)}, ${report.lon.toFixed(3)}`,
+    lat: report.lat,
+    lon: report.lon,
+    reportedAt: report.observed_at,
+    // No CV model runs, so an unclassified report carries no classifier
+    // confidence. 50 is the "no information" midpoint, not a measurement.
+    confidence: report.cv_class === 'unknown' ? 50 : 70,
+    classification: report.cv_class,
+    corroboration: report.correlated_event_id ? 1 : 0,
+    status:
+      report.moderation === 'accepted'
+        ? 'CORROBORATED'
+        : report.moderation === 'rejected'
+          ? 'REJECTED'
+          : 'PENDING',
+    relatedEventId: report.correlated_event_id ?? undefined,
+  }))
+}
+
+/** Industrial assets from `GET /api/v1/map/industry`. */
+export async function liveIndustries(): Promise<IndustrySite[]> {
+  const collection = await apiGet<FeatureCollection<ApiIndustryProperties>>(
+    '/api/v1/map/industry',
+    { limit: 500 },
+  )
+  return collection.features.map((feature, index) => {
+    const [lon, lat] = feature.geometry.coordinates as unknown as [number, number]
+    const properties = feature.properties
+    return {
+      id: properties.asset_id ?? properties.product_id ?? `industry_${index}`,
+      name: properties.name ?? properties.product_id ?? 'Industrial asset',
+      lat,
+      lon,
+      // The replay serves raster product footprints, which carry no asset
+      // classification. Labelled generically rather than guessed at.
+      type: properties.resolution ? `Asset (${properties.resolution})` : 'Industrial asset',
+    }
+  })
 }
 
 export async function liveCopilot(query: string): Promise<CopilotMessage> {

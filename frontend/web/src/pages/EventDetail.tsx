@@ -40,7 +40,12 @@ export function EventDetail() {
     queryKey: ['observedHistory'],
     queryFn: fetchObservedHistory,
   })
-  const { data: forecast = [] } = useQuery({ queryKey: ['forecast', mode], queryFn: fetchForecast })
+  // Scoped to this event, not "the" event: a detail page showing the most
+  // recent active event's forecast would be quietly wrong on every other page.
+  const { data: forecast = [] } = useQuery({
+    queryKey: ['forecast', eventId, mode],
+    queryFn: () => fetchForecast(eventId),
+  })
 
   if (isLoading) return <LoadingState message="Loading event intelligence..." />
   if (!event) return <div className="p-8">Event not found</div>

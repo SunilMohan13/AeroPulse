@@ -42,7 +42,21 @@ MAX_MATCH_KM = 60.0
 #: supply a denser national grid without a code change.
 POPULATION_DATA_ENV = "AEROPULSE_POPULATION_DATA"
 
-_DEFAULT_DATA = Path(__file__).resolve().parent / "data" / "population_density.json"
+#: The single population dataset, shared with `GET /api/v1/risk/areas`.
+#:
+#: This module previously embedded its own 28-point district table. That made
+#: two population sources in one system, and they disagreed: Ghaziabad read
+#: 3,971/km2 here (Census district) and 9,800/km2 there (urban core). Two
+#: endpoints reporting different densities for the same city is worse than
+#: either number being imprecise, so the embedded table was dropped in favour
+#: of the registered fixture.
+#:
+#: Coverage is the cost. The fixture holds five Delhi-to-Karnal cells, so a
+#: point in Punjab finds nothing within `MAX_MATCH_KM` and correctly reports
+#: `measured=False`. Replacing it with a licensed WorldPop or Census extract
+#: is item 1 of the production handoff and closes this.
+_FIXTURE_RELATIVE = Path("fixtures") / "population" / "density.json"
+_SEARCH_ROOTS = (Path("/app"), Path.cwd(), Path(__file__).resolve().parents[4])
 
 
 @dataclass(frozen=True)
@@ -86,6 +100,26 @@ def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     return 2 * radius * math.asin(math.sqrt(a))
 
 
+def _resolve_path() -> Path | None:
+    """Locate the population fixture, honouring the env override.
+
+    Searched rather than hardcoded because the same file is read from the
+    repository root during tests and from ``/app`` inside the container.
+
+    Returns:
+        The first readable candidate, or None.
+    """
+    override = os.environ.get(POPULATION_DATA_ENV)
+    if override:
+        candidate = Path(override)
+        return candidate if candidate.is_file() else None
+    for root in _SEARCH_ROOTS:
+        candidate = root / _FIXTURE_RELATIVE
+        if candidate.is_file():
+            return candidate
+    return None
+
+
 @lru_cache(maxsize=1)
 def _reference_points() -> tuple[tuple[_ReferencePoint, ...], str]:
     """Load the reference dataset once per process.
@@ -95,14 +129,18 @@ def _reference_points() -> tuple[tuple[_ReferencePoint, ...], str]:
         empty tuple, which makes every lookup fall back and say so, rather
         than raising and taking down a request path that has a valid answer.
     """
-    path = Path(os.environ.get(POPULATION_DATA_ENV, _DEFAULT_DATA))
+    path = _resolve_path()
+    if path is None:
+        return (), "unavailable"
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return (), "unavailable"
 
     points: list[_ReferencePoint] = []
-    for entry in payload.get("points", []):
+    # `cells` is the fixture's own key; `points` is accepted so an operator
+    # can supply a denser grid in either shape via the env override.
+    for entry in payload.get("cells", []) or payload.get("points", []):
         try:
             points.append(
                 _ReferencePoint(
@@ -115,7 +153,7 @@ def _reference_points() -> tuple[tuple[_ReferencePoint, ...], str]:
         except (KeyError, TypeError, ValueError):
             # One malformed row must not discard the rest of the dataset.
             continue
-    return tuple(points), str(payload.get("source", "unknown"))
+    return tuple(points), str(payload.get("provider") or payload.get("source") or "unknown")
 
 
 def population_density(lat: float, lon: float) -> PopulationEstimate:

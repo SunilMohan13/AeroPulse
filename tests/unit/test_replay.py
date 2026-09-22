@@ -87,8 +87,39 @@ def test_replay_all_updates_checkpoint_cursor(monkeypatch: pytest.MonkeyPatch) -
     counts = replay_all(Path("fixtures"), lambda topic, env: None)
 
     assert counts["cpcb"] == 3
-    assert ("cpcb", "5") in calls
-    assert calls[0] == ("cpcb", "5")
+    assert ("cpcb: CPCB", "5") in calls
+    assert calls[0] == ("cpcb: CPCB", "5")
+
+
+def test_replay_all_uses_provider_aware_checkpoint_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    class FakeRepo:
+        def __init__(self) -> None:
+            self.data: dict[str, str] = {"cpcb: CPCB": "2"}
+
+        def get_checkpoint(self, source_id: str) -> str | None:
+            return self.data.get(source_id)
+
+        def upsert_checkpoint(self, source_id: str, cursor: str) -> None:
+            self.data[source_id] = cursor
+
+    repo = FakeRepo()
+    monkeypatch.setattr("aeropulse_connector_app.runner._checkpoint_repository", lambda: repo)
+
+    def fake_replay_cpcb(fixtures_root: Path, request, publish, mode):
+        assert request.cursor == "2"
+        assert request.provider == "CPCB"
+        return 3
+
+    monkeypatch.setattr("aeropulse_connector_app.runner._replay_cpcb", fake_replay_cpcb)
+    monkeypatch.setattr(
+        "aeropulse_connector_app.runner._run_connector",
+        lambda connector, request, publish, topic, mode: 0,
+    )
+
+    counts = replay_all(Path("fixtures"), lambda topic, env: None)
+
+    assert counts["cpcb"] == 3
+    assert repo.data["cpcb: CPCB"] == "5"
 
 
 @pytest.mark.parametrize("bad_content", ["not: a: list", "sources: not-a-list"])

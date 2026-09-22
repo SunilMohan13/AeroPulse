@@ -133,6 +133,24 @@ services:
       retries: 15
     mem_limit: 512m
 
+  drift-monitor:
+    build:
+      context: ../..
+      dockerfile: infrastructure/docker/Dockerfile
+    restart: unless-stopped
+    command: ["uv", "run", "aeropulse-drift-monitor"]
+    environment:
+      AEROPULSE_SERVICE_NAME: aeropulse-drift-monitor
+      AEROPULSE_DATABASE_URL: postgresql://aeropulse:aeropulse@timescaledb:5432/aeropulse
+      AEROPULSE_DRIFT_MONITOR_INTERVAL_SECONDS: 3600
+      AEROPULSE_DRIFT_MONITOR_REFERENCE_HOURS: 168
+      AEROPULSE_DRIFT_MONITOR_CURRENT_HOURS: 24
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+    networks: [aeropulse-backend]
+    mem_limit: 256m
+
   worker:
     build:
       context: ../..
@@ -177,15 +195,17 @@ services:
       # The browser runs on the host, so this is the host-published API port,
       # not the compose service name.
       VITE_API_BASE: http://127.0.0.1:8000
-      # Bearer token for live mode. Empty by default: the UI then starts in
-      # demo mode and disables the Live toggle with "no token" rather than
-      # looping on 401s. Mint one and export it before `up`:
-      #   export AEROPULSE_UI_TOKEN=$(uv run python -c "from aeropulse_auth import \
-      #     encode_token, Role; print(encode_token('ui', [Role.VIEWER]))")
-      # Dev-only HS256 (ADR-0003) — a token in a browser bundle is readable
-      # by anyone who loads the page.
-      VITE_API_TOKEN: ${AEROPULSE_UI_TOKEN:-}
-      # Demo is the default so the scripted narrative works with no backend.
+      # Bearer token for live mode, so the Live half of the Demo/Live toggle
+      # is clickable straight out of `compose up` with no setup. This is a
+      # VIEWER token signed with the dev HS256 secret that is itself in this
+      # file (ADR-0003): it grants read access to a local stack and is not a
+      # production credential. Anything deployed must override it and move to
+      # OIDC. `AEROPULSE_WEB_TOKEN` and `AEROPULSE_UI_TOKEN` are both accepted
+      # because the two halves of this work named it differently.
+      VITE_API_TOKEN: ${AEROPULSE_WEB_TOKEN:-${AEROPULSE_UI_TOKEN:-eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhZXJvcHVsc2Utd2ViLWRlbW8iLCJyb2xlcyI6WyJWSUVXRVIiXSwiaXNzIjoiYWVyb3B1bHNlIiwiaWF0IjoxNzg5NjY1MDIyLCJleHAiOjE4MjEyMDEwMjJ9.3cYobg5Mu2udoBJdAgvr4VhBbii2WcHafEkmk7ibwSA}}
+      # Demo is the landing state: the scripted narrative is what the product
+      # demonstrates, and it works with no backend at all. The toggle switches
+      # to live.
       VITE_DEFAULT_DATA_MODE: ${AEROPULSE_UI_MODE:-demo}
     ports:
       - "127.0.0.1:5173:5173"

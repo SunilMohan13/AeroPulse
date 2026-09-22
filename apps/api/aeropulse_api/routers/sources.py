@@ -81,6 +81,16 @@ _SOURCES: dict[str, dict] = {
         "status": "replay",
         "schema_version": "raster.v1",
     },
+    "population": {
+        "source_id": "population",
+        "provider": "Reference fixture / WorldPop-compatible adapter",
+        "connector_id": "population_density",
+        "display_name": "Population density",
+        "data_type": "population_density",
+        "enabled": True,
+        "status": "reference",
+        "schema_version": "population-density.v1",
+    },
 }
 
 

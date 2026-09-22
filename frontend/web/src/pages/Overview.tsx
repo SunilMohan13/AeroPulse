@@ -20,7 +20,10 @@ import { FallbackBanner, ModeContextNote } from '../components/common/Provenance
 export function Overview() {
   const { mode } = useDataMode()
   const { data: events = [] } = useQuery({ queryKey: ['events', mode], queryFn: fetchEvents })
-  const { data: forecast = [] } = useQuery({ queryKey: ['forecast', mode], queryFn: fetchForecast })
+  const { data: forecast = [] } = useQuery({
+    queryKey: ['forecast', mode],
+    queryFn: () => fetchForecast(),
+  })
   const { data: sources = [] } = useQuery({ queryKey: ['sources', mode], queryFn: fetchSources })
   const { data: totalExposure } = useQuery({
     queryKey: ['totalExposure', mode],
@@ -80,10 +83,10 @@ export function Overview() {
                 decimals={1}
               />
             ) : (
-              <div title="The API reports population density per km², not a headcount at risk.">
+              <div title="No population cells were returned, so exposure cannot be summed.">
                 <p className="text-xs text-text-muted">At Risk</p>
                 <p className="font-mono text-3xl font-bold text-text-muted">&mdash;</p>
-                <p className="text-[10px] text-amber-400/80">headcount not exposed by the API</p>
+                <p className="text-[10px] text-amber-400/80">no population cells returned</p>
               </div>
             )}
           </CardBody>

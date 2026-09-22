@@ -271,6 +271,7 @@ def cmd_drift(args: argparse.Namespace) -> int:
             current_hours=args.current_hours,
             reference_hours=args.reference_hours,
             grid_id=args.grid_id,
+            min_samples=args.min_samples,
         )
 
     print(json.dumps(report.to_dict(), indent=2, default=str))
@@ -355,6 +356,12 @@ def build_parser() -> argparse.ArgumentParser:
     drift.add_argument("--current-hours", type=int, default=24)
     drift.add_argument("--reference-hours", type=int, default=168)
     drift.add_argument("--grid-id", default=None)
+    drift.add_argument(
+        "--min-samples",
+        type=int,
+        default=30,
+        help="rows required per window before a verdict (default: %(default)s)",
+    )
     drift.set_defaults(func=cmd_drift)
     return parser
 

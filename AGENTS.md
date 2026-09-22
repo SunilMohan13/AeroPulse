@@ -91,6 +91,10 @@ Rules that matter more than the wiring:
 - New nullable API fields go in the UI type as `| null`, not as a sentinel. `-1 min` reaching an
   operator is the bug that pattern causes.
 - Add `mode` to every React Query key so a fast toggle cannot serve the other mode's cache.
+- One HTTP client (`src/api/client.ts`) and one demo/live branch (`services/resolve.ts`). A
+  second client with different fallback semantics is how the two halves silently diverge.
+- Wrap a parameterised service in `queryFn: () => fn(id)`. React Query passes a context object
+  to a bare reference, which arrives as the first argument.
 - Checks: `npm run build` (tsc + vite) and `npm run lint`.
 
 ## Out of this pass
@@ -114,9 +118,14 @@ there are large hidden gaps in the already-implemented backend:
   promoted model rather than the deterministic baseline.
 - Provider-aware resume semantics beyond the shared `FetchRequest.cursor` contract.
 - OIDC / production auth hardening and secret-store integration.
-- `GET /api/v1/citizen/reports` — a list route. Its absence is why the Citizen screen stays on
-  demo data in live mode.
 - Layout coordinates on `graph.v1`, or a UI force layout, so the Evidence graph can render live.
+  This is now the only screen still demo-only in live mode.
+- A licensed WorldPop or Census extract to replace `fixtures/population/density.json`. It is the
+  single population source — both `/api/v1/risk/areas` and the `score_risk(lat, lon)` lookup read
+  it — and it ships licensed `replace-before-production` with five corridor cells, so Punjab
+  resolves as unmeasured.
+- Operator-agreed exposure bands. `risk_band()` thresholds are presentation values calibrated to
+  the index's real range, not a validated classification.
 - A per-cell observed-history route, so the forecast chart's observed leg can leave demo data.
 - Source health telemetry on `GET /api/v1/sources` (freshness, latency, quality, record counts).
 - Default OTLP exporter wiring. Domain metrics exist and increment; nothing exports them.

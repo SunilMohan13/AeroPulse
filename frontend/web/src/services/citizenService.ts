@@ -1,38 +1,46 @@
 import { mockCitizenReports } from '../data/mockCitizenReports'
 import type { CitizenReport } from '../types'
+import { liveCitizenReports } from '../api/live'
+import { isDemo } from './dataMode'
+import { resolve } from './resolve'
 
 const delay = (ms = 80) => new Promise((r) => setTimeout(r, ms))
 
 /**
- * Citizen reports — demo only, and not for want of wiring.
+ * What live mode cannot show on this screen.
  *
- * The API exposes `POST /api/v1/citizen/reports`, `POST /reports/{id}/media`
- * and `GET /reports/{id}`. There is no list route, so a client cannot
- * enumerate reports without already knowing every id. Backend behaviour also
- * pins every report at `moderation=pending` with `cv_class=unknown`, because
- * no CV model is deployed; a live feed would therefore be a list of
- * unclassified pending items.
- *
- * Wiring a single-report GET behind a screen that needs a feed would look
- * live while showing nothing, which is worse than being plainly demo. Closed
- * by adding `GET /api/v1/citizen/reports` with the standard
- * items/total/limit/offset shape.
+ * The list route now exists, so reports are fetched live. What is still
+ * missing is classification: no CV model is deployed, so every report comes
+ * back `cv_class=unknown` and `moderation=pending`. A live feed is therefore
+ * a list of unclassified pending items — real, but thinner than the demo's
+ * corroborated/rejected narrative.
  */
-export const CITIZEN_LIVE_UNSUPPORTED =
-  'The API has no citizen report list route (only POST and GET by id), so this screen stays on demo data in live mode.'
+export const CITIZEN_LIVE_CAVEAT =
+  'Reports are live, but no CV model is deployed: every report returns cv_class=unknown and ' +
+  'moderation=pending, so classification and corroboration stay empty until one is.'
 
-export async function fetchCitizenReports(): Promise<CitizenReport[]> {
+async function demoReports(): Promise<CitizenReport[]> {
   await delay()
   return mockCitizenReports
 }
 
+export async function fetchCitizenReports(): Promise<CitizenReport[]> {
+  return resolve('citizen', demoReports, liveCitizenReports)
+}
+
 export async function fetchCitizenStats() {
-  await delay(50)
-  const reports = mockCitizenReports
+  const reports = await fetchCitizenReports()
+  if (isDemo()) {
+    await delay(50)
+    return { totalToday: 312, awaiting: 27, correlated: 84, reports }
+  }
+  // Derived from what the API actually returned, rather than the demo's
+  // headline figures. An empty backend therefore reads as zero, which is the
+  // truth about a stack nobody has reported into.
   return {
-    totalToday: 312,
-    awaiting: 27,
-    correlated: 84,
+    totalToday: reports.length,
+    awaiting: reports.filter((r) => r.status === 'PENDING').length,
+    correlated: reports.filter((r) => r.status === 'CORROBORATED').length,
     reports,
   }
 }

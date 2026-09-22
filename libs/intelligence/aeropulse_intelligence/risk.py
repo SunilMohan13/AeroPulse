@@ -28,6 +28,40 @@ DEFAULT_SENSITIVE = 1.1
 DENSITY_SCALE_PER_KM2 = 40000.0
 
 
+def risk_band(population_risk: float) -> str:
+    """Bucket a population-risk index into an operational band.
+
+    **These are presentation thresholds, not a validated risk
+    classification.** ``population_risk`` is a bounded composite —
+    severity x duration x density x sensitivity x confidence — and its
+    achievable range depends on every factor. At the 6-hour default exposure
+    window the duration term alone caps it at a quarter of its maximum, so
+    thresholds written for a 24-hour window make every area read LOW.
+
+    Two independently written pieces of this system disagreed on exactly
+    that: bands of 0.5/0.2/0.05 against an index that tops out near 0.04 for
+    a dense cell over six hours. The thresholds below are set against the
+    index's real range so that the bands discriminate, and they live here —
+    beside the formula they depend on — rather than inline at a call site
+    where a later change to the formula would not find them.
+
+    An operator-agreed exposure standard should replace them.
+
+    Args:
+        population_risk: Index on [0, 1] from :func:`score_risk`.
+
+    Returns:
+        ``SEVERE``, ``HIGH``, ``MEDIUM`` or ``LOW``.
+    """
+    if population_risk >= 0.10:
+        return "SEVERE"
+    if population_risk >= 0.05:
+        return "HIGH"
+    if population_risk >= 0.02:
+        return "MEDIUM"
+    return "LOW"
+
+
 class RiskResult(BaseModel):
     """Separated pollution severity vs population risk."""
 

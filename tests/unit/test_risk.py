@@ -24,16 +24,31 @@ def test_severity_and_risk_separated() -> None:
 def test_identical_pollution_gives_different_risk_by_location() -> None:
     """The whole reason the exposure layer exists.
 
-    With one hardcoded density, central Delhi and rural Bathinda produced
+    With one hardcoded density, dense Delhi and sparse Karnal produced
     identical risk for identical PM2.5, which made ``population_risk`` a
     restatement of ``pollution_severity``.
     """
-    delhi = score_risk(250.0, lat=28.6139, lon=77.2090)
+    delhi = score_risk(250.0, lat=28.72, lon=77.15)
+    karnal = score_risk(250.0, lat=29.69, lon=76.99)
+
+    assert delhi.pollution_severity == karnal.pollution_severity
+    assert delhi.population_risk > karnal.population_risk
+    assert delhi.population_measured and karnal.population_measured
+
+
+def test_points_outside_the_reference_coverage_report_unmeasured() -> None:
+    """The coverage limit is asserted, not hidden.
+
+    The shared fixture covers five Delhi-to-Karnal cells, so Punjab falls
+    outside it. The right behaviour is an explicit `population_measured:
+    false`, never a nearest-neighbour stretched 200 km across the corridor.
+    Replacing the fixture with a licensed extract is what closes this, and
+    this test is what will notice when it does.
+    """
     bathinda = score_risk(250.0, lat=30.2110, lon=74.9455)
 
-    assert delhi.pollution_severity == bathinda.pollution_severity
-    assert delhi.population_risk > bathinda.population_risk
-    assert delhi.population_measured and bathinda.population_measured
+    assert bathinda.population_measured is False
+    assert bathinda.population_source == "fallback"
 
 
 def test_a_looked_up_density_is_flagged_as_measured() -> None:
@@ -99,22 +114,44 @@ def test_risk_stays_bounded_at_extremes() -> None:
 
 
 def test_the_reference_dataset_actually_ships() -> None:
-    """Catch the "present locally, ignored by git" failure directly.
+    """Catch the "present locally, not in the repo" failure directly.
 
-    ``.gitignore`` excludes ``data/`` wholesale to keep multi-GB notebook
-    datasets out of history, which also matched this file. If the negation
-    rule is ever removed, a fresh clone falls back to a constant density for
-    every cell — the exact defect the reference layer was added to fix — and
-    every other test here would still pass on a developer machine where the
-    file happens to exist. Asserting on the shipped path makes the loss loud.
+    A missing fixture makes every lookup fall back to a constant density,
+    which is the defect this layer was added to remove — and it would fail
+    silently, because every other test here still passes on a machine where
+    the file happens to exist.
     """
     from aeropulse_geospatial import population as population_module
 
-    assert population_module._DEFAULT_DATA.is_file(), (
-        f"{population_module._DEFAULT_DATA} is missing; check the .gitignore "
-        "negation for libs/geospatial/aeropulse_geospatial/data/"
+    path = population_module._resolve_path()
+    assert path is not None and path.is_file(), (
+        "fixtures/population/density.json was not found; the population layer "
+        "would fall back to a constant for every cell"
     )
 
     points, source = population_module._reference_points()
-    assert len(points) >= 20, "reference layer is present but suspiciously sparse"
+    assert len(points) >= 5, "population layer is present but suspiciously sparse"
     assert source != "unavailable"
+
+
+def test_one_population_source_backs_both_endpoints() -> None:
+    """The lat/lon lookup and `/risk/areas` must not disagree.
+
+    Two population datasets previously coexisted and reported different
+    densities for the same city (Ghaziabad: 3,971 vs 9,800 per km2). Two
+    endpoints contradicting each other is worse than either being coarse.
+    """
+    import json
+
+    from aeropulse_geospatial import population as population_module
+
+    path = population_module._resolve_path()
+    assert path is not None
+    fixture = json.loads(path.read_text(encoding="utf-8"))
+
+    for cell in fixture["cells"]:
+        estimate = population_density(cell["lat"], cell["lon"])
+        assert estimate.measured, f"{cell['name']} is in the fixture but not resolvable"
+        assert estimate.density_per_km2 == cell["density_per_km2"], (
+            f"{cell['name']} disagrees between the lookup and the fixture"
+        )

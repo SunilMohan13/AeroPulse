@@ -20,11 +20,11 @@
 
 The backend is materially closer to a working system, but the remaining work is still real and specific:
 
-1. Scheduled drift monitoring and alerting for feature/prediction windows.
+1. Scheduled drift monitoring and alert delivery beyond structured logs.
 2. Provider-aware checkpoint resume logic beyond the shared cursor contract.
 3. OIDC and production secret-store hardening.
 4. Frontend-to-API wiring and real client integration.
-5. Population/exposure source integration for differentiated risk scoring.
+5. Replace the integrated population reference fixture with a licensed WorldPop/Census extract and validate its spatial/temporal provenance.
 6. Production load testing, SLOs, and dashboard/alert coverage.
 7. Expansion of live connectors beyond the current credential-free Open-Meteo path.
 
@@ -95,6 +95,16 @@ what still requires deliberate work after the implemented backend fixes.
 - **Partial, not complete:** error drift still requires delayed CPCB ground-truth labels; source
   coverage drift can be monitored through `feature.source_count`, but no scheduler/alert sink calls
   this endpoint automatically yet.
+
+### 2026-09-16 scheduled drift monitoring update
+
+- `aeropulse-drift-monitor` now runs as a separate Compose service every hour. It compares the
+  preceding 24-hour current window with the prior 7-day reference window for all allowlisted
+  feature and prediction signals.
+- `WARNING` and `DRIFT` produce structured `drift.monitor.alert` logs with signal, sample counts,
+  PSI, and KS values. Insufficient samples remain an explicit non-alert outcome.
+- This is scheduled monitoring, not an external paging solution: alert routing, error drift, and
+  operator-owned thresholds remain open work.
 
 ### 2026-09-14 API metrics update
 
@@ -258,7 +268,7 @@ Dependency-ordered. Each item states why it comes when it does.
 
 **2.4 Source attribution needs labels, not a better model.** `traffic` scores F1 = 0.000. The labels are heuristics; a larger model would reproduce the heuristic with more parameters. Either obtain labelled attribution data or reduce scope to the classes that validate (`regional_transport`, F1 0.84) and state the limitation. Per LLD §5.4, complexity is not the missing ingredient.
 
-**2.5 Add a population source.** `DEFAULT_POPULATION_DENSITY = 5000.0` applies uniformly to every cell, so exposure numbers are undifferentiated by construction. LLD §18.5 separates severity from population risk; that separation is currently nominal.
+**2.5 Population source plumbing is integrated; production data handoff remains.** `/api/v1/risk/areas` now scores versioned population cells independently per area and returns provider/license/source metadata. The checked-in `reference-fixture` is deliberately marked `replace-before-production`; operational deployment must replace it with a licensed WorldPop/Census extract and rerun spatial validation.
 
 ### Stage 3 — harden
 

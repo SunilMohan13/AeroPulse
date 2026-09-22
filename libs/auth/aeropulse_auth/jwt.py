@@ -35,6 +35,45 @@ class TokenClaims(BaseModel):
     iss: str = "aeropulse"
     exp: datetime | None = None
 
+    @classmethod
+    def from_payload(cls, payload: dict[str, Any]) -> TokenClaims:
+        """Normalize raw JWT claims into the typed auth contract."""
+        raw_roles = payload.get("roles")
+        if raw_roles is None:
+            raw_roles = payload.get("role")
+        if isinstance(raw_roles, str):
+            roles = [raw_roles]
+        elif isinstance(raw_roles, list):
+            roles = raw_roles
+        else:
+            roles = []
+
+        resolved_roles: list[Role] = []
+        for role in roles:
+            try:
+                resolved_roles.append(Role(str(role)))
+            except ValueError:
+                continue
+        if not resolved_roles:
+            resolved_roles = [Role.VIEWER]
+
+        exp = payload.get("exp")
+        exp_dt: datetime | None = None
+        if isinstance(exp, (int, float)):
+            exp_dt = datetime.fromtimestamp(exp, tz=UTC)
+        elif isinstance(exp, str) and exp:
+            try:
+                exp_dt = datetime.fromtimestamp(float(exp), tz=UTC)
+            except ValueError:
+                exp_dt = None
+
+        return cls(
+            sub=str(payload.get("sub", "")),
+            roles=resolved_roles,
+            iss=str(payload.get("iss", "aeropulse")),
+            exp=exp_dt,
+        )
+
 
 def encode_token(
     subject: str,
@@ -86,18 +125,33 @@ def decode_token(token: str, *, settings: Settings | None = None) -> TokenClaims
     if not token:
         raise AuthError("Missing bearer token", status_code=401)
     cfg = settings or get_settings()
+
     try:
-        payload = jwt.decode(
-            token,
-            cfg.jwt_secret.get_secret_value(),
-            algorithms=[cfg.jwt_algorithm],
-            issuer=cfg.jwt_issuer,
-        )
+        if cfg.oidc_jwks_url:
+            header = jwt.get_unverified_header(token)
+            signing_key = jwt.PyJWKClient(cfg.oidc_jwks_url).get_signing_key_from_jwt(token)
+            payload = jwt.decode(
+                token,
+                signing_key.key,
+                algorithms=[header.get("alg", cfg.jwt_algorithm)],
+                issuer=cfg.jwt_issuer,
+                options={"verify_aud": False},
+            )
+        else:
+            payload = jwt.decode(
+                token,
+                cfg.jwt_secret.get_secret_value(),
+                algorithms=[cfg.jwt_algorithm],
+                issuer=cfg.jwt_issuer,
+            )
     except jwt.ExpiredSignatureError as exc:
         raise AuthError("Token expired", status_code=401) from exc
     except jwt.InvalidTokenError as exc:
         raise AuthError("Invalid token", status_code=401) from exc
-    return TokenClaims.model_validate(payload)
+    except Exception as exc:
+        raise AuthError("Invalid token", status_code=401) from exc
+
+    return TokenClaims.from_payload(payload)
 
 
 def require_roles(claims: TokenClaims, *allowed: Role) -> None:

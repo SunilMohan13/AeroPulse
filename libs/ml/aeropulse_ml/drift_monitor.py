@@ -156,6 +156,7 @@ def evaluate_drift(
     reference_hours: int = DEFAULT_REFERENCE_HOURS,
     grid_id: str | None = None,
     limit: int = 5000,
+    min_samples: int = 30,
 ) -> DriftReport:
     """Compare a recent window against a reference window for every signal.
 
@@ -167,6 +168,9 @@ def evaluate_drift(
         reference_hours: Length of the preceding reference window.
         grid_id: Restrict to one cell, or None for all.
         limit: Maximum rows per window.
+        min_samples: Rows required in each window before a verdict is given.
+            Below it the signal reports ``INSUFFICIENT_DATA`` rather than a
+            statistic computed from too little data to mean anything.
 
     Returns:
         A :class:`DriftReport`. A reader failure on one signal is recorded as
@@ -197,7 +201,7 @@ def evaluate_drift(
             )
             continue
 
-        metrics = distribution_drift(reference, current)
+        metrics = distribution_drift(reference, current, min_samples=min_samples)
         findings.append(
             DriftFinding(
                 signal=signal,

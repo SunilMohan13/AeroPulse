@@ -3,7 +3,7 @@ import { getFiresAt } from '../data/mockFires'
 import { defaultWind } from '../data/mockWind'
 import { mockIndustries } from '../data/mockPopulation'
 import type { GridCell, FireObservation, WindObservation, IndustrySite } from '../types'
-import { liveAirQuality, liveFires, liveWeather } from '../api/live'
+import { liveAirQuality, liveFires, liveIndustries, liveWeather } from '../api/live'
 import { resolve } from './resolve'
 
 const delay = (ms = 100) => new Promise((r) => setTimeout(r, ms))
@@ -57,11 +57,18 @@ export async function fetchWeather(): Promise<WindObservation[]> {
 /**
  * Industrial sites.
  *
- * The OSM and industry connectors persist as `raster.v1` product footprints,
- * not as named point assets with a type, so `/api/v1/map/satellite` cannot
- * reconstruct this layer. Demo-only until an inventory endpoint exists.
+ * Live via `GET /api/v1/map/industry`, which serves the replayed
+ * Industry/OCEMS footprints. Those are product footprints rather than named
+ * point assets, so live entries carry a generic label where the demo has a
+ * refinery or kiln name — the adapter does not invent one.
  */
 export async function fetchIndustries(): Promise<IndustrySite[]> {
-  await delay(40)
-  return mockIndustries
+  return resolve(
+    'industry',
+    async () => {
+      await delay(40)
+      return mockIndustries
+    },
+    liveIndustries,
+  )
 }
