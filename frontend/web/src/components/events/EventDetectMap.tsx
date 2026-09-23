@@ -28,8 +28,11 @@ import { cn } from '../../utils/cn'
 import {
   DetectDecisionLab,
   applyDetectScenario,
+  applyHorizon,
+  horizonRibbonScale,
   scenarioCaption,
   scenarioRibbonKm,
+  type DetectHorizon,
   type DetectScenario,
 } from './DetectDecisionLab'
 
@@ -277,9 +280,15 @@ export function EventDetectMap({
     [event.lat, event.lon],
   )
   const [scenario, setScenario] = useState<DetectScenario>('now')
-  const dest = useMemo(
+  const [horizon, setHorizon] = useState<DetectHorizon>(6)
+  const [layersOpen, setLayersOpen] = useState(false)
+  const scenarioDest = useMemo(
     () => applyDetectScenario(event, corridorDest, scenario),
     [event.lat, event.lon, corridorDest, scenario],
+  )
+  const dest = useMemo(
+    () => applyHorizon(event, scenarioDest, horizon),
+    [event.lat, event.lon, scenarioDest, horizon],
   )
   const camera = useMemo(
     () => detectCamera(event, corridorDest),
@@ -296,23 +305,33 @@ export function EventDetectMap({
     if (!demoRunning) {
       setVisible(ALL_DETECT_LAYERS)
       setScenario('now')
+      setHorizon(6)
       return
     }
     if (demoPhase === 'fire') {
       setVisible({ fires: true, plume: false, smoke: false, wind: false, evidence: false, places: true })
       setScenario('now')
+      setHorizon(0)
     } else if (demoPhase === 'anomaly') {
       setVisible({ fires: true, plume: false, smoke: false, wind: false, evidence: true, places: true })
+      setHorizon(0)
     } else if (demoPhase === 'wind') {
       setVisible({ fires: true, plume: false, smoke: false, wind: true, evidence: false, places: true })
-    } else if (demoPhase === 'plume' || demoPhase === 'forecast') {
+      setHorizon(0)
+    } else if (demoPhase === 'plume') {
       setVisible({ fires: true, plume: true, smoke: true, wind: true, evidence: false, places: true })
       setScenario('now')
+      setHorizon(6)
+    } else if (demoPhase === 'forecast') {
+      setVisible({ fires: true, plume: true, smoke: true, wind: true, evidence: false, places: true })
+      setHorizon(12)
     } else if (demoPhase === 'confirmed') {
       setVisible(ALL_DETECT_LAYERS)
+      setHorizon(6)
     } else if (demoPhase === 'risk' || demoPhase === 'complete') {
       setVisible(ALL_DETECT_LAYERS)
       setScenario('grap')
+      setHorizon(12)
     }
   }, [demoRunning, demoPhase])
 
@@ -426,12 +445,22 @@ export function EventDetectMap({
     [dest.lon, dest.lat],
   )
   const ribbon = useMemo(
-    () => plumeRibbon(origin, target, scenarioRibbonKm(scenario)),
-    [origin, target, scenario],
+    () =>
+      plumeRibbon(
+        origin,
+        target,
+        scenarioRibbonKm(scenario) * horizonRibbonScale(horizon),
+      ),
+    [origin, target, scenario, horizon],
   )
   const ribbonCore = useMemo(
-    () => plumeRibbon(origin, target, Math.max(4, scenarioRibbonKm(scenario) * 0.45)),
-    [origin, target, scenario],
+    () =>
+      plumeRibbon(
+        origin,
+        target,
+        Math.max(4, scenarioRibbonKm(scenario) * horizonRibbonScale(horizon) * 0.45),
+      ),
+    [origin, target, scenario, horizon],
   )
   const axis = useMemo(() => curvePath(origin, target, 0.06), [origin, target])
   const chevrons = useMemo(() => windChevrons(origin, target, pulse), [origin, target, pulse])
@@ -650,6 +679,7 @@ export function EventDetectMap({
     visible,
     scenario,
     corridorDest,
+    horizon,
   ])
 
   return (
@@ -681,9 +711,14 @@ export function EventDetectMap({
         ) : null}
         {visible.plume ? (
           <div className="rounded border border-amber-300/25 bg-black/60 px-2 py-1 font-mono text-[10px] uppercase tracking-[0.16em] text-amber-200/90">
-            {scenarioCaption(scenario, towardNcr)}
+            {scenarioCaption(scenario, towardNcr, horizon)}
           </div>
         ) : null}
+        <div className="flex flex-wrap gap-2 px-0.5 font-mono text-[9px] uppercase tracking-[0.12em] text-text-muted">
+          <span className="text-orange-300/90">● Fire observed</span>
+          <span className="text-amber-200/80">● Plume predicted</span>
+          <span className="text-sky-200/80">● Wind</span>
+        </div>
       </div>
       <div className="absolute right-3 top-3 z-20 flex max-h-[calc(100%-5.5rem)] w-44 flex-col gap-2">
         {visible.wind ? (
@@ -691,17 +726,30 @@ export function EventDetectMap({
             Wind from {WIND_FROM_DEG}° · {WIND_SPEED_MS} m/s
           </div>
         ) : null}
-        <DetectLayerPanel
-          visible={visible}
-          onToggle={toggleLayer}
-          evidence={nodes}
-          hiddenEvidenceIds={hiddenEvidenceIds}
-          onToggleEvidence={toggleEvidence}
-        />
+        {layersOpen ? (
+          <DetectLayerPanel
+            visible={visible}
+            onToggle={toggleLayer}
+            evidence={nodes}
+            hiddenEvidenceIds={hiddenEvidenceIds}
+            onToggleEvidence={toggleEvidence}
+            onClose={() => setLayersOpen(false)}
+          />
+        ) : (
+          <button
+            type="button"
+            onClick={() => setLayersOpen(true)}
+            className="pointer-events-auto rounded-lg border border-border bg-bg-panel/90 px-2.5 py-1.5 text-left font-mono text-[10px] uppercase tracking-[0.16em] text-text-muted backdrop-blur hover:text-text-secondary"
+          >
+            Layers
+          </button>
+        )}
       </div>
       <DetectDecisionLab
         scenario={scenario}
         onScenario={setScenario}
+        horizon={horizon}
+        onHorizon={setHorizon}
         className="absolute bottom-[7.25rem] left-3 z-20"
       />
     </div>
@@ -714,12 +762,14 @@ function DetectLayerPanel({
   evidence,
   hiddenEvidenceIds,
   onToggleEvidence,
+  onClose,
 }: {
   visible: Record<DetectLayerKey, boolean>
   onToggle: (key: DetectLayerKey) => void
   evidence: EvidenceNode[]
   hiddenEvidenceIds: Set<string>
   onToggleEvidence: (id: string) => void
+  onClose: () => void
 }) {
   return (
     <div
@@ -727,9 +777,16 @@ function DetectLayerPanel({
       onMouseDown={(e) => e.stopPropagation()}
       onPointerDown={(e) => e.stopPropagation()}
     >
-      <p className="mb-1.5 px-1 font-mono text-[10px] uppercase tracking-[0.16em] text-text-muted">
-        Layers
-      </p>
+      <div className="mb-1.5 flex items-center justify-between px-1">
+        <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-text-muted">Layers</p>
+        <button
+          type="button"
+          onClick={onClose}
+          className="text-[10px] text-text-muted hover:text-text-secondary"
+        >
+          Hide
+        </button>
+      </div>
       <div className="flex flex-col gap-0.5">
         {DETECT_LAYER_OPTIONS.map(({ key, label }) => (
           <button
