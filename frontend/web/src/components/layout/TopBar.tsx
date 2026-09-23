@@ -87,7 +87,7 @@ export function TopBar() {
             <button
               type="button"
               onClick={() => {
-                navigate('/')
+                navigate('/events')
                 startDemo()
               }}
               className="hidden rounded-md border border-border px-2 py-1.5 text-xs text-text-muted hover:text-text-secondary sm:inline"

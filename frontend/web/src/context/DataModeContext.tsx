@@ -28,7 +28,7 @@ interface DataModeValue {
   blocker: LiveBlocker
   /** Human-readable explanation of `blocker`. */
   blockerMessage: string | null
-  /** Endpoints serving demo data because live failed. */
+  /** Endpoints that failed in live mode this session. */
   fallbacks: { endpoint: string; reason: string }[]
   /** True while the health probe is in flight. */
   checking: boolean
@@ -93,12 +93,7 @@ export function DataModeProvider({ children }: { children: ReactNode }) {
       // Enter live only when explicitly configured to; a restored session
       // choice is already in the store.
       if (DEFAULT_DATA_MODE === 'live' && getDataMode() === 'demo') setDataMode('live')
-      return
     }
-    // A restored "live" choice cannot be honoured if the backend is gone.
-    // Dropping to demo is better than leaving every panel on a fallback
-    // banner while the header claims Live.
-    if (getDataMode() === 'live') setDataMode('demo')
   }, [blocker])
 
   const setMode = useCallback(

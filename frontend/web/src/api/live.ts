@@ -45,7 +45,7 @@ import type {
   TimelineEvent,
   WindObservation,
 } from '../types'
-import { apiGet, apiPost, ApiError, type FeatureCollection, type ListResponse } from './client'
+import { apiGet, apiPost, apiPostForm, ApiError, type FeatureCollection, type ListResponse } from './client'
 import {
   stationToGridCell,
   toEvidenceGraph,
@@ -329,21 +329,17 @@ function toRiskBand(value: string): PopulationRiskArea['risk'] {
 /**
  * Citizen reports from `GET /api/v1/citizen/reports`.
  *
- * Every report the API returns is `moderation=pending` with
- * `cv_class=unknown` until a CV model is deployed, so `classification` will
- * read "unknown" and confidence stays low. That is the true state of the
- * pipeline, not a mapping defect.
+ * Classification is a notes keyword heuristic. There is no CV model.
  */
-export async function liveCitizenReports(): Promise<CitizenReport[]> {
-  const response = await apiGet<ListResponse<ApiCitizenReport>>('/api/v1/citizen/reports')
-  return response.items.map((report) => ({
+export function toUiCitizenReport(report: ApiCitizenReport, photoUrl?: string): CitizenReport {
+  return {
     id: report.report_id,
     type: report.notes ?? report.observation_type,
-    location: report.notes ?? `${report.lat.toFixed(3)}, ${report.lon.toFixed(3)}`,
+    location: `${report.lat.toFixed(3)}, ${report.lon.toFixed(3)}`,
     lat: report.lat,
     lon: report.lon,
     reportedAt: report.observed_at,
-    confidence: report.cv_class === 'unknown' ? 50 : 70,
+    confidence: 0,
     classification: report.cv_class,
     corroboration: report.correlated_event_id ? 1 : 0,
     status:
@@ -353,7 +349,37 @@ export async function liveCitizenReports(): Promise<CitizenReport[]> {
           ? 'REJECTED'
           : 'PENDING',
     relatedEventId: report.correlated_event_id ?? undefined,
-  }))
+    mediaUri: report.media_uri ?? undefined,
+    photoUrl,
+  }
+}
+
+export async function liveCitizenReports(): Promise<CitizenReport[]> {
+  const response = await apiGet<ListResponse<ApiCitizenReport>>('/api/v1/citizen/reports')
+  return response.items.map((report) => toUiCitizenReport(report))
+}
+
+export async function liveCreateCitizenReport(input: {
+  lat: number
+  lon: number
+  observationType: string
+  notes: string
+}): Promise<ApiCitizenReport> {
+  return apiPost<ApiCitizenReport>('/api/v1/citizen/reports', {
+    lat: input.lat,
+    lon: input.lon,
+    observation_type: input.observationType,
+    notes: input.notes || null,
+  })
+}
+
+export async function liveAttachCitizenPhoto(
+  reportId: string,
+  file: File,
+): Promise<ApiCitizenReport> {
+  const body = new FormData()
+  body.append('file', file)
+  return apiPostForm<ApiCitizenReport>(`/api/v1/citizen/reports/${reportId}/media`, body)
 }
 
 /** Industrial assets from `GET /api/v1/map/industry`. */

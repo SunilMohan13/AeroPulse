@@ -1,21 +1,24 @@
 import { useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Card, CardBody, CardHeader } from '../components/common/Card'
 import { StatusBadge, ScientificBadge } from '../components/common/Badge'
-import { fetchCitizenStats } from '../services/citizenService'
+import { fetchCitizenStats, CITIZEN_LIVE_CAVEAT } from '../services/citizenService'
 import { CitizenReportMap } from '../components/map/CitizenReportMap'
+import { CitizenUploadForm } from '../components/events/CitizenUploadForm'
 import type { CitizenReport } from '../types'
 import { LiveCaveatNotice } from '../components/common/DemoOnlyNotice'
-import { CITIZEN_LIVE_CAVEAT } from '../services/citizenService'
+import { FallbackBanner } from '../components/common/Provenance'
 import { useDataMode } from '../context/DataModeContext'
 
 export function CitizenReports() {
   const { mode } = useDataMode()
+  const queryClient = useQueryClient()
   const [searchParams] = useSearchParams()
   const highlightId = searchParams.get('highlight')
   const { data } = useQuery({ queryKey: ['citizenStats', mode], queryFn: fetchCitizenStats })
   const [selected, setSelected] = useState<CitizenReport | null>(null)
+  const [previews, setPreviews] = useState<Record<string, string>>({})
 
   const reports = data?.reports ?? []
 
@@ -33,23 +36,34 @@ export function CitizenReports() {
       </div>
 
       <LiveCaveatNotice reason={CITIZEN_LIVE_CAVEAT} />
+      <FallbackBanner />
+
+      <CitizenUploadForm
+        onSubmitted={(report) => {
+          if (report.photoUrl) {
+            setPreviews((current) => ({ ...current, [report.id]: report.photoUrl! }))
+          }
+          setSelected(report)
+          void queryClient.invalidateQueries({ queryKey: ['citizenStats', mode] })
+        }}
+      />
 
       <div className="grid grid-cols-3 gap-4">
         <Card>
           <CardBody className="text-center">
-            <p className="font-mono text-2xl font-bold">{data?.totalToday ?? (mode === 'live' ? 0 : 312)}</p>
+            <p className="font-mono text-2xl font-bold">{data?.totalToday ?? 0}</p>
             <p className="text-xs text-text-muted">reports today</p>
           </CardBody>
         </Card>
         <Card>
           <CardBody className="text-center">
-            <p className="font-mono text-2xl font-bold">{data?.awaiting ?? (mode === 'live' ? 0 : 27)}</p>
+            <p className="font-mono text-2xl font-bold">{data?.awaiting ?? 0}</p>
             <p className="text-xs text-text-muted">awaiting verification</p>
           </CardBody>
         </Card>
         <Card>
           <CardBody className="text-center">
-            <p className="font-mono text-2xl font-bold">{data?.correlated ?? (mode === 'live' ? 0 : 84)}</p>
+            <p className="font-mono text-2xl font-bold">{data?.correlated ?? 0}</p>
             <p className="text-xs text-text-muted">correlated with events</p>
           </CardBody>
         </Card>
@@ -89,7 +103,6 @@ export function CitizenReports() {
                 <p className="text-xs text-text-muted">
                   {r.location} · {new Date(r.reportedAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
                 </p>
-                <p className="text-xs text-text-secondary">Confidence {r.confidence}%</p>
               </button>
             ))}
           </CardBody>
@@ -103,6 +116,13 @@ export function CitizenReports() {
           <CardBody>
             {selected ? (
               <div className="space-y-3 text-sm">
+                {(previews[selected.id] || selected.photoUrl) && (
+                  <img
+                    src={previews[selected.id] || selected.photoUrl}
+                    alt=""
+                    className="h-40 w-full rounded-md object-cover"
+                  />
+                )}
                 <div>
                   <p className="text-text-muted">Location</p>
                   <p className="font-medium">{selected.location}</p>
@@ -121,24 +141,29 @@ export function CitizenReports() {
                   <p>{selected.type}</p>
                 </div>
                 <div>
-                  <p className="text-text-muted">AI classification</p>
+                  <p className="text-text-muted">Classification</p>
                   <p>{selected.classification}</p>
                 </div>
-                <div>
-                  <p className="text-text-muted">Corroboration</p>
-                  <p>{selected.corroboration} independent signals</p>
-                </div>
+                {selected.mediaUri ? (
+                  <div>
+                    <p className="text-text-muted">Stored photo</p>
+                    <p className="break-all font-mono text-[11px] text-text-secondary">{selected.mediaUri}</p>
+                  </div>
+                ) : null}
+                {selected.relatedEventId ? (
+                  <div>
+                    <p className="text-text-muted">Linked event</p>
+                    <p className="text-intel">
+                      {selected.relatedEventId} · corroboration only
+                    </p>
+                  </div>
+                ) : null}
                 <div>
                   <p className="text-text-muted">Status</p>
                   <StatusBadge variant={selected.status === 'CORROBORATED' ? 'success' : 'warning'}>
                     {selected.status}
                   </StatusBadge>
                 </div>
-                {selected.relatedEventId && (
-                  <p className="text-xs text-intel">
-                    Linked event {selected.relatedEventId} · corroboration only
-                  </p>
-                )}
                 <p className="text-xs text-text-muted">
                   Citizen reports corroborate events; a single photo alone does not create high-severity alerts.
                 </p>

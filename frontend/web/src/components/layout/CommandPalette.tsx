@@ -32,9 +32,9 @@ function PaletteDialog({ onClose }: { onClose: () => void }) {
   const heroEventId = useHeroEventId()
   const commands = useMemo(
     () => [
-      { label: 'Go to Overview', route: '/', keywords: 'home dashboard kpi' },
-      { label: 'Open Live Map', route: '/map', keywords: 'geospatial grid fire plume' },
-      { label: 'View Active Events', route: heroEventPath(heroEventId), keywords: 'incident punjab' },
+      { label: 'Go to Overview', route: '/', keywords: 'home dashboard kpi briefing' },
+      { label: 'Open Live Map', route: '/map', keywords: 'geospatial grid fire plume corridor' },
+      { label: 'Investigate Event', route: heroEventPath(heroEventId), keywords: 'incident detect punjab' },
       { label: 'Open Forecast', route: '/forecast', keywords: 'predicted plume horizon' },
       { label: 'Open Risk', route: '/risk', keywords: 'population exposure' },
       { label: 'Open Evidence', route: '/evidence', keywords: 'graph provenance' },

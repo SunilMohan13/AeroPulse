@@ -135,6 +135,33 @@ export async function apiPost<T>(path: string, body: unknown): Promise<T> {
   }
 }
 
+/** POST multipart form data (citizen photo). Do not set Content-Type — the boundary must be the browser's. */
+export async function apiPostForm<T>(path: string, body: FormData): Promise<T> {
+  if (!HAS_API_TOKEN) throw new MissingTokenError(path)
+
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), Math.max(API_TIMEOUT_MS, 20_000))
+  try {
+    const response = await fetch(requestUrl(path), {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${API_TOKEN}`,
+        Accept: 'application/json',
+      },
+      body,
+      signal: controller.signal,
+    })
+    if (!response.ok) throw new ApiError(`POST ${path} failed`, response.status, path)
+    return (await response.json()) as T
+  } catch (error) {
+    if (error instanceof ApiError) throw error
+    const message = error instanceof Error ? error.message : 'network failure'
+    throw new ApiError(message, 0, path)
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
 /**
  * Probe the backend without authentication.
  *

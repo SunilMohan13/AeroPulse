@@ -116,8 +116,9 @@ export function MaybeValue({
 }
 
 /**
- * Banner shown when live mode is on but some endpoints answered from demo
- * data, or when a model output is a deterministic stand-in.
+ * Banner shown when live mode is on and an API call failed.
+ *
+ * The failed endpoint is named. Demo values are not rendered in their place.
  */
 export function FallbackBanner() {
   const { mode, fallbacks } = useDataMode()
@@ -128,8 +129,8 @@ export function FallbackBanner() {
       <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
       <div className="space-y-0.5">
         <p className="font-medium">
-          Live mode, but {fallbacks.length} data source{fallbacks.length === 1 ? '' : 's'} fell back
-          to demo data
+          Live request failed for {fallbacks.length} source{fallbacks.length === 1 ? '' : 's'} —
+          demo data was not substituted
         </p>
         <ul className="text-amber-200/80">
           {fallbacks.map((f) => (
@@ -161,11 +162,40 @@ export function ModeContextNote({ className }: { className?: string }) {
         </>
       ) : (
         <>
-          <span className="font-medium text-emerald-300">Live</span> — read from{' '}
-          <span className="font-mono">{apiBase}</span>. Coverage is limited to what the backend has
-          persisted, and models withheld by the promotion gate are served as labelled baselines.
+          <span className="font-medium text-emerald-300">Live</span> — the UI is calling{' '}
+          <span className="font-mono">{apiBase || '/api'}</span>. On this Docker stack Timescale
+          has no fused events yet, so the API answers with the Punjab replay seed (same episode as
+          Demo, as contract-valid records). That is fixture replay, not CPCB/FIRMS ingest.
+          Connector workers are not running.
         </>
       )}
+    </p>
+  )
+}
+
+/**
+ * Same episode, different question.
+ *
+ * Overview / Live Map / Events all read the Punjab–Delhi picture. They must
+ * not invent a second dataset. They must also not look like three copies of
+ * the same canvas — this note names the slice this screen actually serves.
+ */
+export function ScreenJobNote({
+  question,
+  serves,
+  notThis,
+}: {
+  question: string
+  serves: string
+  notThis: string
+}) {
+  return (
+    <p className="text-[11px] leading-snug text-text-secondary">
+      <span className="font-medium text-text-primary">{question}</span>
+      <span className="text-text-muted"> · </span>
+      {serves}
+      <span className="text-text-muted"> · not </span>
+      {notThis}
     </p>
   )
 }

@@ -11,7 +11,6 @@
 import type { HazardCell, ModelCatalogEntry, PeakForecastCell } from '../types'
 import { getGridAt } from '../data/mockGrid'
 import { liveHazard, liveModels, livePeak, type LiveHazard, type LivePeak } from '../api/live'
-import { isDemo } from './dataMode'
 import { resolve } from './resolve'
 
 /** CPCB "Very Poor" breakpoint — the single reconciled hazard threshold. */
@@ -192,9 +191,12 @@ const DEMO_MODELS: ModelCatalogEntry[] = [
 ]
 
 export async function fetchModelCatalog(): Promise<ModelCatalogEntry[]> {
-  if (isDemo()) {
-    await delay()
-    return DEMO_MODELS
-  }
-  return resolve('models', async () => DEMO_MODELS, liveModels)
+  return resolve(
+    'models',
+    async () => {
+      await delay()
+      return DEMO_MODELS
+    },
+    liveModels,
+  )
 }

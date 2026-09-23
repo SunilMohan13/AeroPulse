@@ -222,6 +222,8 @@ export interface CitizenReport {
   corroboration: number
   status: 'PENDING' | 'CORROBORATED' | 'REJECTED'
   relatedEventId?: string
+  mediaUri?: string
+  photoUrl?: string
 }
 
 export interface PopulationRiskArea {

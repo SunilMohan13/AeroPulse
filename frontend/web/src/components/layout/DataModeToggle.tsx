@@ -6,9 +6,8 @@ import { cn } from '../../utils/cn'
  * Demo / Live switch.
  *
  * Live is disabled, not merely unselected, when the backend is unreachable
- * or no token is configured. A toggle that can be clicked into a broken
- * state and silently shows demo data is worse than one that explains why it
- * cannot move.
+ * or no token is configured. The toggle cannot be clicked into a Live
+ * header that then paints demo numbers.
  */
 export function DataModeToggle() {
   const { mode, setMode, blocker, blockerMessage, checking } = useDataMode()

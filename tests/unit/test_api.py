@@ -243,6 +243,36 @@ def test_citizen_report_round_trip(client: TestClient, settings: Settings) -> No
     assert any(item["report_id"] == report_id for item in listed.json()["items"])
 
 
+def test_citizen_photo_upload_is_processed(client: TestClient, settings: Settings) -> None:
+    headers = _auth(settings, Role.VIEWER)
+    created = client.post(
+        "/api/v1/citizen/reports",
+        headers=headers,
+        json={"lat": 28.61, "lon": 77.21, "observation_type": "photo", "notes": "heavy haze over Delhi"},
+    )
+    assert created.status_code == 201
+    report_id = created.json()["report_id"]
+    assert created.json()["cv_class"] == "haze"
+
+    jpeg = b"\xff\xd8\xff" + b"\x00" * 32
+    attached = client.post(
+        f"/api/v1/citizen/reports/{report_id}/media",
+        headers=headers,
+        files={"file": ("haze.jpg", jpeg, "image/jpeg")},
+    )
+    assert attached.status_code == 200
+    body = attached.json()
+    assert body["media_uri"].startswith("s3://")
+    assert body["cv_class"] == "haze"
+
+    rejected = client.post(
+        f"/api/v1/citizen/reports/{report_id}/media",
+        headers=headers,
+        files={"file": ("notes.txt", b"not-an-image", "text/plain")},
+    )
+    assert rejected.status_code == 400
+
+
 def test_copilot_does_not_invent_event(client: TestClient, settings: Settings) -> None:
     headers = _auth(settings, Role.VIEWER)
     response = client.post(

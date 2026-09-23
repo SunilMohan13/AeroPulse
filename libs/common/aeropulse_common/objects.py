@@ -18,9 +18,13 @@ def raw_object_uri(source_id: str, name: str, *, now: datetime | None = None) ->
 
 
 def put_raw_json(
-    source_id: str, name: str, payload: bytes, settings: Settings | None = None
+    source_id: str,
+    name: str,
+    payload: bytes,
+    settings: Settings | None = None,
+    content_type: str = "application/json",
 ) -> str:
-    """Upload raw JSON to MinIO. Soft-fails to a logical URI if the store is down.
+    """Upload raw bytes to MinIO. Soft-fails to a logical URI if the store is down.
 
     Note: on failure the returned ``s3://`` URI is logical only — nothing was
     written, so `provenance.raw_object_uri` will not resolve. Callers must not
@@ -30,8 +34,9 @@ def put_raw_json(
     Args:
         source_id: Connector source.
         name: Object basename.
-        payload: JSON bytes.
+        payload: Object bytes (JSON, image, or other).
         settings: Optional settings override.
+        content_type: Stored object type. JSON by default; photos pass image/*.
 
     Returns:
         ``s3://`` URI.
@@ -65,7 +70,7 @@ def put_raw_json(
             key,
             BytesIO(payload),
             length=len(payload),
-            content_type="application/json",
+            content_type=content_type,
         )
     except Exception as exc:
         logger.warning(

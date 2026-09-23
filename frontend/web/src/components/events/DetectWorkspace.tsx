@@ -43,7 +43,7 @@ function MiniBar({ label, value }: { label: string; value: number }) {
   )
 }
 
-/** Three-column Detect chrome: evidence · map · likelihood. Shared by Events, Overview, and Live Map. */
+/** Three-column Detect chrome: evidence · map · likelihood. Events investigation only. */
 export function DetectWorkspace({
   event,
   evidence,
@@ -54,7 +54,7 @@ export function DetectWorkspace({
   event: PollutionEvent
   evidence: EvidenceItem[]
   map: ReactNode
-  /** Extra bottom padding so meters sit above a timeline (Live Map). */
+  /** Extra bottom padding so meters sit above a timeline. */
   metersOffsetClass?: string
   detailTo?: { href: string; label: string }
 }) {

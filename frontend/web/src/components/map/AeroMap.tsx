@@ -160,6 +160,7 @@ export function AeroMap({
   className,
 }: AeroMapProps) {
   const { mode } = useDataMode()
+  const scenarioChrome = mode === 'demo'
   const showGlobeBar = showGlobeBarProp ?? !compact
   const mapContainerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<maplibregl.Map | null>(null)
@@ -295,7 +296,7 @@ export function AeroMap({
       )
       setMapInteraction(map, sceneRef.current)
       softenBasemapLabels(map, sceneRef.current === 'globe')
-      syncGlobeIntelOverlays(map, sceneRef.current === 'globe', showFireSeasonGlobe)
+      syncGlobeIntelOverlays(map, sceneRef.current === 'globe', scenarioChrome && showFireSeasonGlobe)
     }
     map.on('load', onStyleReady)
     map.on('style.load', onStyleReady)
@@ -322,11 +323,11 @@ export function AeroMap({
     if (!map) return
     const applyIntel = () => {
       softenBasemapLabels(map, scene === 'globe')
-      syncGlobeIntelOverlays(map, scene === 'globe' && showOrbit, showFireSeasonGlobe)
+      syncGlobeIntelOverlays(map, scene === 'globe' && showOrbit, scenarioChrome && showFireSeasonGlobe)
     }
     if (map.isStyleLoaded()) applyIntel()
     else map.once('style.load', applyIntel)
-  }, [scene, showOrbit, expanded, basemapFlavor, showFireSeasonGlobe])
+  }, [scene, showOrbit, expanded, basemapFlavor, showFireSeasonGlobe, scenarioChrome])
 
   useEffect(() => {
     const map = mapRef.current
@@ -479,8 +480,9 @@ export function AeroMap({
     [grid, transportBearing],
   )
   const grapAlert = useMemo(
-    () => showGrapZone && showEnvironmentalLayers && grapPlumeIntersection(grid),
-    [showGrapZone, showEnvironmentalLayers, grid],
+    () =>
+      scenarioChrome && showGrapZone && showEnvironmentalLayers && grapPlumeIntersection(grid),
+    [scenarioChrome, showGrapZone, showEnvironmentalLayers, grid],
   )
   const globeDecor = scene === 'globe'
 
@@ -524,25 +526,25 @@ export function AeroMap({
     () =>
       createBaselinePlumeLayer(
         baselineGrid,
-        showEnvironmentalLayers && showBaselinePlume && layers.forecast,
+        showEnvironmentalLayers && scenarioChrome && showBaselinePlume && layers.forecast,
       ),
-    [baselineGrid, showBaselinePlume, layers.forecast, showEnvironmentalLayers],
+    [baselineGrid, showBaselinePlume, layers.forecast, showEnvironmentalLayers, scenarioChrome],
   )
   const plumeLayer = useMemo(
     () => createPlumeLayer(grid, showEnvironmentalLayers && layers.forecast),
     [grid, layers.forecast, showEnvironmentalLayers],
   )
   const grapLayer = useMemo(
-    () => createGrapZoneLayer(GRAP_NCR_RING, showEnvironmentalLayers && showGrapZone),
-    [showGrapZone, showEnvironmentalLayers],
+    () => createGrapZoneLayer(GRAP_NCR_RING, showEnvironmentalLayers && scenarioChrome && showGrapZone),
+    [showGrapZone, showEnvironmentalLayers, scenarioChrome],
   )
   const exposureRibbonLayer = useMemo(
     () =>
       createExposureRibbonLayer(
         exposurePath,
-        showEnvironmentalLayers && showExposureRibbon && layers.forecast,
+        showEnvironmentalLayers && scenarioChrome && showExposureRibbon && layers.forecast,
       ),
-    [exposurePath, showExposureRibbon, layers.forecast, showEnvironmentalLayers],
+    [exposurePath, showExposureRibbon, layers.forecast, showEnvironmentalLayers, scenarioChrome],
   )
   const populationLayer = useMemo(
     () => createPopulationLayer(grid, showEnvironmentalLayers && layers.population),
@@ -816,10 +818,10 @@ export function AeroMap({
           className={!compact && chrome.timeline ? (embedded ? 'bottom-44' : 'bottom-40') : undefined}
         />
       )}
-      {!compact && !embedded && scene === 'globe' && <MapIntelChrome scene={scene} />}
-      {!compact && !embedded && <MapScenarioPanel scene={scene} className="!right-20 !left-auto" />}
-      {!compact && !embedded && <MapGrapBanner active={grapAlert} />}
-      {!compact && <MapStoryCaption caption={mapStoryCaption} />}
+      {scenarioChrome && !compact && !embedded && scene === 'globe' && <MapIntelChrome scene={scene} />}
+      {scenarioChrome && !compact && !embedded && <MapScenarioPanel scene={scene} className="!right-20 !left-auto" />}
+      {scenarioChrome && !compact && !embedded && <MapGrapBanner active={grapAlert} />}
+      {scenarioChrome && !compact && <MapStoryCaption caption={mapStoryCaption} />}
       {!compact && !embedded && (
         <MapViewControls
           scene={scene}
