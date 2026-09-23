@@ -1,7 +1,7 @@
 import { useParams, Navigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { motion } from 'framer-motion'
-import { ArrowRight, ChevronDown } from 'lucide-react'
+import { ChevronDown } from 'lucide-react'
 import { fetchEvent, fetchEvents } from '../services/eventService'
 import { fetchEvidence, fetchEventTimeline } from '../services/evidenceService'
 import { fetchForecast, fetchObservedHistory } from '../services/forecastService'
@@ -16,12 +16,8 @@ import { formatDateTimeIST, formatPopulation } from '../utils/format'
 import { ActionBrief } from '../components/events/ActionBrief'
 import { CitizenCorroboration } from '../components/events/CitizenCorroboration'
 import { useDataMode } from '../context/DataModeContext'
-import {
-  FallbackBanner,
-  MaybeValue,
-  ProvenanceBadge,
-  ScreenJobNote,
-} from '../components/common/Provenance'
+import { FallbackBanner, MaybeValue, ScreenJobNote } from '../components/common/Provenance'
+import { AdvancedOnly } from '../context/ViewLevelContext'
 
 export function EventsIndex() {
   const { mode } = useDataMode()
@@ -98,30 +94,38 @@ export function EventDetail() {
   if (!event) return <div className="p-8">Event not found</div>
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    // Scrolls as one page. The workspace used to take all remaining height
+    // with `flex-1`, which left the action brief below it fighting for the
+    // same space once that section stopped being collapsed by default.
+    <div className="flex h-full min-h-0 flex-col overflow-y-auto">
       <div className="shrink-0 border-b border-cyan-500/20 bg-gradient-to-r from-black via-bg-panel/40 to-black px-4 py-2">
         <h1 className="font-mono text-xs uppercase tracking-[0.22em] text-cyan-300/95">
-          Event investigation · {event.id}
+          Event investigation
+          <AdvancedOnly> · {event.id}</AdvancedOnly>
         </h1>
         <ScreenJobNote
-          question="Why did we fuse this as one event?"
+          question="Why do we think these readings are one event?"
           serves={`${evidence.length} evidence items · source likelihood · predicted plume from this cluster`}
           notThis="the full 1 km corridor grid or the multi-event catalog"
         />
         <FallbackBanner />
       </div>
 
-      <DetectWorkspace
-        event={event}
-        evidence={evidence}
-        detailTo={{ href: '/forecast', label: 'Forecast →' }}
-        map={<EventDetectMap event={event} evidence={evidence} />}
-      />
+      <div className="h-[560px] shrink-0">
+        <DetectWorkspace
+          event={event}
+          evidence={evidence}
+          detailTo={{ href: '/forecast', label: 'Forecast →' }}
+          map={<EventDetectMap event={event} evidence={evidence} />}
+        />
+      </div>
 
-      <details className="border-t border-border bg-bg-base">
+      {/* Open by default. The action brief is the answer to "so what do I
+          do", and it was the one thing on this page behind a click. */}
+      <details open className="border-t border-border bg-bg-base">
         <summary className="flex cursor-pointer list-none items-center gap-2 px-4 py-2 text-xs text-text-secondary hover:text-text-primary [&::-webkit-details-marker]:hidden">
           <ChevronDown className="h-3.5 w-3.5" />
-          Narrative, trajectory, and actions
+          What to do, and how this unfolded
         </summary>
         <div className="space-y-4 p-4">
           <ActionBrief event={event} />
@@ -201,35 +205,13 @@ export function EventDetail() {
             </CardBody>
           </Card>
 
-          <Card>
-            <CardHeader>
-              <span className="text-sm font-medium">Recommended Actions</span>
-              <ScientificBadge label="RECOMMENDED" />
-              <ProvenanceBadge provenance={event.provenance} />
-            </CardHeader>
-            <CardBody>
-              {event.recommendedActions.length > 0 ? (
-                <ul className="space-y-2">
-                  {event.recommendedActions.map((action, i) => (
-                    <li key={i} className="flex items-start gap-2 text-sm text-text-secondary">
-                      <ArrowRight className="mt-0.5 h-4 w-4 shrink-0 text-intel" />
-                      {action}
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <p className="rounded border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
-                  No API route supplies recommended actions for an event, so none are shown. The demo
-                  narrative carries an authored action list; showing it here while reading live data
-                  would present a script as a system recommendation.
-                </p>
-              )}
-              <p className="mt-3 text-xs text-text-muted">
-                Detected {formatDateTimeIST(event.detectedAt)} · Updated{' '}
-                {formatDateTimeIST(event.updatedAt)} · {event.region}
-              </p>
-            </CardBody>
-          </Card>
+          {/* The action list used to render twice on this page: once in the
+              brief above, once in a card here. Only the provenance footer
+              was unique to the card. */}
+          <p className="text-xs text-text-muted">
+            Detected {formatDateTimeIST(event.detectedAt)} · Updated{' '}
+            {formatDateTimeIST(event.updatedAt)} · {event.region}
+          </p>
         </div>
       </details>
     </div>

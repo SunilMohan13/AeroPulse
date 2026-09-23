@@ -5,6 +5,7 @@ import { ScientificBadge, StatusBadge } from '../common/Badge'
 import { CalibrationNote, ProvenanceBadge } from '../common/Provenance'
 import { fetchHazard, fetchPeakForecast, HAZARD_THRESHOLD } from '../../services/hazardService'
 import { useDataMode } from '../../context/DataModeContext'
+import { useViewLevel } from '../../context/ViewLevelContext'
 import { cn } from '../../utils/cn'
 
 /**
@@ -18,6 +19,7 @@ import { cn } from '../../utils/cn'
  */
 export function HazardOutlook({ className }: { className?: string }) {
   const { mode } = useDataMode()
+  const { advanced } = useViewLevel()
   const { data: hazard } = useQuery({ queryKey: ['hazard', mode], queryFn: fetchHazard })
   const { data: peak } = useQuery({ queryKey: ['peak', mode], queryFn: fetchPeakForecast })
 
@@ -47,7 +49,7 @@ export function HazardOutlook({ className }: { className?: string }) {
       <CardBody className="space-y-4">
         <div className="grid grid-cols-3 gap-3">
           <Tile
-            label="Cells at hazard"
+            label={advanced ? 'Cells at hazard' : 'Areas at hazard'}
             value={atRisk}
             sublabel={`of ${hazardCells.length} scored`}
             tone={atRisk > 0 ? 'warn' : 'calm'}
@@ -55,18 +57,21 @@ export function HazardOutlook({ className }: { className?: string }) {
           <Tile
             label={`Peak > ${HAZARD_THRESHOLD}`}
             value={exceeding}
-            sublabel="cells in 24 h"
+            sublabel={advanced ? 'cells in 24 h' : 'areas in 24 h'}
             tone={exceeding > 0 ? 'warn' : 'calm'}
           />
+          {/* Scoped explicitly: the Forecast card above reports the Delhi NCR
+              trajectory peak, and an unqualified "highest peak" next to it
+              reads as the same quantity disagreeing with itself. */}
           <Tile
-            label="Highest peak"
+            label="Worst single area"
             value={topPeak ? Math.round(topPeak.peakPm25) : '—'}
-            sublabel="µg/m³ projected"
+            sublabel="µg/m³ projected · any area"
             tone={topPeak && topPeak.exceedsThreshold ? 'warn' : 'calm'}
           />
         </div>
 
-        {peakCells.length > 0 && (
+        {advanced && peakCells.length > 0 && (
           <div className="space-y-1.5">
             <p className="text-xs font-medium text-text-secondary">
               Worst projected cells, next 24 h
@@ -123,6 +128,15 @@ export function HazardOutlook({ className }: { className?: string }) {
           </div>
         )}
 
+        {!advanced && (
+          <p className="text-xs text-text-secondary">
+            An area counts as at hazard when its projected 24-hour peak crosses{' '}
+            {HAZARD_THRESHOLD} µg/m³, the CPCB &ldquo;Very Poor&rdquo; breakpoint.
+            {degraded ? ' This outlook comes from a persistence rule, not a trained model.' : ''}
+          </p>
+        )}
+
+        {advanced && (
         <div className="space-y-1.5 rounded-md border border-amber-500/30 bg-amber-500/10 p-3">
           <p className="flex items-center gap-1.5 text-xs font-medium text-amber-200">
             <AlertTriangle className="h-3.5 w-3.5" />
@@ -147,6 +161,7 @@ export function HazardOutlook({ className }: { className?: string }) {
             )}
           </ul>
         </div>
+        )}
       </CardBody>
     </Card>
   )

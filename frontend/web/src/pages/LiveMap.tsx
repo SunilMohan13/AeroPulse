@@ -4,6 +4,7 @@ import { AeroMap } from '../components/map/AeroMap'
 import { SceneToggle } from '../components/layout/SceneToggle'
 import { useDataMode } from '../context/DataModeContext'
 import { FallbackBanner, ScreenJobNote } from '../components/common/Provenance'
+import { AdvancedOnly } from '../context/ViewLevelContext'
 import { fetchAirQuality, fetchFires } from '../services/mapService'
 
 export function LiveMap() {
@@ -28,19 +29,21 @@ export function LiveMap() {
               Live command map
             </h1>
             <ScreenJobNote
-              question="Where is it, cell by cell?"
+              question="Where is the pollution, area by area?"
               serves={`${cells.length} grid cells · ${fires.length} fire detections · wind, plume, timeline, layer toggles`}
               notThis="the event catalog or Detect evidence / likelihood"
             />
-            <p className="text-[11px]">
-              {mode === 'demo' ? (
-                <span className="text-intel">Demo · scripted Punjab episode.</span>
-              ) : (
-                <span className="text-emerald-300">
-                  Live · GET /api/v1/map/air-quality · /map/fire · /map/weather
-                </span>
-              )}
-            </p>
+            <AdvancedOnly>
+              <p className="text-[11px]">
+                {mode === 'demo' ? (
+                  <span className="text-intel">Demo · scripted Punjab episode.</span>
+                ) : (
+                  <span className="text-emerald-300">
+                    Live · GET /api/v1/map/air-quality · /map/fire · /map/weather
+                  </span>
+                )}
+              </p>
+            </AdvancedOnly>
           </div>
           <SceneToggle
             items={[

@@ -5,6 +5,8 @@ import { StatusBadge } from '../common/Badge'
 import { useApp } from '../../context/AppContext'
 import { useDataMode } from '../../context/DataModeContext'
 import { DataModeToggle } from './DataModeToggle'
+import { ViewLevelToggle } from './ViewLevelToggle'
+import { AdvancedOnly } from '../../context/ViewLevelContext'
 import { formatDateTimeIST } from '../../utils/format'
 
 export function TopBar() {
@@ -61,6 +63,7 @@ export function TopBar() {
 
       <div className="flex items-center gap-3">
         <DataModeToggle />
+        <ViewLevelToggle />
 
         <span className="hidden font-mono text-sm text-text-secondary sm:inline">
           {formatDateTimeIST(now.toISOString())} IST
@@ -82,18 +85,20 @@ export function TopBar() {
               onClick={startJudgeTour}
               className="rounded-md bg-intel/25 px-3 py-1.5 text-xs font-medium text-intel hover:bg-intel/35"
             >
-              Judge tour
+              Guided tour
             </button>
-            <button
-              type="button"
-              onClick={() => {
-                navigate('/events')
-                startDemo()
-              }}
-              className="hidden rounded-md border border-border px-2 py-1.5 text-xs text-text-muted hover:text-text-secondary sm:inline"
-            >
-              Map demo
-            </button>
+            <AdvancedOnly>
+              <button
+                type="button"
+                onClick={() => {
+                  navigate('/map')
+                  startDemo()
+                }}
+                className="hidden rounded-md border border-border px-2 py-1.5 text-xs text-text-muted hover:text-text-secondary sm:inline"
+              >
+                Map story
+              </button>
+            </AdvancedOnly>
           </div>
         ) : (
           <div className="flex gap-1">

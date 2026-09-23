@@ -16,6 +16,7 @@ import { ConfidenceMeters } from './ConfidenceMeters'
 import { SourceLikelihoodBars } from './SourceLikelihoodBars'
 import { getBandLabel } from '../../utils/aqi'
 import type { EvidenceItem, PollutionEvent } from '../../types'
+import { AdvancedOnly, useViewLevel } from '../../context/ViewLevelContext'
 import { cn } from '../../utils/cn'
 
 const CATEGORY_ICON: Record<string, typeof Flame> = {
@@ -26,21 +27,23 @@ const CATEGORY_ICON: Record<string, typeof Flame> = {
   Citizen: Camera,
 }
 
-function MiniBar({ label, value }: { label: string; value: number }) {
-  return (
-    <div className="space-y-1">
-      <div className="flex items-center justify-between gap-2 text-[11px]">
-        <span className="text-text-muted">{label}</span>
-        <span className="font-mono text-text-secondary">{value}%</span>
-      </div>
-      <div className="h-1.5 overflow-hidden rounded-full bg-white/10">
-        <div
-          className="h-full rounded-full bg-emerald-400"
-          style={{ width: `${Math.min(value, 100)}%` }}
-        />
-      </div>
-    </div>
+/**
+ * The four confidence dimensions as one sentence.
+ *
+ * Deliberately the weakest of the four, because that is the one that
+ * governs how far the whole conclusion can be trusted.
+ */
+function confidenceSummary(event: PollutionEvent): string {
+  const weakest = Math.min(
+    event.detectionConfidence,
+    event.sourceConfidence,
+    event.forecastConfidence,
+    event.impactConfidence,
   )
+  if (weakest >= 85) return 'Strong agreement across detection, cause, forecast and impact.'
+  if (weakest >= 65)
+    return 'Good agreement overall; one part of this picture is less certain than the rest.'
+  return 'Treat this as provisional — at least one part of the picture is weakly supported.'
 }
 
 /** Three-column Detect chrome: evidence · map · likelihood. Events investigation only. */
@@ -58,6 +61,7 @@ export function DetectWorkspace({
   metersOffsetClass?: string
   detailTo?: { href: string; label: string }
 }) {
+  const { advanced } = useViewLevel()
   const [query, setQuery] = useState('')
   const [selectedEvidenceId, setSelectedEvidenceId] = useState<string | null>(null)
   const [railCollapsed, setRailCollapsed] = useState(true)
@@ -78,7 +82,7 @@ export function DetectWorkspace({
   return (
     <div
       className={cn(
-        'grid min-h-0 flex-1',
+        'grid h-full min-h-0',
         railCollapsed
           ? 'lg:grid-cols-[40px_minmax(0,1fr)_272px]'
           : 'lg:grid-cols-[240px_minmax(0,1fr)_272px]',
@@ -96,20 +100,28 @@ export function DetectWorkspace({
 
       <div className="relative min-h-[420px] border-x border-border/80">
         {map}
+        {/* Four bare percentages mean nothing without knowing what each
+            scores. Named in advanced; summarised in one line otherwise. */}
         <div
           className={cn(
             'pointer-events-none absolute inset-x-0 bottom-0 z-10',
             metersOffsetClass,
           )}
         >
-          <ConfidenceMeters
-            items={[
-              { label: 'Detection', value: event.detectionConfidence },
-              { label: 'Source', value: event.sourceConfidence },
-              { label: 'Forecast', value: event.forecastConfidence },
-              { label: 'Impact', value: event.impactConfidence },
-            ]}
-          />
+          {advanced ? (
+            <ConfidenceMeters
+              items={[
+                { label: 'Detection', value: event.detectionConfidence },
+                { label: 'Source', value: event.sourceConfidence },
+                { label: 'Forecast', value: event.forecastConfidence },
+                { label: 'Impact', value: event.impactConfidence },
+              ]}
+            />
+          ) : (
+            <p className="border-t border-border/80 bg-black/80 px-4 py-2 text-[11px] text-text-secondary backdrop-blur">
+              {confidenceSummary(event)}
+            </p>
+          )}
         </div>
       </div>
 
@@ -233,7 +245,7 @@ function EventIntelPanel({
         <div className="flex items-start justify-between gap-2">
           <div>
             <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-text-muted">
-              Event {event.id}
+              <AdvancedOnly>Event {event.id}</AdvancedOnly>
             </p>
             <p className="mt-1 text-sm font-medium text-text-primary">{event.title}</p>
           </div>
@@ -244,26 +256,17 @@ function EventIntelPanel({
         </p>
       </div>
 
-      <div className="space-y-3 border-b border-border px-4 py-3">
-        <MiniBar label="Confidence" value={event.detectionConfidence} />
-        <MiniBar label="Source" value={event.sourceConfidence} />
-        <MiniBar label="Forecast" value={event.forecastConfidence} />
-      </div>
+      {/* Detection / source / forecast already read across the bottom of
+          this same screen. Two copies of one number invite the reader to
+          look for a difference that is not there. */}
 
       <div className="border-b border-border px-4 py-3">
         <p className="mb-2 text-[11px] font-medium uppercase tracking-[0.16em] text-text-secondary">
-          Source likelihood
+          Likely sources
         </p>
         <SourceLikelihoodBars items={event.sourceLikelihood} />
-      </div>
-
-      <div className="border-b border-border px-4 py-3">
-        <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-amber-200/80">
-          Predicted transport
-        </p>
-        <p className="mt-1 text-xs text-text-secondary">
-          Traditional ML owns the numbers. Copilot only explains retrieved evidence. Likelihood is
-          not causality.
+        <p className="mt-2 text-[11px] text-text-muted">
+          How well each candidate explains the evidence. Ranking, not proof of cause.
         </p>
       </div>
 

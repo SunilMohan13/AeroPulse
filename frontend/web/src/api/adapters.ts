@@ -393,7 +393,9 @@ export function toSourceHealth(source: ApiSource): SourceHealth {
   return {
     id: source.source_id,
     name: source.display_name || source.provider,
-    status: source.enabled ? 'Healthy' : 'Offline',
+    // `enabled` is a registry flag, not a health signal. Calling a source
+    // "Healthy" on the strength of it asserts a freshness we never measured.
+    status: source.enabled ? 'Registered' : 'Disabled',
     freshnessMinutes: null,
     quality: null,
     recordsToday: null,

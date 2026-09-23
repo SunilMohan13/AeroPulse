@@ -192,7 +192,11 @@ export interface EvidenceEdge {
 export interface SourceHealth {
   id: string
   name: string
-  status: 'Healthy' | 'Delayed' | 'Degraded' | 'Offline'
+  /**
+   * `Registered` / `Disabled` are registry facts; the rest are measured
+   * health. Live must not claim a measured state it never observed.
+   */
+  status: 'Healthy' | 'Delayed' | 'Degraded' | 'Offline' | 'Registered' | 'Disabled'
   /**
    * Operational telemetry. Null where it is genuinely unknown.
    *

@@ -1,4 +1,6 @@
 import { getPollutionSwatch } from '../../utils/aqi'
+import { useDataMode } from '../../context/DataModeContext'
+import { useViewLevel } from '../../context/ViewLevelContext'
 
 const bands = [
   { label: 'Good', max: 30, sample: 18 },
@@ -13,6 +15,12 @@ const gradient = `linear-gradient(to right, ${[0, 25, 45, 65, 95, 130, 200, 280]
   .join(', ')})`
 
 export function MapLegend({ resolutionKm }: { resolutionKm: number }) {
+  const { mode } = useDataMode()
+  const { advanced } = useViewLevel()
+  // Plume, persistence baseline and exposure ribbon are scripted scenario
+  // layers. Live never draws them, so live must not caption them either.
+  const scenarioLayers = mode === 'demo'
+
   return (
     <div className="absolute bottom-32 right-4 z-10 hidden w-52 rounded-lg border border-border bg-bg-panel/85 p-3 backdrop-blur-md sm:block">
       <p className="text-[10px] font-medium uppercase tracking-wider text-text-muted">
@@ -47,26 +55,33 @@ export function MapLegend({ resolutionKm }: { resolutionKm: number }) {
         ))}
       </ul>
 
-      <div className="mt-2 flex items-center gap-2 border-t border-border pt-2 text-[11px]">
-        <span
-          aria-hidden
-          className="h-2 w-2 shrink-0 rounded-full"
-          style={{ backgroundColor: 'rgba(255, 200, 150, 0.85)' }}
-        />
-        <span className="text-text-secondary">Model plume (cyan)</span>
-      </div>
-      <div className="mt-1 flex items-center gap-2 text-[11px]">
-        <span aria-hidden className="h-2 w-2 shrink-0 rounded-full bg-slate-400/80" />
-        <span className="text-text-secondary">Baseline persistence</span>
-      </div>
-      <div className="mt-1 flex items-center gap-2 text-[11px]">
-        <span aria-hidden className="h-2 w-2 shrink-0 rounded-full bg-amber-400/90" />
-        <span className="text-text-secondary">Exposure ribbon</span>
-      </div>
+      {scenarioLayers && (
+        <>
+          <div className="mt-2 flex items-center gap-2 border-t border-border pt-2 text-[11px]">
+            <span
+              aria-hidden
+              className="h-2 w-2 shrink-0 rounded-full"
+              style={{ backgroundColor: 'rgba(255, 200, 150, 0.85)' }}
+            />
+            <span className="text-text-secondary">Model plume (cyan)</span>
+          </div>
+          <div className="mt-1 flex items-center gap-2 text-[11px]">
+            <span aria-hidden className="h-2 w-2 shrink-0 rounded-full bg-slate-400/80" />
+            <span className="text-text-secondary">Baseline persistence</span>
+          </div>
+          <div className="mt-1 flex items-center gap-2 text-[11px]">
+            <span aria-hidden className="h-2 w-2 shrink-0 rounded-full bg-amber-400/90" />
+            <span className="text-text-secondary">Exposure ribbon</span>
+          </div>
+        </>
+      )}
 
-      <p className="mt-2 text-[10px] text-text-muted">
-        Grid {resolutionKm <= 1.01 ? '1 km (native)' : `${resolutionKm.toFixed(0)} km (downsampled)`}
-      </p>
+      {advanced && (
+        <p className="mt-2 text-[10px] text-text-muted">
+          Grid{' '}
+          {resolutionKm <= 1.01 ? '1 km (native)' : `${resolutionKm.toFixed(0)} km (downsampled)`}
+        </p>
+      )}
     </div>
   )
 }

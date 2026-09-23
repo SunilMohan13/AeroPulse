@@ -58,16 +58,33 @@ const ALL_DETECT_LAYERS: Record<DetectLayerKey, boolean> = {
 
 /** Visual layout offsets (degrees) so evidence radiates from the event hub.
  *  These are map-layout positions, not claimed station coordinates. */
-const CATEGORY_OFFSET: Record<string, [number, number]> = {
-  Fire: [0.02, 0.16],
-  CPCB: [0.2, 0.08],
-  Satellite: [0.18, -0.14],
-  Weather: [-0.16, 0.18],
-  CAMS: [0.08, 0.26],
-  Forecast: [-0.22, -0.08],
-  Citizen: [0.14, -0.22],
-  'Counter-signal': [-0.2, 0.04],
+/**
+ * Preferred bearing for each evidence category, degrees counter-clockwise
+ * from east.
+ *
+ * This replaced a table of fixed lon/lat offsets. Because that table was
+ * keyed by category, two items of the same category — two satellite
+ * products, say — resolved to identical coordinates and their labels were
+ * drawn exactly on top of each other.
+ */
+const CATEGORY_ANGLE_DEG: Record<string, number> = {
+  Fire: 82,
+  CPCB: 18,
+  Satellite: -38,
+  Weather: 138,
+  CAMS: 58,
+  Forecast: 205,
+  Citizen: -78,
+  'Counter-signal': 168,
 }
+
+/**
+ * Ring radius in degrees latitude. Alternate slots are drawn short so two
+ * neighbouring labels sit at different distances from the hub rather than
+ * side by side in the same band.
+ */
+const NODE_RING_DEG = 0.86
+const NODE_RING_INNER = 0.74
 
 const NODE_COLOR: Record<string, [number, number, number, number]> = {
   Fire: [255, 140, 40, 230],
@@ -88,6 +105,8 @@ interface EvidenceNode {
   category: string
   lon: number
   lat: number
+  /** Bearing from the hub. Drives which way the label is written. */
+  angleDeg: number
 }
 
 interface NamedPoint {
@@ -118,20 +137,74 @@ function curvePath(
   return pts
 }
 
+/**
+ * Shortens a source name to something that fits beside a dot.
+ *
+ * The full provider strings are the widest thing on this map and are what
+ * made neighbouring labels meet. The rail beside the map carries the full
+ * name, so nothing is lost by abbreviating here.
+ */
+function shortLabel(source: string): string {
+  return source
+    .replace(/^(NASA|Copernicus|AeroPulse|ISRO|IMD)\s+/, '')
+    .replace(/\s*\+\s*AQMS$/, '')
+    .replace(/\s*Engine$/, '')
+    .trim()
+}
+
+/**
+ * Places evidence sources on a ring around the event.
+ *
+ * Slots are spread evenly around the full circle rather than at each
+ * category's own bearing: bearings clustered several categories into the
+ * same arc, which is what drove their labels into each other. Ordering by
+ * bearing keeps related evidence adjacent, so the arrangement still reads
+ * the same way between renders. The longitude component is divided by
+ * cos(latitude) so the ring reads as a circle rather than an ellipse
+ * squashed toward the pole.
+ */
 function layoutNodes(event: PollutionEvent, evidence: EvidenceItem[]): EvidenceNode[] {
-  return evidence.map((item, i) => {
-    const offset = CATEGORY_OFFSET[item.category] ?? [
-      Math.cos((i * 2.2) / Math.max(evidence.length, 1)) * 0.2,
-      Math.sin((i * 2.2) / Math.max(evidence.length, 1)) * 0.18,
-    ]
+  const lonScale = Math.max(Math.cos((event.lat * Math.PI) / 180), 0.2)
+  const ordered = [...evidence].sort((a, b) => {
+    const byBearing =
+      (CATEGORY_ANGLE_DEG[a.category] ?? 0) - (CATEGORY_ANGLE_DEG[b.category] ?? 0)
+    return byBearing !== 0 ? byBearing : a.id.localeCompare(b.id)
+  })
+
+  // The source place label sits back along the transport axis. Slots start
+  // half a step off that bearing so the ring never opens a seat underneath
+  // a label that is already there.
+  const reservedDeg = 90 - (TRANSPORT_BEARING_DEG + 180)
+  const step = 360 / Math.max(ordered.length, 1)
+
+  return ordered.map((item, i) => {
+    const angleDeg = reservedDeg + step / 2 + i * step
+    const theta = (angleDeg * Math.PI) / 180
+    const radius = i % 2 === 0 ? NODE_RING_DEG : NODE_RING_INNER
+
     return {
       id: item.id,
-      label: item.source.replace(/^NASA |^Copernicus /, ''),
+      label: shortLabel(item.source),
       category: item.category,
-      lon: event.lon + offset[0],
-      lat: event.lat + offset[1],
+      lon: event.lon + (radius * Math.cos(theta)) / lonScale,
+      lat: event.lat + radius * Math.sin(theta),
+      angleDeg,
     }
   })
+}
+
+/** Writes a label away from the hub rather than back across it. */
+function labelAnchor(angleDeg: number): 'start' | 'middle' | 'end' {
+  const cos = Math.cos((angleDeg * Math.PI) / 180)
+  if (cos > 0.35) return 'start'
+  if (cos < -0.35) return 'end'
+  return 'middle'
+}
+
+/** Nudges a label outward along its own bearing. Screen y is inverted. */
+function labelOffset(angleDeg: number): [number, number] {
+  const theta = (angleDeg * Math.PI) / 180
+  return [Math.cos(theta) * 11, -Math.sin(theta) * 13 - 3]
 }
 
 /** Destination the predicted plume is drawn toward. Punjab events aim at Delhi NCR. */
@@ -469,8 +542,22 @@ export function EventDetectMap({
     [nearbyFires, dest, time],
   )
   const placeLabels = useMemo(() => {
+    // The source label used to sit on the hub itself, inside the evidence
+    // ring and under the plume origin. Pushed back along the reverse of the
+    // transport bearing, it stays attached to the cluster while clearing it.
+    const theta = (TRANSPORT_BEARING_DEG * Math.PI) / 180
+    const lonScale = Math.max(Math.cos((event.lat * Math.PI) / 180), 0.2)
+    // Beyond the ring, not level with it, so it clears the two slots that
+    // flank the reserved bearing as well as the hub.
+    const backOff = NODE_RING_DEG * 2.2
+
     const labels = [
-      { id: 'src', name: towardNcr ? 'Punjab fire cluster' : event.region, lon: event.lon, lat: event.lat },
+      {
+        id: 'src',
+        name: towardNcr ? 'Punjab fire cluster' : event.region,
+        lon: event.lon - (backOff * Math.sin(theta)) / lonScale,
+        lat: event.lat - backOff * Math.cos(theta),
+      },
       { id: 'dst', name: corridorDest.name, lon: corridorDest.lon, lat: corridorDest.lat },
     ]
     if (dest.lon !== corridorDest.lon || dest.lat !== corridorDest.lat) {
@@ -616,12 +703,16 @@ export function EventDetectMap({
           getPosition: (d) => [d.lon, d.lat],
           getText: (d) => d.label,
           getSize: 11,
-          getColor: [203, 213, 225, 210],
-          getPixelOffset: [0, -12],
+          getColor: [203, 213, 225, 225],
+          // Radiates outward from the hub so neighbouring labels grow apart
+          // instead of stacking in the same column above their dots.
+          getPixelOffset: (d) => labelOffset(d.angleDeg),
+          getTextAnchor: (d) => labelAnchor(d.angleDeg),
+          getAlignmentBaseline: 'center',
           fontFamily: 'Inter, sans-serif',
           fontSettings: { sdf: true },
-          outlineWidth: 2,
-          outlineColor: [8, 12, 24, 200],
+          outlineWidth: 2.5,
+          outlineColor: [8, 12, 24, 230],
         }),
       visible.places &&
         new TextLayer<(typeof placeLabels)[number]>({
@@ -630,12 +721,12 @@ export function EventDetectMap({
           getPosition: (d) => [d.lon, d.lat],
           getText: (d) => d.name,
           getSize: 13,
-          getColor: [248, 250, 252, 230],
+          getColor: [248, 250, 252, 240],
           getPixelOffset: [0, 16],
           fontFamily: 'Inter, sans-serif',
           fontSettings: { sdf: true },
           outlineWidth: 3,
-          outlineColor: [8, 12, 24, 210],
+          outlineColor: [8, 12, 24, 230],
         }),
       visible.plume &&
         new TextLayer({
@@ -714,7 +805,9 @@ export function EventDetectMap({
             {scenarioCaption(scenario, towardNcr, horizon)}
           </div>
         ) : null}
-        <div className="flex flex-wrap gap-2 px-0.5 font-mono text-[9px] uppercase tracking-[0.12em] text-text-muted">
+        {/* Plated like the chips above it: unbacked, the basemap's own
+            place names read straight through the key. */}
+        <div className="flex flex-wrap gap-2 rounded bg-black/55 px-2 py-1 font-mono text-[9px] uppercase tracking-[0.12em] text-text-muted">
           <span className="text-orange-300/90">● Fire observed</span>
           <span className="text-amber-200/80">● Plume predicted</span>
           <span className="text-sky-200/80">● Wind</span>
