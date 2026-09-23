@@ -16,7 +16,12 @@ import { formatDateTimeIST, formatPopulation } from '../utils/format'
 import { ActionBrief } from '../components/events/ActionBrief'
 import { CitizenCorroboration } from '../components/events/CitizenCorroboration'
 import { useDataMode } from '../context/DataModeContext'
-import { FallbackBanner, MaybeValue, ProvenanceBadge } from '../components/common/Provenance'
+import {
+  FallbackBanner,
+  MaybeValue,
+  ProvenanceBadge,
+  ScreenJobNote,
+} from '../components/common/Provenance'
 
 export function EventsIndex() {
   const { mode } = useDataMode()
@@ -94,7 +99,15 @@ export function EventDetail() {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="shrink-0 px-3 pt-2">
+      <div className="shrink-0 border-b border-cyan-500/20 bg-gradient-to-r from-black via-bg-panel/40 to-black px-4 py-2">
+        <h1 className="font-mono text-xs uppercase tracking-[0.22em] text-cyan-300/95">
+          Event investigation · {event.id}
+        </h1>
+        <ScreenJobNote
+          question="Why did we fuse this as one event?"
+          serves={`${evidence.length} evidence items · source likelihood · predicted plume from this cluster`}
+          notThis="the full 1 km corridor grid or the multi-event catalog"
+        />
         <FallbackBanner />
       </div>
 

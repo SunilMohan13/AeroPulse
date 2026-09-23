@@ -22,10 +22,21 @@ export function Sidebar() {
   const { sidebarCollapsed, setSidebarCollapsed, mobileNavOpen, setMobileNavOpen } = useApp()
   const heroEventId = useHeroEventId()
 
-  const navItems = [
-    { to: '/', label: 'Overview', icon: LayoutDashboard, end: true },
-    { to: '/map', label: 'Live Map', icon: Map },
-    { to: heroEventId ? `/events/${heroEventId}` : '/events', label: 'Events', icon: AlertTriangle },
+  const navItems: {
+    to: string
+    label: string
+    hint?: string
+    icon: typeof LayoutDashboard
+    end?: boolean
+  }[] = [
+    { to: '/', label: 'Overview', hint: 'Briefing', icon: LayoutDashboard, end: true },
+    { to: '/map', label: 'Live Map', hint: 'Corridor', icon: Map },
+    {
+      to: heroEventId ? `/events/${heroEventId}` : '/events',
+      label: 'Events',
+      hint: 'Detect',
+      icon: AlertTriangle,
+    },
     { to: '/forecast', label: 'Forecast', icon: TrendingUp },
     { to: '/risk', label: 'Risk', icon: Users },
     { to: '/evidence', label: 'Evidence', icon: FileSearch },
@@ -44,17 +55,24 @@ export function Sidebar() {
 
   const nav = (showLabels: boolean) => (
     <nav className="flex-1 space-y-0.5 p-2" aria-label="Primary">
-      {navItems.map(({ to, label, icon: Icon, end }) => (
+      {navItems.map(({ to, label, hint, icon: Icon, end }) => (
         <NavLink
           key={to}
           to={to}
           end={end}
           onClick={() => setMobileNavOpen(false)}
           className={linkClass}
-          title={showLabels ? undefined : label}
+          title={showLabels ? undefined : `${label}${hint ? ` · ${hint}` : ''}`}
         >
           <Icon className="h-4 w-4 shrink-0" aria-hidden />
-          {showLabels ? <span>{label}</span> : <span className="sr-only">{label}</span>}
+          {showLabels ? (
+            <span className="flex min-w-0 flex-col leading-tight">
+              <span>{label}</span>
+              {hint ? <span className="text-[10px] text-text-muted">{hint}</span> : null}
+            </span>
+          ) : (
+            <span className="sr-only">{label}</span>
+          )}
         </NavLink>
       ))}
     </nav>

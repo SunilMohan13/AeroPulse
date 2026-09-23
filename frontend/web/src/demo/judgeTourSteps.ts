@@ -24,17 +24,16 @@ export function judgeTourSteps(heroEventId: string): JudgeTourStep[] {
   return [
     {
       route: '/',
-      durationMs: 6000,
-      phase: 'plume',
-      caption:
-        'Detect · fused fire cluster · predicted transport toward Delhi NCR — not a generic AQI map',
-      hourOffset: 3,
+      durationMs: 5000,
+      phase: 'confirmed',
+      caption: 'Overview · KPIs and event list — not the investigation map',
+      hourOffset: 0,
     },
     {
-      route: '/map?scene=corridor',
+      route: '/map',
       durationMs: 5000,
       phase: 'fire',
-      caption: 'Corridor grid · FIRMS + CPCB fuse · 1 km cells',
+      caption: 'Live Map · 1 km corridor · FIRMS + CPCB fuse',
       hourOffset: 0,
       layers: { pollution: true, fires: true, wind: false, forecast: false },
     },
@@ -49,8 +48,8 @@ export function judgeTourSteps(heroEventId: string): JudgeTourStep[] {
     {
       route: heroEventPath(heroEventId),
       durationMs: 6000,
-      phase: 'confirmed',
-      caption: 'Event fused · four confidence dimensions · source likelihood',
+      phase: 'plume',
+      caption: 'Events · Detect workspace · predicted transport toward Delhi NCR',
       hourOffset: 1,
     },
     {

@@ -106,11 +106,10 @@ export function setLiveBlocker(next: LiveBlocker): void {
 }
 
 /**
- * Record that a live call failed and demo data was served instead.
+ * Record that a live call failed.
  *
- * Deliberately surfaced rather than swallowed. A dashboard that silently
- * substitutes demo numbers for live ones is worse than a broken dashboard,
- * because nothing on screen tells the operator which they are reading.
+ * Live never substitutes demo data. The banner lists the failed endpoint so
+ * the operator sees a gap, not a scripted Punjab episode under a Live header.
  */
 export function recordFallback(endpoint: string, reason: string): void {
   if (fallbacks.get(endpoint) === reason) return
@@ -124,7 +123,7 @@ export function clearFallback(endpoint: string): void {
   emit()
 }
 
-/** Endpoints currently answering from demo data despite live mode. */
+/** Endpoints currently failing in live mode. */
 export function getFallbacks(): { endpoint: string; reason: string }[] {
   return [...fallbacks.entries()].map(([endpoint, reason]) => ({ endpoint, reason }))
 }

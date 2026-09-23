@@ -13,6 +13,7 @@ import type { DemoPhase, MapLayerVisibility, Notification } from '../types'
 import { mockNotifications } from '../data/mockPopulation'
 import { bumpLivePm25 } from '../services/eventService'
 import { bumpSourceFreshness } from '../services/sourceService'
+import { isDemo, subscribeDataMode } from '../services/dataMode'
 import { MAP_STORY_STEP_MS, MAP_STORY_STEPS } from '../demo/mapStorySteps'
 
 interface AppContextValue {
@@ -96,7 +97,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
   })
   const [livePaused, setLivePaused] = useState(false)
   const [lastLiveUpdate, setLastLiveUpdate] = useState(new Date())
-  const [notifications, setNotifications] = useState<Notification[]>(mockNotifications)
+  const [notifications, setNotifications] = useState<Notification[]>(() =>
+    isDemo() ? mockNotifications : [],
+  )
   const [demoPhase, setDemoPhase] = useState<DemoPhase>('idle')
   const [demoRunning, setDemoRunning] = useState(false)
   const [demoPaused, setDemoPaused] = useState(false)
@@ -118,6 +121,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [mapStoryCaption, setMapStoryCaption] = useState<string | null>(null)
   const [, setMapStoryIndex] = useState(0)
   const [, setPhaseIndex] = useState(0)
+
+  useEffect(() => {
+    return subscribeDataMode(() => {
+      setNotifications(isDemo() ? mockNotifications : [])
+    })
+  }, [])
 
   const toggleLayer = useCallback((key: keyof MapLayerVisibility) => {
     setLayers((prev) => ({ ...prev, [key]: !prev[key] }))
@@ -269,8 +278,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (livePaused) return
     const timer = setInterval(() => {
-      bumpLivePm25()
-      bumpSourceFreshness()
+      if (isDemo()) {
+        bumpLivePm25()
+        bumpSourceFreshness()
+      }
       setLastLiveUpdate(new Date())
     }, 12000)
     return () => clearInterval(timer)

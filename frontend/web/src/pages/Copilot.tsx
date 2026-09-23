@@ -3,6 +3,7 @@ import { useApp } from '../context/AppContext'
 import { Bot, Send } from 'lucide-react'
 import { Card, CardBody, CardHeader } from '../components/common/Card'
 import { ScientificBadge } from '../components/common/Badge'
+import { FallbackBanner } from '../components/common/Provenance'
 import {
   queryCopilot,
   suggestedQuestions,
@@ -34,22 +35,35 @@ export function Copilot() {
     setPhase('retrieval')
     await new Promise((r) => setTimeout(r, 350))
 
-    const response = await queryCopilot(text)
-    setPhase('typing')
+    try {
+      const response = await queryCopilot(text)
+      setPhase('typing')
 
-    let i = 0
-    const full = response.content
-    const typeInterval = setInterval(() => {
-      i += 3
-      setDisplayedText(full.slice(0, i))
-      if (i >= full.length) {
-        clearInterval(typeInterval)
-        setMessages((m) => [...m, response])
-        setDisplayedText('')
-        setPhase('done')
-        setTimeout(() => setPhase('idle'), 200)
-      }
-    }, 12)
+      let i = 0
+      const full = response.content
+      const typeInterval = setInterval(() => {
+        i += 3
+        setDisplayedText(full.slice(0, i))
+        if (i >= full.length) {
+          clearInterval(typeInterval)
+          setMessages((m) => [...m, response])
+          setDisplayedText('')
+          setPhase('done')
+          setTimeout(() => setPhase('idle'), 200)
+        }
+      }, 12)
+    } catch {
+      setPhase('done')
+      setMessages((m) => [
+        ...m,
+        {
+          id: `err_${seqRef.current}`,
+          role: 'assistant',
+          content: 'Live Copilot did not answer. Demo script is not substituted.',
+        },
+      ])
+      setTimeout(() => setPhase('idle'), 200)
+    }
   }
 
   const isLoading = phase !== 'idle' && phase !== 'done'
@@ -72,6 +86,7 @@ export function Copilot() {
         <p className="text-sm text-text-secondary">
           Ask questions about current environmental conditions.
         </p>
+        <FallbackBanner />
       </div>
 
       <div className="flex flex-wrap gap-2">
