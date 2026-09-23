@@ -5,7 +5,13 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Any
 
-from aeropulse_api.event_store import TimescaleEventReader
+from aeropulse_api.demo_seed import HERO_EVENT_ID, seed_replay_episode
+from aeropulse_api.event_store import (
+    InMemoryEventReader,
+    ReplayFallbackEventReader,
+    TimescaleEventReader,
+    reset_event_store,
+)
 from aeropulse_contracts.event import EventSeverity, EventStatus, PollutionEvent
 
 NOW = datetime(2026, 9, 14, 5, 0, tzinfo=UTC)
@@ -114,3 +120,61 @@ def test_timescale_reader_returns_none_for_missing_related_records() -> None:
     assert reader.get_event("missing") is None
     assert reader.get_forecast("missing") is None
     assert reader.get_graph("missing") is None
+
+
+class _EmptyTimescale:
+    """Timescale stand-in whose events table has no rows."""
+
+    def list_events(
+        self, status: EventStatus | None, limit: int | None, offset: int
+    ) -> tuple[list[PollutionEvent], int]:
+        return [], 0
+
+    def get_event(self, event_id: str) -> PollutionEvent | None:
+        return None
+
+    def get_evidence(self, event_id: str) -> list:
+        return []
+
+    def get_forecast(self, event_id: str):
+        return None
+
+    def get_graph(self, event_id: str):
+        return None
+
+
+def test_replay_fallback_serves_hero_when_timescale_is_empty() -> None:
+    reset_event_store()
+    seed_replay_episode()
+    reader = ReplayFallbackEventReader(_EmptyTimescale(), InMemoryEventReader())
+
+    items, total = reader.list_events(None, 10, 0)
+    assert total >= 5
+    assert {event.event_id for event in items} >= {HERO_EVENT_ID}
+    assert reader.get_event(HERO_EVENT_ID) is not None
+    assert reader.get_evidence(HERO_EVENT_ID)
+    assert reader.get_forecast(HERO_EVENT_ID) is not None
+
+
+def test_replay_fallback_keeps_timescale_when_it_has_events() -> None:
+    payload = _event()
+    primary = TimescaleEventReader(
+        _Connection(
+            {
+                "SELECT count(*) FROM pollution_event": [(1,)],
+                "SELECT payload FROM pollution_event ORDER": [(payload.model_dump(mode="json"),)],
+                "SELECT payload FROM pollution_event WHERE event_id": [
+                    (payload.model_dump(mode="json"),)
+                ],
+            }
+        )
+    )
+    reset_event_store()
+    seed_replay_episode()
+    reader = ReplayFallbackEventReader(primary, InMemoryEventReader())
+
+    items, total = reader.list_events(None, 10, 0)
+    assert total == 1
+    assert items[0].event_id == "evt_test"
+    assert {event.event_id for event in items} == {"evt_test"}
+    assert reader.get_event("evt_test") is not None

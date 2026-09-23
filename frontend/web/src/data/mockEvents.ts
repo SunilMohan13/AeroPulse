@@ -39,6 +39,7 @@ export const mockEvents: PollutionEvent[] = [
       'Coordinate cross-state transport monitoring along NH-44',
       'Increase CPCB station sampling frequency in affected grid cells',
     ],
+    provenance: { mode: 'demo' },
   },
   {
     id: 'EVT-1025',
@@ -72,6 +73,7 @@ export const mockEvents: PollutionEvent[] = [
       'Activate GRAP Stage III measures for Delhi NCR',
       'Restrict heavy vehicle movement during peak hours',
     ],
+    provenance: { mode: 'demo' },
   },
   {
     id: 'EVT-1026',
@@ -102,6 +104,7 @@ export const mockEvents: PollutionEvent[] = [
       { source: 'Biomass burning', probability: 8 },
     ],
     recommendedActions: ['Request HSPCB inspection of refinery cluster'],
+    provenance: { mode: 'demo' },
   },
   {
     id: 'EVT-1027',
@@ -138,6 +141,7 @@ export const mockEvents: PollutionEvent[] = [
       'Advise construction dust suppression along the Rewari–Jhajjar belt',
       'Flag PM10-dominant advisory — PM2.5 masks alone are less effective for coarse dust',
     ],
+    provenance: { mode: 'demo' },
   },
   {
     id: 'EVT-1028',
@@ -173,5 +177,6 @@ export const mockEvents: PollutionEvent[] = [
       'Maintain Sonipat–Delhi corridor monitoring through the morning mixing transition',
       'Hold GRAP Stage II until the boundary layer exceeds 800 m',
     ],
+    provenance: { mode: 'demo' },
   },
 ]

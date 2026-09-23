@@ -16,10 +16,13 @@ COPY apps ./apps
 COPY connectors ./connectors
 COPY fixtures ./fixtures
 COPY config ./config
-COPY models ./models
 COPY infrastructure/db ./infrastructure/db
 
-RUN uv sync --frozen --no-dev --no-install-project \
+# `models/` is gitignored (pickle artifacts). Create an empty registry root so
+# the image builds without a local train run; GET /api/v1/models then lists
+# deterministic baselines until AEROPULSE_MODEL_DIR is populated.
+RUN mkdir -p models \
+    && uv sync --frozen --no-dev --no-install-project \
     && uv sync --frozen --no-dev \
     && chown -R aeropulse:aeropulse /app
 

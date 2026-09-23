@@ -176,6 +176,51 @@ export function createPlumeLayer(data: GridCell[], visible: boolean) {
   })
 }
 
+export interface FireRadarRing {
+  id: string
+  lon: number
+  lat: number
+  phase: number
+}
+
+/**
+ * Concentric expanding rings around a detection — the Detect-scene radar.
+ * `phase` is 0..1; opacity falls as the ring grows.
+ */
+export function createFireRadarLayer(rings: FireRadarRing[], visible: boolean) {
+  if (!visible || rings.length === 0) return null
+  return new ScatterplotLayer<FireRadarRing>({
+    id: 'fire-radar',
+    data: rings,
+    pickable: false,
+    stroked: true,
+    filled: false,
+    radiusUnits: 'meters',
+    getPosition: (d) => [d.lon, d.lat],
+    getRadius: (d) => 2500 + d.phase * 22000,
+    getLineColor: (d) => [255, 92, 18, Math.round(200 * (1 - d.phase) ** 1.4)],
+    getLineWidth: (d) => 2.4 - d.phase * 1.2,
+    lineWidthUnits: 'pixels',
+    lineWidthMinPixels: 1,
+    updateTriggers: { getRadius: [rings[0]?.phase], getLineColor: [rings[0]?.phase] },
+  })
+}
+
+export function buildFireRadarRings(
+  fires: FireObservation[],
+  pulse: number,
+  ringsPerFire = 4,
+): FireRadarRing[] {
+  return fires.flatMap((fire) =>
+    Array.from({ length: ringsPerFire }, (_, i) => ({
+      id: `${fire.id}-r${i}`,
+      lon: fire.lon,
+      lat: fire.lat,
+      phase: (pulse * 0.22 + i / ringsPerFire) % 1,
+    })),
+  )
+}
+
 /** Soft outer glow; paired with a bright core so fires read as heat, not dots. */
 export function createFireGlowLayer(data: FireObservation[], visible: boolean, pulse: number) {
   if (!visible) return null

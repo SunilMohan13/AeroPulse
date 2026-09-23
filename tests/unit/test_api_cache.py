@@ -70,3 +70,45 @@ def test_cache_key_uses_authorization_digest_without_exposing_token() -> None:
     assert cache.is_cacheable("GET", "/api/v1/events") is True
     assert cache.is_cacheable("GET", "/api/v1/events/evt_1") is False
     assert cache.is_cacheable("POST", "/api/v1/events") is False
+
+
+def test_cache_hit_keeps_cors_for_local_ui(monkeypatch) -> None:
+    stored: dict[str, dict[str, Any]] = {}
+
+    async def fake_get(key: str):
+        payload = stored.get(key)
+        return (payload, "hit") if payload else (None, "miss")
+
+    async def fake_set(key: str, payload: dict[str, Any]) -> bool:
+        stored[key] = payload
+        return True
+
+    monkeypatch.setattr(cache, "get_cached", fake_get)
+    monkeypatch.setattr(cache, "set_cached", fake_set)
+    client, auth = _client()
+    headers = {**auth, "Origin": "http://localhost:5173"}
+
+    first = client.get("/api/v1/grid-features?limit=2", headers=headers)
+    second = client.get("/api/v1/grid-features?limit=2", headers=headers)
+
+    assert first.status_code == second.status_code == 200
+    assert first.headers["X-AeroPulse-Cache"] == "MISS"
+    assert second.headers["X-AeroPulse-Cache"] == "HIT"
+    assert first.headers["access-control-allow-origin"] == "http://localhost:5173"
+    assert second.headers["access-control-allow-origin"] == "http://localhost:5173"
+    assert first.headers["access-control-allow-credentials"] == "true"
+    assert second.headers["access-control-allow-credentials"] == "true"
+
+
+def test_preflight_allows_local_ui_origin() -> None:
+    client, _auth = _client()
+    response = client.options(
+        "/api/v1/grid-features?limit=2",
+        headers={
+            "Origin": "http://localhost:5173",
+            "Access-Control-Request-Method": "GET",
+            "Access-Control-Request-Headers": "authorization,accept",
+        },
+    )
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == "http://localhost:5173"

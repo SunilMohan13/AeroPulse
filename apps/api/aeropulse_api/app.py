@@ -1,5 +1,6 @@
 """FastAPI application factory."""
 
+import re
 from time import perf_counter, time
 
 from aeropulse_common.settings import get_settings
@@ -18,6 +19,7 @@ from fastapi.responses import JSONResponse, Response
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
 from aeropulse_api import cache
+from aeropulse_api.demo_seed import seed_replay_episode
 from aeropulse_api.routers import (
     alerts,
     citizen,
@@ -32,6 +34,55 @@ from aeropulse_api.routers import (
 )
 from aeropulse_api.routers import map as map_router
 
+_LOCAL_UI_ORIGINS = [
+    "http://127.0.0.1:5173",
+    "http://localhost:5173",
+    "http://127.0.0.1:4173",
+    "http://localhost:4173",
+    "https://aeropulse-india.netlify.app",
+]
+_NETLIFY_ORIGIN = re.compile(r"https://[a-z0-9-]+\.netlify\.app")
+
+
+def _cors_origins(settings) -> list[str]:
+    """Local UI, the Netlify demo, plus any extra hosts from env."""
+    extra = [origin.strip() for origin in settings.cors_origins.split(",") if origin.strip()]
+    seen: set[str] = set()
+    origins: list[str] = []
+    for origin in [*_LOCAL_UI_ORIGINS, *extra]:
+        if origin in seen:
+            continue
+        seen.add(origin)
+        origins.append(origin)
+    return origins
+
+
+def _allowed_request_origin(origin: str | None, settings) -> str | None:
+    """Return the request Origin when it is on the allow-list, else None."""
+    if not origin:
+        return None
+    if origin in _cors_origins(settings):
+        return origin
+    if _NETLIFY_ORIGIN.fullmatch(origin):
+        return origin
+    return None
+
+
+def _apply_cors(request: Request, response: Response) -> Response:
+    """Stamp CORS on responses built outside CORSMiddleware.
+
+    `@app.middleware("http")` is BaseHTTPMiddleware and is outermost unless
+    CORS is added after it. Cache HIT and 429 paths never call `call_next`, so
+    they would otherwise return 200/429 with no `Access-Control-Allow-Origin`
+    and the browser would drop the body (`net::ERR_FAILED`).
+    """
+    origin = _allowed_request_origin(request.headers.get("origin"), get_settings())
+    if origin is None:
+        return response
+    response.headers["Access-Control-Allow-Origin"] = origin
+    response.headers["Access-Control-Allow-Credentials"] = "true"
+    return response
+
 
 def create_app() -> FastAPI:
     """Build the AeroPulse API with routers and CORS for the local UI."""
@@ -39,6 +90,11 @@ def create_app() -> FastAPI:
     settings.service_name = "aeropulse-api"  # type: ignore[misc]
     configure_logging(settings)
     configure_telemetry(settings)
+    # Always load the in-memory Punjab episode. Timescale-backed Docker has
+    # DATABASE_URL set, so without this the Live UI 404s on EVT-1024 until
+    # the worker persists a pollution_event row. ReplayFallbackEventReader
+    # only serves this seed when the events table is empty.
+    seed_replay_episode()
 
     app = FastAPI(
         title="AeroPulse API",
@@ -56,13 +112,6 @@ def create_app() -> FastAPI:
             {"name": "alerts", "description": "Canonical alerts (log channel)"},
             {"name": "risk", "description": "Exposure vs pollution severity"},
         ],
-    )
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=["http://127.0.0.1:5173", "http://localhost:5173"],
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
     )
     app.include_router(health.router)
     app.include_router(sources.router)
@@ -141,7 +190,7 @@ def create_app() -> FastAPI:
                         media_type="application/json",
                         background=response.background,
                     )
-            return response
+            return _apply_cors(request, response)
         finally:
             route = route_label(request)
             status = str(response.status_code) if response is not None else "500"
@@ -149,4 +198,16 @@ def create_app() -> FastAPI:
             HTTP_DURATION.labels(request.method, route).observe(perf_counter() - started)
             HTTP_IN_FLIGHT.dec()
 
+    # Added last so CORS is outermost. Starlette wraps in reverse of
+    # `user_middleware`; last `add_middleware` runs first on the request and
+    # last on the response, including cache HIT / 429 that skip `call_next`.
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=_cors_origins(settings),
+        allow_origin_regex=_NETLIFY_ORIGIN.pattern,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+        expose_headers=["X-AeroPulse-Cache"],
+    )
     return app

@@ -2,19 +2,8 @@ import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Search } from 'lucide-react'
 import { useApp } from '../../context/AppContext'
-import { HERO_EVENT_ID } from '../../data/mockEvents'
-
-const commands = [
-  { label: 'Go to Overview', route: '/', keywords: 'home dashboard kpi' },
-  { label: 'Open Live Map', route: '/map', keywords: 'geospatial grid fire plume' },
-  { label: 'View Active Events', route: `/events/${HERO_EVENT_ID}`, keywords: 'incident punjab' },
-  { label: 'Open Forecast', route: '/forecast', keywords: 'predicted plume horizon' },
-  { label: 'Open Risk', route: '/risk', keywords: 'population exposure' },
-  { label: 'Open Evidence', route: '/evidence', keywords: 'graph provenance' },
-  { label: 'Open Sources', route: '/sources', keywords: 'health connector freshness' },
-  { label: 'Ask Copilot', route: '/copilot', keywords: 'ai question explain' },
-  { label: 'Open Citizen Reports', route: '/citizen', keywords: 'crowdsource photo' },
-]
+import { useHeroEventId } from '../../hooks/useHeroEventId'
+import { heroEventPath } from '../../utils/heroEvent'
 
 export function CommandPalette() {
   const { commandPaletteOpen, setCommandPaletteOpen } = useApp()
@@ -40,12 +29,27 @@ function PaletteDialog({ onClose }: { onClose: () => void }) {
   const navigate = useNavigate()
   const [query, setQuery] = useState('')
   const [hoverIndex, setHoverIndex] = useState<number | null>(null)
+  const heroEventId = useHeroEventId()
+  const commands = useMemo(
+    () => [
+      { label: 'Go to Overview', route: '/', keywords: 'home dashboard kpi' },
+      { label: 'Open Live Map', route: '/map', keywords: 'geospatial grid fire plume' },
+      { label: 'View Active Events', route: heroEventPath(heroEventId), keywords: 'incident punjab' },
+      { label: 'Open Forecast', route: '/forecast', keywords: 'predicted plume horizon' },
+      { label: 'Open Risk', route: '/risk', keywords: 'population exposure' },
+      { label: 'Open Evidence', route: '/evidence', keywords: 'graph provenance' },
+      { label: 'Open Sources', route: '/sources', keywords: 'health connector freshness' },
+      { label: 'Ask Copilot', route: '/copilot', keywords: 'ai question explain' },
+      { label: 'Open Citizen Reports', route: '/citizen', keywords: 'crowdsource photo' },
+    ],
+    [heroEventId],
+  )
 
   const results = useMemo(() => {
     const q = query.trim().toLowerCase()
     if (!q) return commands
     return commands.filter((c) => c.label.toLowerCase().includes(q) || c.keywords.includes(q))
-  }, [query])
+  }, [query, commands])
 
   const activeIndex = hoverIndex !== null && hoverIndex < results.length ? hoverIndex : 0
 

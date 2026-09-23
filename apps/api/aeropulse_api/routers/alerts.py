@@ -6,7 +6,7 @@ from aeropulse_auth.jwt import TokenClaims
 from fastapi import APIRouter, Depends, Query
 
 from aeropulse_api.deps import get_claims
-from aeropulse_api.event_store import EVENT_STORE
+from aeropulse_api.event_store import current_store
 
 router = APIRouter(prefix="/api/v1/alerts", tags=["alerts"])
 
@@ -29,7 +29,7 @@ def list_alerts(
         ``items``/``total``/``limit``/``offset``, matching the convention the
         other collection endpoints follow.
     """
-    alerts = list(EVENT_STORE.alerts.values())
+    alerts = list(current_store().alerts.values())
     total = len(alerts)
     window = alerts[offset : offset + limit] if limit is not None else alerts[offset:]
     return {

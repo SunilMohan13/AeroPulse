@@ -150,3 +150,29 @@ def test_grid_endpoint_rejects_invalid_pagination() -> None:
 
     assert client.get("/api/v1/grid-features?limit=0", headers=headers).status_code == 422
     assert client.get("/api/v1/grid-predictions?offset=-1", headers=headers).status_code == 422
+
+
+def test_replay_fallback_serves_seeded_feature_when_timescale_empty() -> None:
+    from aeropulse_api.demo_seed import seed_replay_episode
+    from aeropulse_api.event_store import reset_event_store
+    from aeropulse_api.grid_store import InMemoryGridReader, ReplayFallbackGridReader
+
+    class _Empty:
+        def list_features(self, *_args: object, **_kwargs: object) -> tuple[list, int]:
+            return [], 0
+
+        def latest_feature(self, _grid_id: str) -> None:
+            return None
+
+        def list_predictions(self, *_args: object, **_kwargs: object) -> tuple[list, int]:
+            return [], 0
+
+        def latest_prediction(self, *_args: object, **_kwargs: object) -> None:
+            return None
+
+    reset_event_store()
+    seed_replay_episode()
+    reader = ReplayFallbackGridReader(_Empty(), InMemoryGridReader())  # type: ignore[arg-type]
+    items, total = reader.list_features(None, None, None, 10, 0)
+    assert total > 0
+    assert reader.latest_feature(items[0].grid_id) is not None

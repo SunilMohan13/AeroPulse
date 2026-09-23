@@ -44,10 +44,10 @@ class FixtureMapReader:
         return _filter_bbox(self._weather, bbox)[:limit]
 
     def forecast(self, limit: int) -> list[dict]:
-        from aeropulse_api.event_store import EVENT_STORE
+        from aeropulse_api.event_store import current_store
 
         features: list[dict] = []
-        for forecast in EVENT_STORE.forecasts.values():
+        for forecast in current_store().forecasts.values():
             for cell in forecast.grid_predictions:
                 if cell.center_lon is None or cell.center_lat is None:
                     continue
@@ -344,13 +344,48 @@ def _weather_properties(row: tuple[Any, ...]) -> dict:
     }
 
 
+class ReplayFallbackMapReader:
+    """Timescale when it has fire or station rows; otherwise corridor fixtures."""
+
+    def __init__(self, primary: MapReader, fallback: MapReader) -> None:
+        self.primary = primary
+        self.fallback = fallback
+        self._use_fallback: bool | None = None
+
+    def _source(self) -> MapReader:
+        if self._use_fallback is None:
+            self._use_fallback = not self.primary.fire(None, 1) and not self.primary.air_quality(
+                None, 1
+            )
+        return self.fallback if self._use_fallback else self.primary
+
+    def air_quality(self, bbox: list[float] | None, limit: int) -> list[dict]:
+        return self._source().air_quality(bbox, limit)
+
+    def fire(self, bbox: list[float] | None, limit: int) -> list[dict]:
+        return self._source().fire(bbox, limit)
+
+    def weather(self, bbox: list[float] | None, limit: int) -> list[dict]:
+        return self._source().weather(bbox, limit)
+
+    def forecast(self, limit: int) -> list[dict]:
+        return self._source().forecast(limit)
+
+    def grid(self, limit: int) -> list[dict]:
+        return self._source().grid(limit)
+
+    def satellite(self, limit: int) -> list[dict]:
+        return self._source().satellite(limit)
+
+
 def get_map_reader() -> Generator[MapReader, None, None]:
     """Use Timescale when configured, otherwise the fixture fallback."""
     settings = get_settings()
-    if not settings.database_url:
-        from aeropulse_api.routers.map import _AQ, _FIRE, _WEATHER
+    from aeropulse_api.map_fixtures import air_quality_features, fire_features, weather_features
 
-        yield FixtureMapReader(_AQ, _FIRE, _WEATHER)
+    fixtures = FixtureMapReader(air_quality_features(), fire_features(), weather_features())
+    if not settings.database_url:
+        yield fixtures
         return
     try:
         import psycopg
@@ -359,6 +394,6 @@ def get_map_reader() -> Generator[MapReader, None, None]:
     except Exception as exc:
         raise HTTPException(status_code=503, detail="Map database unavailable") from exc
     try:
-        yield TimescaleMapReader(connection)
+        yield ReplayFallbackMapReader(TimescaleMapReader(connection), fixtures)
     finally:
         connection.close()

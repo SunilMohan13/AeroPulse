@@ -5,7 +5,8 @@ import { ScientificBadge } from '../common/Badge'
 import { formatNumber, formatTimeIST } from '../../utils/format'
 import { getBandLabel } from '../../utils/aqi'
 import { distanceKm } from '../../utils/geo'
-import { HERO_EVENT_ID } from '../../data/mockEvents'
+import { useHeroEventId } from '../../hooks/useHeroEventId'
+import { heroEventPath } from '../../utils/heroEvent'
 import { copilotQuestionForCell, evidenceForCell } from './mapCellEvidence'
 import { useApp } from '../../context/AppContext'
 
@@ -33,6 +34,7 @@ export function MapPopup({
 }) {
   const navigate = useNavigate()
   const { setPendingCopilotQuestion } = useApp()
+  const heroEventId = useHeroEventId()
   const nearbyFires = fire
     ? fires.filter((f) => f.id !== fire.id && distanceKm(fire.lat, fire.lon, f.lat, f.lon) < 25)
         .length
@@ -75,7 +77,7 @@ export function MapPopup({
             <span className="font-medium text-pollution-severe">HIGH</span>
           </div>
           <Link
-            to={`/events/${HERO_EVENT_ID}`}
+            to={heroEventPath(heroEventId)}
             className="mt-3 block w-full rounded-md bg-intel/20 py-2 text-center text-xs font-medium text-intel hover:bg-intel/30 focus:outline-none focus-visible:ring-2 focus-visible:ring-intel"
           >
             Investigate event

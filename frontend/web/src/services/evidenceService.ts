@@ -1,6 +1,7 @@
 import { mockEvidence, evidenceNodes, evidenceEdges, eventTimeline } from '../data/mockEvidence'
+import { HERO_EVENT_ID } from '../data/mockEvents'
 import type { EvidenceItem, EvidenceNode, EvidenceEdge, TimelineEvent } from '../types'
-import { liveEvidence } from '../api/live'
+import { liveEvidence, liveEvidenceGraph, liveTimeline } from '../api/live'
 import { resolve } from './resolve'
 
 const delay = (ms = 100) => new Promise((r) => setTimeout(r, ms))
@@ -21,22 +22,33 @@ export async function fetchEvidence(eventId: string): Promise<EvidenceItem[]> {
 /**
  * The evidence graph view.
  *
- * `GET /api/v1/events/{id}/graph` returns `graph.v1` edges without the x/y
- * coordinates this hand-laid diagram needs, so live mode does not attempt a
- * partial rendering. The demo graph is the curated illustration and stays
- * the illustration; the live evidence *list* is wired above and is where
- * real lineage shows up.
+ * Live reads `GET /api/v1/events/{id}/graph` and places vertices on a radial
+ * layout. Demo keeps the curated illustration. An empty live graph is shown
+ * as empty rather than silently substituting the illustration.
  */
-export async function fetchEvidenceGraph(): Promise<{
+export async function fetchEvidenceGraph(eventId?: string): Promise<{
   nodes: EvidenceNode[]
   edges: EvidenceEdge[]
 }> {
-  await delay()
-  return { nodes: evidenceNodes, edges: evidenceEdges }
+  const target = eventId ?? HERO_EVENT_ID
+  return resolve(
+    'evidence-graph',
+    async () => {
+      await delay()
+      return { nodes: evidenceNodes, edges: evidenceEdges }
+    },
+    () => liveEvidenceGraph(target),
+  )
 }
 
 export async function fetchEventTimeline(eventId: string): Promise<TimelineEvent[]> {
-  await delay(60)
-  if (eventId === 'EVT-1024') return eventTimeline
-  return eventTimeline.slice(0, 3)
+  return resolve(
+    'timeline',
+    async () => {
+      await delay(60)
+      if (eventId === HERO_EVENT_ID) return eventTimeline
+      return eventTimeline.slice(0, 3)
+    },
+    () => liveTimeline(eventId),
+  )
 }

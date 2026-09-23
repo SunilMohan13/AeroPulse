@@ -14,6 +14,7 @@ import type {
   ApiEvidence,
   ApiFireProperties,
   ApiForecast,
+  ApiGraph,
   ApiGridFeature,
   ApiHazardCell,
   ApiIndustryProperties,
@@ -28,7 +29,9 @@ import type {
 import type {
   CitizenReport,
   CopilotMessage,
+  EvidenceEdge,
   EvidenceItem,
+  EvidenceNode,
   FireObservation,
   ForecastPoint,
   GridCell,
@@ -39,10 +42,13 @@ import type {
   PollutionEvent,
   PopulationRiskArea,
   SourceHealth,
+  TimelineEvent,
   WindObservation,
 } from '../types'
-import { apiGet, apiPost, type FeatureCollection, type ListResponse } from './client'
+import { apiGet, apiPost, ApiError, type FeatureCollection, type ListResponse } from './client'
 import {
+  stationToGridCell,
+  toEvidenceGraph,
   toEvidenceItem,
   toFireObservation,
   toForecastPoints,
@@ -52,6 +58,7 @@ import {
   toPeakForecastCell,
   toPollutionEvent,
   toSourceHealth,
+  toTimeline,
   toWindObservation,
 } from './adapters'
 import { KM1_DEG } from '../utils/geo'
@@ -89,14 +96,47 @@ export async function liveEvents(): Promise<PollutionEvent[]> {
 }
 
 export async function liveEvent(id: string): Promise<PollutionEvent | null> {
-  const event = await apiGet<ApiEvent>(`/api/v1/events/${id}`)
-  const feature = await gridFeature(event.grid_ids[0] ?? '')
-  return toPollutionEvent(event, feature ?? undefined)
+  try {
+    const event = await apiGet<ApiEvent>(`/api/v1/events/${id}`)
+    const feature = await gridFeature(event.grid_ids[0] ?? '')
+    return toPollutionEvent(event, feature ?? undefined)
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 404) return null
+    throw error
+  }
 }
 
 export async function liveEvidence(eventId: string): Promise<EvidenceItem[]> {
-  const response = await apiGet<ListResponse<ApiEvidence>>(`/api/v1/events/${eventId}/evidence`)
-  return response.items.map((item) => toEvidenceItem(item, eventId))
+  try {
+    const response = await apiGet<ListResponse<ApiEvidence>>(`/api/v1/events/${eventId}/evidence`)
+    return response.items.map((item) => toEvidenceItem(item, eventId))
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 404) return []
+    throw error
+  }
+}
+
+export async function liveTimeline(eventId: string): Promise<TimelineEvent[]> {
+  const evidence = await liveEvidence(eventId)
+  return toTimeline(evidence)
+}
+
+export async function liveEvidenceGraph(
+  eventId: string,
+): Promise<{ nodes: EvidenceNode[]; edges: EvidenceEdge[] }> {
+  const graph = await apiGet<ApiGraph>(`/api/v1/events/${eventId}/graph`)
+  const laidOut = toEvidenceGraph(graph)
+  const evidence = await liveEvidence(eventId)
+  const bySource = new Map(evidence.map((item) => [item.source.toLowerCase(), item]))
+  return {
+    nodes: laidOut.nodes.map((node) => ({
+      ...node,
+      item: node.item ?? bySource.get(node.id.toLowerCase()) ?? evidence.find((item) =>
+        item.category.toLowerCase().includes(node.type),
+      ),
+    })),
+    edges: laidOut.edges,
+  }
 }
 
 /** The most recently updated event, used where the UI needs "the" event. */
@@ -109,17 +149,71 @@ async function primaryEventId(): Promise<string | null> {
 export async function liveForecast(eventId?: string): Promise<ForecastPoint[]> {
   const target = eventId ?? (await primaryEventId())
   if (!target) return []
-  const forecast = await apiGet<ApiForecast>(`/api/v1/events/${target}/forecast`)
-  return toForecastPoints(forecast)
+  try {
+    const forecast = await apiGet<ApiForecast>(`/api/v1/events/${target}/forecast`)
+    return toForecastPoints(forecast)
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 404) return []
+    throw error
+  }
 }
 
 export async function liveAirQuality(): Promise<GridCell[]> {
-  const response = await apiGet<ListResponse<ApiGridFeature>>('/api/v1/grid-features', {
-    limit: 500,
-  })
-  // H3 resolution 8 is ~1 km across; the UI renders square cells of that
-  // edge length rather than true hexagons, matching how the demo grid draws.
-  return response.items.map((feature) => toGridCell(feature, KM1_DEG))
+  let cells: GridCell[] = []
+  try {
+    const response = await apiGet<ListResponse<ApiGridFeature>>('/api/v1/grid-features', {
+      limit: 500,
+    })
+    cells = response.items.map((feature) => toGridCell(feature, KM1_DEG))
+  } catch (error) {
+    if (!(error instanceof ApiError) || (error.status !== 503 && error.status !== 404)) {
+      throw error
+    }
+  }
+
+  if (cells.length === 0) {
+    const stations = await liveStations()
+    cells = stations
+      .filter((station) => station.parameter.toLowerCase().includes('pm25'))
+      .map((station) =>
+        stationToGridCell(station.lat, station.lon, station.value, station.sourceId, KM1_DEG),
+      )
+  }
+
+  try {
+    const collection = await apiGet<
+      FeatureCollection<{ pm25?: number; grid_id?: string; confidence?: number }>
+    >('/api/v1/map/forecast', { limit: 500 })
+    for (const feature of collection.features) {
+      const pm25 = feature.properties.pm25
+      if (pm25 == null) continue
+      const [lon, lat] = feature.geometry.coordinates as unknown as [number, number]
+      const existing = cells.find(
+        (cell) =>
+          cell.gridId === feature.properties.grid_id ||
+          (Math.abs(cell.lat - lat) < 0.02 && Math.abs(cell.lon - lon) < 0.02),
+      )
+      if (existing) {
+        existing.plume = pm25
+      } else {
+        const cell = stationToGridCell(
+          lat,
+          lon,
+          pm25,
+          feature.properties.grid_id ?? `forecast_${lat.toFixed(3)}_${lon.toFixed(3)}`,
+          KM1_DEG,
+        )
+        cell.plume = pm25
+        cells.push(cell)
+      }
+    }
+  } catch (error) {
+    if (!(error instanceof ApiError) || (error.status !== 404 && error.status !== 503)) {
+      throw error
+    }
+  }
+
+  return cells
 }
 
 export async function liveFires(): Promise<FireObservation[]> {
@@ -244,13 +338,11 @@ export async function liveCitizenReports(): Promise<CitizenReport[]> {
   const response = await apiGet<ListResponse<ApiCitizenReport>>('/api/v1/citizen/reports')
   return response.items.map((report) => ({
     id: report.report_id,
-    type: report.observation_type,
-    location: `${report.lat.toFixed(3)}, ${report.lon.toFixed(3)}`,
+    type: report.notes ?? report.observation_type,
+    location: report.notes ?? `${report.lat.toFixed(3)}, ${report.lon.toFixed(3)}`,
     lat: report.lat,
     lon: report.lon,
     reportedAt: report.observed_at,
-    // No CV model runs, so an unclassified report carries no classifier
-    // confidence. 50 is the "no information" midpoint, not a measurement.
     confidence: report.cv_class === 'unknown' ? 50 : 70,
     classification: report.cv_class,
     corroboration: report.correlated_event_id ? 1 : 0,
@@ -292,7 +384,16 @@ export async function liveCopilot(query: string): Promise<CopilotMessage> {
     sections.push(`OBSERVED\n${response.observed_facts.map((f) => `• ${f}`).join('\n')}`)
   }
   if (response.likely_sources?.length) {
-    sections.push(`INFERRED\n${response.likely_sources.map((s) => `• ${s}`).join('\n')}`)
+    const lines = response.likely_sources.map((source) => {
+      if (typeof source === 'string') return `• ${source}`
+      const note = source.note ?? 'Independent source likelihood'
+      const conf =
+        source.source_confidence != null
+          ? ` (${Math.round(source.source_confidence * 100)}%)`
+          : ''
+      return `• ${note}${conf}`
+    })
+    sections.push(`INFERRED\n${lines.join('\n')}`)
   }
   if (response.predicted_conditions?.length) {
     sections.push(`PREDICTED\n${response.predicted_conditions.map((p) => `• ${p}`).join('\n')}`)
@@ -311,8 +412,11 @@ export async function liveCopilot(query: string): Promise<CopilotMessage> {
     role: 'assistant',
     content: sections.join('\n\n'),
     citations: (response.evidence ?? [])
-      .filter((e) => e.source)
-      .map((e) => ({ source: e.source ?? '', time: e.time ?? '' })),
+      .map((item) => ({
+        source: item.source ?? item.evidence_type ?? '',
+        time: item.time ?? '',
+      }))
+      .filter((item) => item.source),
   }
 }
 

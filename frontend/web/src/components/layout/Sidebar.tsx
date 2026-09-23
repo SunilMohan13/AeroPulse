@@ -16,22 +16,23 @@ import {
 } from 'lucide-react'
 import { cn } from '../../utils/cn'
 import { useApp } from '../../context/AppContext'
-import { HERO_EVENT_ID } from '../../data/mockEvents'
-
-const navItems = [
-  { to: '/', label: 'Overview', icon: LayoutDashboard, end: true },
-  { to: '/map', label: 'Live Map', icon: Map },
-  { to: `/events/${HERO_EVENT_ID}`, label: 'Events', icon: AlertTriangle },
-  { to: '/forecast', label: 'Forecast', icon: TrendingUp },
-  { to: '/risk', label: 'Risk', icon: Users },
-  { to: '/evidence', label: 'Evidence', icon: FileSearch },
-  { to: '/sources', label: 'Sources', icon: Database },
-  { to: '/copilot', label: 'Copilot', icon: Bot },
-  { to: '/citizen', label: 'Citizen', icon: MessageSquare },
-]
+import { useHeroEventId } from '../../hooks/useHeroEventId'
 
 export function Sidebar() {
   const { sidebarCollapsed, setSidebarCollapsed, mobileNavOpen, setMobileNavOpen } = useApp()
+  const heroEventId = useHeroEventId()
+
+  const navItems = [
+    { to: '/', label: 'Overview', icon: LayoutDashboard, end: true },
+    { to: '/map', label: 'Live Map', icon: Map },
+    { to: heroEventId ? `/events/${heroEventId}` : '/events', label: 'Events', icon: AlertTriangle },
+    { to: '/forecast', label: 'Forecast', icon: TrendingUp },
+    { to: '/risk', label: 'Risk', icon: Users },
+    { to: '/evidence', label: 'Evidence', icon: FileSearch },
+    { to: '/sources', label: 'Sources', icon: Database },
+    { to: '/copilot', label: 'Copilot', icon: Bot },
+    { to: '/citizen', label: 'Citizen', icon: MessageSquare },
+  ]
 
   const linkClass = ({ isActive }: { isActive: boolean }) =>
     cn(

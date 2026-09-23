@@ -49,6 +49,25 @@ export class MissingTokenError extends ApiError {
 }
 
 /**
+ * Resolve an API path against `API_BASE`, or same-origin when the base is empty.
+ */
+function requestUrl(
+  path: string,
+  params?: Record<string, string | number | boolean | undefined | null>,
+): string {
+  const url = API_BASE
+    ? new URL(API_BASE + path)
+    : new URL(path, typeof window === 'undefined' ? 'http://localhost' : window.location.origin)
+  if (params) {
+    for (const [key, value] of Object.entries(params)) {
+      if (value === undefined || value === null) continue
+      url.searchParams.set(key, String(value))
+    }
+  }
+  return url.toString()
+}
+
+/**
  * GET a JSON resource from the API.
  *
  * @param path Path beginning with `/`, e.g. `/api/v1/events`.
@@ -62,18 +81,12 @@ export async function apiGet<T>(
 ): Promise<T> {
   if (!HAS_API_TOKEN) throw new MissingTokenError(path)
 
-  const url = new URL(API_BASE + path)
-  if (params) {
-    for (const [key, value] of Object.entries(params)) {
-      if (value === undefined || value === null) continue
-      url.searchParams.set(key, String(value))
-    }
-  }
+  const url = requestUrl(path, params)
 
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), API_TIMEOUT_MS)
   try {
-    const response = await fetch(url.toString(), {
+    const response = await fetch(url, {
       method: 'GET',
       headers: { Authorization: `Bearer ${API_TOKEN}`, Accept: 'application/json' },
       signal: controller.signal,
@@ -101,7 +114,7 @@ export async function apiPost<T>(path: string, body: unknown): Promise<T> {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), API_TIMEOUT_MS)
   try {
-    const response = await fetch(API_BASE + path, {
+    const response = await fetch(requestUrl(path), {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${API_TOKEN}`,
@@ -133,7 +146,7 @@ export async function probeHealth(): Promise<boolean> {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), 3000)
   try {
-    const response = await fetch(`${API_BASE}/health`, { signal: controller.signal })
+    const response = await fetch(requestUrl('/health'), { signal: controller.signal })
     return response.ok
   } catch {
     return false

@@ -7,9 +7,9 @@
  * * **Severity.** The contract's top band is `CRITICAL`; the UI calls it
  *   `SEVERE`. A straight cast would render the top band as unstyled text.
  * * **Confidence scale.** Contracts use 0–1, the UI renders 0–100.
- * * **Geometry.** `event.v1` carries `grid_ids`, not coordinates. The UI map
- *   needs a point, so an event is joined to its grid feature, which has the
- *   cell centroid.
+ * * **Geometry.** `event.v1` carries WKT `POINT(lon lat)` and `grid_ids`.
+ *   The cell centroid on the grid feature is preferred; the WKT point is
+ *   used when the feature row is missing so Live does not render at 0,0.
  * * **Fields the API does not have.** `recommendedActions` and
  *   `populationAtRisk` exist in the demo narrative and nowhere in the API.
  *   They are returned empty and listed in `provenance.unavailable`, so a
@@ -23,6 +23,7 @@ import type {
   ApiEvidence,
   ApiFireProperties,
   ApiForecast,
+  ApiGraph,
   ApiGridFeature,
   ApiHazardCell,
   ApiModel,
@@ -35,7 +36,9 @@ import type {
   EventSeverity,
   EventStatus,
   EventType,
+  EvidenceEdge,
   EvidenceItem,
+  EvidenceNode,
   FireObservation,
   ForecastPoint,
   GridCell,
@@ -45,6 +48,7 @@ import type {
   PollutionEvent,
   SourceHealth,
   SourceLikelihood,
+  TimelineEvent,
   WindObservation,
 } from '../types'
 import { getAqiFromPm25, getRiskFromPm25 } from '../utils/aqi'
@@ -57,6 +61,21 @@ export const LIVE_UNAVAILABLE_EVENT_FIELDS = [
 ] as const
 
 const pct = (v: number | null | undefined): number => Math.round((v ?? 0) * 100)
+
+/** Parse `event.v1` WKT `POINT(lon lat)`. */
+export function parsePointWkt(
+  geometry: string | null | undefined,
+): { lat: number; lon: number } | null {
+  if (!geometry) return null
+  const match = geometry
+    .trim()
+    .match(/^POINT\s*\(\s*([+-]?\d+(?:\.\d+)?)\s+([+-]?\d+(?:\.\d+)?)\s*\)$/i)
+  if (!match) return null
+  const lon = Number(match[1])
+  const lat = Number(match[2])
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null
+  return { lat, lon }
+}
 
 /** Contract severity to UI severity. `CRITICAL` is the UI's `SEVERE`. */
 export function toSeverity(value: string): EventSeverity {
@@ -143,10 +162,12 @@ export function toRegion(lat: number, lon: number): string {
 export function toPollutionEvent(event: ApiEvent, feature?: ApiGridFeature): PollutionEvent {
   const unavailable = [...LIVE_UNAVAILABLE_EVENT_FIELDS] as string[]
   const pm25 = feature?.pm25 ?? feature?.pm25_estimate ?? 0
-  if (!feature) unavailable.push('pm25', 'pm10', 'aqi', 'lat', 'lon', 'sourceLikelihood')
+  const point = parsePointWkt(event.geometry)
+  if (!feature) unavailable.push('pm25', 'pm10', 'aqi', 'sourceLikelihood')
+  if (!feature && !point) unavailable.push('lat', 'lon')
 
-  const lat = feature?.center_lat ?? 0
-  const lon = feature?.center_lon ?? 0
+  const lat = feature?.center_lat ?? point?.lat ?? 0
+  const lon = feature?.center_lon ?? point?.lon ?? 0
 
   return {
     id: event.event_id,
@@ -232,12 +253,18 @@ export function toEvidenceItem(item: ApiEvidence, eventId: string): EvidenceItem
  */
 export function toForecastPoints(forecast: ApiForecast): ForecastPoint[] {
   const generated = new Date(forecast.generated_at).getTime()
-  const origin = forecast.grid_predictions.filter((p) => p.grid_id === forecast.origin_grid_id)
-  const series = origin.length ? origin : forecast.grid_predictions.slice(0, 1)
-  const baseline = series[0]?.pm25 ?? 0
+  const cells = forecast.grid_predictions
+  if (cells.length === 0) return []
+  const baseline = cells[0]?.pm25 ?? 0
+  // Origin cell is hour 0; remaining rows follow `horizons`. If the origin is
+  // repeated, prefer the explicit horizon list over duplicating t=0.
+  const hours =
+    cells.length === forecast.horizons.length
+      ? forecast.horizons
+      : [0, ...forecast.horizons].slice(0, cells.length)
 
-  return forecast.horizons.slice(0, series.length || forecast.horizons.length).map((hour, i) => {
-    const cell = series[Math.min(i, series.length - 1)]
+  return cells.map((cell, i) => {
+    const hour = hours[i] ?? i
     const spread = (1 - cell.confidence) * cell.pm25
     return {
       hour,
@@ -286,12 +313,18 @@ export function toFireObservation(
   properties: ApiFireProperties,
   coordinates: [number, number],
 ): FireObservation {
+  const [lon, lat] = coordinates
+  // Contract confidence is 0–1, matching the demo mock fires. Values already
+  // on a 0–100 scale (legacy GeoJSON) are brought back to 0–1 so the popup
+  // that multiplies by 100 never shows 9100%.
+  const raw = properties.confidence
+  const confidence = raw > 1 ? raw / 100 : raw
   return {
-    id: `${properties.source_id}_${properties.grid_id}_${properties.observed_at}`,
-    lat: coordinates[1],
-    lon: coordinates[0],
+    id: `${properties.source_id}_${properties.grid_id ?? `${lon}_${lat}`}_${properties.observed_at}`,
+    lat,
+    lon,
     frp: properties.frp,
-    confidence: Math.round(properties.confidence * 100),
+    confidence,
     timestamp: properties.observed_at,
   }
 }
@@ -388,4 +421,120 @@ export function toModelCatalogEntry(model: ApiModel): ModelCatalogEntry {
 /** Provenance stamp for any live value with no richer detail to report. */
 export function liveProvenance(partial: Partial<DataProvenance> = {}): DataProvenance {
   return { mode: 'live', ...partial }
+}
+
+const NODE_TYPES: EvidenceNode['type'][] = [
+  'event',
+  'fire',
+  'cpcb',
+  'satellite',
+  'weather',
+  'cams',
+  'forecast',
+]
+
+function graphNodeType(type: string, id: string): EvidenceNode['type'] {
+  const token = `${type} ${id}`.toLowerCase()
+  const hit = NODE_TYPES.find((name) => token.includes(name))
+  if (hit) return hit
+  if (token.includes('firms') || token.includes('modis')) return token.includes('modis') ? 'satellite' : 'fire'
+  if (token.includes('observation') || token.includes('station')) return 'cpcb'
+  if (token.includes('pollution')) return 'event'
+  return 'cpcb'
+}
+
+/**
+ * Place `graph.v1` vertices on the explorer canvas.
+ *
+ * The API stores lineage, not x/y. A radial layout around the event hub is
+ * enough to read who supports whom; it is not the curated demo illustration.
+ */
+export function toEvidenceGraph(graph: ApiGraph): { nodes: EvidenceNode[]; edges: EvidenceEdge[] } {
+  const cx = 400
+  const cy = 200
+  const hub =
+    graph.vertices.find((v) => graphNodeType(v.type, v.id) === 'event') ?? graph.vertices[0]
+  const spokes = graph.vertices.filter((v) => v.id !== hub?.id)
+  const nodes: EvidenceNode[] = []
+  if (hub) {
+    nodes.push({
+      id: hub.id,
+      label: String(hub.properties?.label ?? 'Pollution Event'),
+      type: 'event',
+      x: cx,
+      y: cy,
+    })
+  }
+  spokes.forEach((vertex, index) => {
+    const angle = (Math.PI * 2 * index) / Math.max(spokes.length, 1) - Math.PI / 2
+    nodes.push({
+      id: vertex.id,
+      label: String(vertex.properties?.label ?? vertex.id),
+      type: graphNodeType(vertex.type, vertex.id),
+      x: cx + Math.cos(angle) * 280,
+      y: cy + Math.sin(angle) * 140,
+    })
+  })
+  return {
+    nodes,
+    edges: graph.edges.map((edge) => ({ from: edge.from_id, to: edge.to_id })),
+  }
+}
+
+/** Build a timeline from evidence plus the event clock when one is known. */
+export function toTimeline(items: EvidenceItem[], detectedAt?: string): TimelineEvent[] {
+  const events: TimelineEvent[] = items.map((item, index) => ({
+    id: item.id,
+    time: item.time
+      ? new Date(item.time).toLocaleTimeString('en-IN', {
+          hour: '2-digit',
+          minute: '2-digit',
+          hour12: false,
+          timeZone: 'Asia/Kolkata',
+        })
+      : `${String(8 + Math.floor(index / 3)).padStart(2, '0')}:${String(32 + index * 3).padStart(2, '0')}`.slice(
+          0,
+          5,
+        ),
+    label: item.observation,
+    icon: item.category.toLowerCase().includes('fire') ? 'fire' : 'alert',
+  }))
+  if (detectedAt && events.length === 0) {
+    events.push({
+      id: 'detected',
+      time: new Date(detectedAt).toLocaleTimeString('en-IN', {
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false,
+        timeZone: 'Asia/Kolkata',
+      }),
+      label: 'Event detected',
+      icon: 'alert',
+    })
+  }
+  return events
+}
+
+/** Station observation as a 1 km map cell when grid-features are empty. */
+export function stationToGridCell(
+  lat: number,
+  lon: number,
+  pm25: number,
+  sourceId: string,
+  stepDeg: number,
+): GridCell {
+  return {
+    gridId: `${sourceId}_${lat.toFixed(3)}_${lon.toFixed(3)}`,
+    lat,
+    lon,
+    pm25,
+    pm10: Math.round(pm25 * 1.28),
+    no2: 0,
+    aqi: getAqiFromPm25(pm25),
+    population: 0,
+    risk: getRiskFromPm25(pm25),
+    stepDeg,
+    plume: 0,
+    edgeFade: 1,
+  }
 }

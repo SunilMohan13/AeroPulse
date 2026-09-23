@@ -8,11 +8,13 @@ import { CitizenReportMap } from '../components/map/CitizenReportMap'
 import type { CitizenReport } from '../types'
 import { LiveCaveatNotice } from '../components/common/DemoOnlyNotice'
 import { CITIZEN_LIVE_CAVEAT } from '../services/citizenService'
+import { useDataMode } from '../context/DataModeContext'
 
 export function CitizenReports() {
+  const { mode } = useDataMode()
   const [searchParams] = useSearchParams()
   const highlightId = searchParams.get('highlight')
-  const { data } = useQuery({ queryKey: ['citizenStats'], queryFn: fetchCitizenStats })
+  const { data } = useQuery({ queryKey: ['citizenStats', mode], queryFn: fetchCitizenStats })
   const [selected, setSelected] = useState<CitizenReport | null>(null)
 
   const reports = data?.reports ?? []
@@ -35,19 +37,19 @@ export function CitizenReports() {
       <div className="grid grid-cols-3 gap-4">
         <Card>
           <CardBody className="text-center">
-            <p className="font-mono text-2xl font-bold">{data?.totalToday ?? 312}</p>
+            <p className="font-mono text-2xl font-bold">{data?.totalToday ?? (mode === 'live' ? 0 : 312)}</p>
             <p className="text-xs text-text-muted">reports today</p>
           </CardBody>
         </Card>
         <Card>
           <CardBody className="text-center">
-            <p className="font-mono text-2xl font-bold">{data?.awaiting ?? 27}</p>
+            <p className="font-mono text-2xl font-bold">{data?.awaiting ?? (mode === 'live' ? 0 : 27)}</p>
             <p className="text-xs text-text-muted">awaiting verification</p>
           </CardBody>
         </Card>
         <Card>
           <CardBody className="text-center">
-            <p className="font-mono text-2xl font-bold">{data?.correlated ?? 84}</p>
+            <p className="font-mono text-2xl font-bold">{data?.correlated ?? (mode === 'live' ? 0 : 84)}</p>
             <p className="text-xs text-text-muted">correlated with events</p>
           </CardBody>
         </Card>

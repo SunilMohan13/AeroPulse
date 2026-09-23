@@ -243,8 +243,8 @@ export interface ApiCopilot {
   answer: string
   observed_facts?: string[]
   predicted_conditions?: string[]
-  likely_sources?: string[]
-  evidence?: { source?: string; time?: string; summary?: string }[]
+  likely_sources?: string[] | { note?: string; source_confidence?: number }[]
+  evidence?: { source?: string; time?: string; summary?: string; evidence_type?: string }[]
   recommended_actions?: string[]
   limitations?: string[]
   llm_used?: boolean
@@ -268,10 +268,10 @@ export interface ApiFireProperties {
   source_id: string
   frp: number
   confidence: number
-  sensor: string
+  sensor?: string
   observed_at: string
-  quality_score: number
-  grid_id: string
+  quality_score?: number
+  grid_id?: string
 }
 
 /** Properties on `/map/weather` features. */
@@ -279,11 +279,34 @@ export interface ApiWeatherProperties {
   source_id: string
   wind_u: number | null
   wind_v: number | null
-  temperature: number | null
-  humidity: number | null
-  pressure: number | null
-  boundary_layer_height: number | null
+  temperature?: number | null
+  humidity?: number | null
+  pressure?: number | null
+  boundary_layer_height?: number | null
   observed_at: string
-  quality_score: number
-  grid_id: string
+  quality_score?: number
+  grid_id?: string
+}
+
+/** `graph.v1` from `GET /api/v1/events/{id}/graph`. */
+export interface ApiGraphVertex {
+  id: string
+  type: string
+  properties?: Record<string, unknown>
+}
+
+export interface ApiGraphEdge {
+  edge_id: string
+  edge_type: string
+  from_id: string
+  to_id: string
+  confidence: number
+  evidence_ids?: string[]
+}
+
+export interface ApiGraph {
+  schema_version?: 'graph.v1'
+  event_id: string
+  vertices: ApiGraphVertex[]
+  edges: ApiGraphEdge[]
 }

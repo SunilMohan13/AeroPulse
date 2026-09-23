@@ -1,11 +1,14 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useApp } from '../../context/AppContext'
-import { JUDGE_TOUR_STEPS } from '../../demo/judgeTourSteps'
+import { judgeTourSteps } from '../../demo/judgeTourSteps'
+import { useHeroEventId } from '../../hooks/useHeroEventId'
 
 /** Auto-navigates the 90s judge tour while syncing demo phase, map layers, and timeline. */
 export function JudgeTourDriver() {
   const navigate = useNavigate()
+  const heroEventId = useHeroEventId()
+  const steps = useMemo(() => judgeTourSteps(heroEventId), [heroEventId])
   const {
     judgeTourRunning,
     stopJudgeTour,
@@ -26,7 +29,7 @@ export function JudgeTourDriver() {
     }
 
     const runStep = (index: number) => {
-      const step = JUDGE_TOUR_STEPS[index]
+      const step = steps[index]
       if (!step) {
         stopJudgeTour()
         setDemoPhase('complete')
@@ -56,6 +59,7 @@ export function JudgeTourDriver() {
   }, [
     judgeTourRunning,
     navigate,
+    steps,
     setDemoPhase,
     setHourOffset,
     setLayers,

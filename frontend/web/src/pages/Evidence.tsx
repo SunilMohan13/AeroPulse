@@ -4,20 +4,30 @@ import { useQuery } from '@tanstack/react-query'
 import { motion } from 'framer-motion'
 import { Network } from 'lucide-react'
 import { ScientificBadge } from '../components/common/Badge'
-import { LoadingState } from '../components/common/States'
+import { EmptyState, ErrorState, LoadingState } from '../components/common/States'
 import { EvidenceDetailPanel } from '../components/evidence/EvidenceDetailPanel'
 import { EvidenceGraphView } from '../components/evidence/EvidenceGraphView'
+import { fetchEvents } from '../services/eventService'
 import { fetchEvidenceGraph } from '../services/evidenceService'
 import type { EvidenceNode } from '../types'
-import { HERO_EVENT_ID } from '../data/mockEvents'
-import { DemoOnlyNotice } from '../components/common/DemoOnlyNotice'
+import { useHeroEventId } from '../hooks/useHeroEventId'
+import { FallbackBanner } from '../components/common/Provenance'
+import { useDataMode } from '../context/DataModeContext'
 
 export function Evidence() {
+  const { mode } = useDataMode()
   const [searchParams] = useSearchParams()
-  const eventHint = searchParams.get('eventId')
-  const { data, isLoading } = useQuery({
-    queryKey: ['evidenceGraph'],
-    queryFn: fetchEvidenceGraph,
+  const heroEventId = useHeroEventId()
+  const { isFetched: eventsFetched } = useQuery({
+    queryKey: ['events', mode],
+    queryFn: fetchEvents,
+    staleTime: 30_000,
+  })
+  const eventHint = searchParams.get('eventId') || heroEventId
+  const { data, isPending, isError, error, refetch } = useQuery({
+    queryKey: ['evidenceGraph', eventHint, mode],
+    queryFn: () => fetchEvidenceGraph(eventHint),
+    enabled: Boolean(eventHint),
   })
   const [selected, setSelected] = useState<EvidenceNode | null>(null)
 
@@ -27,16 +37,38 @@ export function Evidence() {
 
   useEffect(() => {
     if (nodes.length === 0) return
-    if (eventHint === HERO_EVENT_ID && !selected) {
-      setSelected(nodes.find((n) => n.id === 'cpcb') ?? nodes.find((n) => n.item) ?? null)
-    }
-  }, [eventHint, nodes, selected])
+    setSelected((current) => {
+      if (current && nodes.some((n) => n.id === current.id)) return current
+      return nodes.find((n) => n.id === 'cpcb') ?? nodes.find((n) => n.item) ?? nodes[0] ?? null
+    })
+  }, [eventHint, nodes])
 
-  if (isLoading) return <LoadingState message="Loading evidence graph..." />
+  const waitingForLiveEvent = mode === 'live' && !eventHint && !eventsFetched
+  if (waitingForLiveEvent || (Boolean(eventHint) && isPending)) {
+    return <LoadingState message="Loading evidence graph..." />
+  }
+  if (isError) {
+    return (
+      <ErrorState
+        title="Evidence graph unavailable"
+        description={error instanceof Error ? error.message : 'The graph request failed. Retry or switch to Demo.'}
+        action="Retry"
+        onAction={() => void refetch()}
+      />
+    )
+  }
+  if (mode === 'live' && !eventHint) {
+    return (
+      <EmptyState
+        title="No live event for the graph"
+        description="The evidence graph needs an event id from GET /api/v1/events. Switch to Demo, or wait for the worker to persist an episode."
+      />
+    )
+  }
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-4 p-4">
-      <DemoOnlyNotice reason="GET /api/v1/events/{id}/graph returns lineage edges without layout coordinates, so the live graph cannot be drawn in this view. The live evidence list on an event's detail page is wired to the API." />
+      <FallbackBanner />
 
       <motion.header
         initial={{ opacity: 0, y: 8 }}
@@ -49,7 +81,7 @@ export function Evidence() {
             <h1 className="text-xl font-semibold tracking-tight">Evidence Explorer</h1>
           </div>
           <p className="mt-1 text-sm text-text-secondary">
-            Multi-source fusion for {eventHint ?? HERO_EVENT_ID} · investigation graph
+            Multi-source fusion for {eventHint} · investigation graph
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -85,6 +117,7 @@ export function Evidence() {
         <div className="lg:col-span-2">
           <EvidenceDetailPanel
             selected={selected}
+            eventId={eventHint}
             linkedCount={sourceNodes.length}
             totalSources={sourceNodes.length}
           />

@@ -2,6 +2,7 @@ import { getForecastSeries, mockForecast, mockObservedHistory } from '../data/mo
 import type { ForecastPoint } from '../types'
 import { liveForecast } from '../api/live'
 import { resolve } from './resolve'
+import { isDemo } from './dataMode'
 
 const delay = (ms = 80) => new Promise((r) => setTimeout(r, ms))
 
@@ -14,8 +15,11 @@ const delay = (ms = 80) => new Promise((r) => setTimeout(r, ms))
  * endpoint exists, rather than faking one from a single latest value.
  */
 export async function fetchObservedHistory(): Promise<{ hour: number; pm25: number }[]> {
-  await delay(60)
-  return mockObservedHistory
+  if (isDemo()) {
+    await delay(60)
+    return mockObservedHistory
+  }
+  return []
 }
 
 async function demoForecast(): Promise<ForecastPoint[]> {

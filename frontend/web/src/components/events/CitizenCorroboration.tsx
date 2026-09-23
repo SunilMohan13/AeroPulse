@@ -3,18 +3,17 @@ import { Camera } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { fetchCitizenReports } from '../../services/citizenService'
 import { ScientificBadge } from '../common/Badge'
-import { HERO_EVENT_ID } from '../../data/mockEvents'
 import { formatDateTimeIST } from '../../utils/format'
+import { useDataMode } from '../../context/DataModeContext'
 
 export function CitizenCorroboration({ eventId }: { eventId: string }) {
+  const { mode } = useDataMode()
   const { data: reports = [] } = useQuery({
-    queryKey: ['citizenReports'],
+    queryKey: ['citizenReports', eventId, mode],
     queryFn: fetchCitizenReports,
   })
 
-  const linked = reports.filter(
-    (r) => r.relatedEventId === eventId || (eventId === HERO_EVENT_ID && r.id === 'cr_5'),
-  )
+  const linked = reports.filter((r) => r.relatedEventId === eventId)
   const primary = linked[0] ?? reports.find((r) => r.status === 'CORROBORATED')
 
   if (!primary) return null

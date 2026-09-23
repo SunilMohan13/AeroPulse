@@ -10,11 +10,15 @@
 
 const raw = import.meta.env as Record<string, string | undefined>
 
-/** Base URL of the AeroPulse API, without a trailing slash. */
-export const API_BASE = (raw.VITE_API_BASE ?? raw.VITE_API_URL ?? 'http://127.0.0.1:8000').replace(
-  /\/+$/,
-  '',
-)
+/**
+ * Base URL of the AeroPulse API, without a trailing slash.
+ *
+ * Empty means same-origin. Local `npm run dev` then uses the Vite proxy
+ * (`/api`, `/health` → `:8000`) so the browser never cross-origin fetches
+ * `localhost:5173` → `127.0.0.1:8000`. Compose and Netlify set this to the
+ * public API host.
+ */
+export const API_BASE = (raw.VITE_API_BASE ?? raw.VITE_API_URL ?? '').replace(/\/+$/, '')
 
 /**
  * Bearer token for the API. Every `/api/v1` route requires one.

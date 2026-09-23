@@ -43,7 +43,10 @@ const BLOCKER_MESSAGES: Record<NonNullable<LiveBlocker>, string> = {
     'No API token configured. Mint one with `uv run python -c "from aeropulse_auth import ' +
     'encode_token, Role; print(encode_token(\'ui\', [Role.VIEWER]))"` and set VITE_API_TOKEN ' +
     'in frontend/web/.env.local.',
-  unreachable: 'The AeroPulse API did not answer /health. Is it running on ' + API_BASE + '?',
+  unreachable:
+    'The AeroPulse API did not answer /health. Is it running on ' +
+    (API_BASE || 'http://127.0.0.1:8000') +
+    '?',
 }
 
 export function DataModeProvider({ children }: { children: ReactNode }) {
