@@ -21,6 +21,24 @@ import type { ForecastPoint, PollutionEvent } from '../types'
 
 const FORECAST_HOURS = [1, 3, 6, 12]
 
+/**
+ * Picks the predicted horizons closest to the ones the peek wants to show.
+ *
+ * Returns `wanted` unchanged when there is no series yet, so the panel keeps
+ * its shape while loading rather than reflowing once data lands.
+ */
+function nearestHours(wanted: number[], forecast: ForecastPoint[]): number[] {
+  const available = forecast.filter((p) => p.hour > 0).map((p) => p.hour)
+  if (available.length === 0) return wanted
+  const snapped = wanted.map((target) =>
+    available.reduce(
+      (best, hour) => (Math.abs(hour - target) < Math.abs(best - target) ? hour : best),
+      available[0],
+    ),
+  )
+  return [...new Set(snapped)]
+}
+
 type Trend = 'rising' | 'falling' | 'steady' | 'unknown'
 
 /** Direction over the next three hours, from the forecast on this screen. */
@@ -66,6 +84,13 @@ export function Overview() {
   // it fell from 185 to 94. Read the direction off the forecast that is on
   // the same screen, so the two can never disagree.
   const trend = readTrend(hero?.pm25, forecast)
+
+  // The horizons belong to whoever produced the forecast, so a fixed +1h
+  // column sat permanently empty in live, where the API's first horizon is
+  // later than that. Snap each wanted horizon to the nearest one actually
+  // predicted and drop the duplicates, which keeps the near/mid/far spread
+  // the peek is for instead of collapsing onto the first four rows.
+  const peekHours = nearestHours(FORECAST_HOURS, forecast)
 
   if (eventsLoading) return <LoadingState message="Loading command overview..." />
 
@@ -121,7 +146,10 @@ export function Overview() {
           )}
         </aside>
 
-        <div className="flex min-h-0 flex-col">
+        {/* Scrolls on its own, like the event list opposite it. Without
+            this the third card runs past the row and the locator map,
+            which comes later in the document, paints over it. */}
+        <div className="flex min-h-0 flex-col overflow-auto">
           <div className="border-b border-border px-4 py-3">
             <div className="flex items-center justify-between gap-2">
               <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-text-muted">
@@ -129,8 +157,11 @@ export function Overview() {
               </p>
               <ScientificBadge label="PREDICTED" />
             </div>
-            <div className="mt-3 grid grid-cols-4 gap-2">
-              {FORECAST_HOURS.map((hour) => {
+            <div
+              className="mt-3 grid gap-2"
+              style={{ gridTemplateColumns: `repeat(${peekHours.length}, minmax(0, 1fr))` }}
+            >
+              {peekHours.map((hour) => {
                 const point = forecast.find((p) => p.hour === hour)
                 return (
                   <div key={hour}>
