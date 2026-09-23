@@ -107,7 +107,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [notificationsOpen, setNotificationsOpen] = useState(false)
   const [selectedFireId, setSelectedFireId] = useState<string | null>(null)
   const [selectedGridId, setSelectedGridId] = useState<string | null>(null)
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(true)
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
   const [windBearingOffset, setWindBearingOffset] = useState(0)
   const [showBaselinePlume, setShowBaselinePlume] = useState(false)
