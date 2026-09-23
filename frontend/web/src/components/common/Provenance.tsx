@@ -1,5 +1,6 @@
 import { AlertTriangle, Database, FlaskConical, Radio } from 'lucide-react'
 import { useDataMode } from '../../context/DataModeContext'
+import { useViewLevel } from '../../context/ViewLevelContext'
 import type { DataProvenance } from '../../types'
 import { cn } from '../../utils/cn'
 
@@ -152,23 +153,32 @@ export function FallbackBanner() {
  */
 export function ModeContextNote({ className }: { className?: string }) {
   const { mode, apiBase } = useDataMode()
+  const { advanced } = useViewLevel()
+
+  if (mode === 'demo') {
+    return (
+      <p className={cn('text-xs text-text-muted', className)}>
+        <span className="font-medium text-intel">Demo</span> — a worked example of a Punjab
+        stubble-burning episode drifting into Delhi NCR. Every figure is illustrative.
+      </p>
+    )
+  }
+
   return (
     <p className={cn('text-xs text-text-muted', className)}>
-      {mode === 'demo' ? (
+      <span className="font-medium text-emerald-300">Live</span> — readings come from the
+      AeroPulse service. It is replaying a recorded Punjab episode rather than ingesting from
+      CPCB and FIRMS right now, so treat the figures as a rehearsal of the real feed.
+      {advanced ? (
         <>
-          <span className="font-medium text-intel">Demo</span> — a scripted Punjab stubble-burning
-          episode transporting into Delhi NCR. Every figure is illustrative and reproducible
-          offline.
+          {' '}
+          <span className="text-text-muted">
+            API <span className="font-mono">{apiBase || '/api'}</span>; Timescale holds no fused
+            events, so the event routes answer from the replay seed and the connector workers are
+            not running.
+          </span>
         </>
-      ) : (
-        <>
-          <span className="font-medium text-emerald-300">Live</span> — the UI is calling{' '}
-          <span className="font-mono">{apiBase || '/api'}</span>. On this Docker stack Timescale
-          has no fused events yet, so the API answers with the Punjab replay seed (same episode as
-          Demo, as contract-valid records). That is fixture replay, not CPCB/FIRMS ingest.
-          Connector workers are not running.
-        </>
-      )}
+      ) : null}
     </p>
   )
 }
@@ -176,9 +186,11 @@ export function ModeContextNote({ className }: { className?: string }) {
 /**
  * Same episode, different question.
  *
- * Overview / Live Map / Events all read the Punjab–Delhi picture. They must
- * not invent a second dataset. They must also not look like three copies of
- * the same canvas — this note names the slice this screen actually serves.
+ * Overview / Live Map / Events all read the Punjab–Delhi picture and must
+ * not invent a second dataset. `question` is the plain thing this screen
+ * answers and always renders. `serves` and `notThis` are the scoping notes
+ * that kept three similar screens apart during development; they are
+ * orientation for a reviewer, not for a citizen, so they stay in advanced.
  */
 export function ScreenJobNote({
   question,
@@ -189,13 +201,19 @@ export function ScreenJobNote({
   serves: string
   notThis: string
 }) {
+  const { advanced } = useViewLevel()
+
   return (
     <p className="text-[11px] leading-snug text-text-secondary">
       <span className="font-medium text-text-primary">{question}</span>
-      <span className="text-text-muted"> · </span>
-      {serves}
-      <span className="text-text-muted"> · not </span>
-      {notThis}
+      {advanced ? (
+        <>
+          <span className="text-text-muted"> · </span>
+          {serves}
+          <span className="text-text-muted"> · not </span>
+          {notThis}
+        </>
+      ) : null}
     </p>
   )
 }

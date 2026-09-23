@@ -9,7 +9,6 @@ import {
   Database,
   Bot,
   MessageSquare,
-  Settings,
   ChevronLeft,
   ChevronRight,
   X,
@@ -22,27 +21,53 @@ export function Sidebar() {
   const { sidebarCollapsed, setSidebarCollapsed, mobileNavOpen, setMobileNavOpen } = useApp()
   const heroEventId = useHeroEventId()
 
-  const navItems: {
-    to: string
-    label: string
-    hint?: string
-    icon: typeof LayoutDashboard
-    end?: boolean
+  // Grouped by the question each screen answers. Nine equal-weight links
+  // gave no clue which to open first, and left Forecast (where is it going)
+  // sitting between Events and Risk as if it were the same kind of thing.
+  const navGroups: {
+    heading: string
+    items: {
+      to: string
+      label: string
+      hint?: string
+      icon: typeof LayoutDashboard
+      end?: boolean
+    }[]
   }[] = [
-    { to: '/', label: 'Overview', hint: 'Briefing', icon: LayoutDashboard, end: true },
-    { to: '/map', label: 'Live Map', hint: 'Corridor', icon: Map },
     {
-      to: heroEventId ? `/events/${heroEventId}` : '/events',
-      label: 'Events',
-      hint: 'Detect',
-      icon: AlertTriangle,
+      heading: 'Now',
+      items: [
+        { to: '/', label: 'Overview', hint: 'How bad is it', icon: LayoutDashboard, end: true },
+        { to: '/map', label: 'Live Map', hint: 'Where is it', icon: Map },
+      ],
     },
-    { to: '/forecast', label: 'Forecast', icon: TrendingUp },
-    { to: '/risk', label: 'Risk', icon: Users },
-    { to: '/evidence', label: 'Evidence', icon: FileSearch },
-    { to: '/sources', label: 'Sources', icon: Database },
-    { to: '/copilot', label: 'Copilot', icon: Bot },
-    { to: '/citizen', label: 'Citizen', icon: MessageSquare },
+    {
+      heading: 'Next',
+      items: [
+        { to: '/forecast', label: 'Forecast', hint: 'Where it is heading', icon: TrendingUp },
+        { to: '/risk', label: 'Exposure', hint: 'Who is affected', icon: Users },
+      ],
+    },
+    {
+      heading: 'Why',
+      items: [
+        {
+          to: heroEventId ? `/events/${heroEventId}` : '/events',
+          label: 'Events',
+          hint: 'What caused it',
+          icon: AlertTriangle,
+        },
+        { to: '/evidence', label: 'Evidence', hint: 'What we fused', icon: FileSearch },
+        { to: '/copilot', label: 'Ask AeroPulse', hint: 'Questions', icon: Bot },
+      ],
+    },
+    {
+      heading: 'Inputs',
+      items: [
+        { to: '/citizen', label: 'Citizen reports', hint: 'Photos from the ground', icon: MessageSquare },
+        { to: '/sources', label: 'Data sources', hint: 'Feeds and models', icon: Database },
+      ],
+    },
   ]
 
   const linkClass = ({ isActive }: { isActive: boolean }) =>
@@ -54,26 +79,39 @@ export function Sidebar() {
     )
 
   const nav = (showLabels: boolean) => (
-    <nav className="flex-1 space-y-0.5 p-2" aria-label="Primary">
-      {navItems.map(({ to, label, hint, icon: Icon, end }) => (
-        <NavLink
-          key={to}
-          to={to}
-          end={end}
-          onClick={() => setMobileNavOpen(false)}
-          className={linkClass}
-          title={showLabels ? undefined : `${label}${hint ? ` · ${hint}` : ''}`}
-        >
-          <Icon className="h-4 w-4 shrink-0" aria-hidden />
+    <nav className="flex-1 overflow-y-auto p-2" aria-label="Primary">
+      {navGroups.map((group) => (
+        <div key={group.heading} className="mb-2">
           {showLabels ? (
-            <span className="flex min-w-0 flex-col leading-tight">
-              <span>{label}</span>
-              {hint ? <span className="text-[10px] text-text-muted">{hint}</span> : null}
-            </span>
+            <p className="px-3 pb-1 pt-2 font-mono text-[9px] uppercase tracking-[0.18em] text-text-muted">
+              {group.heading}
+            </p>
           ) : (
-            <span className="sr-only">{label}</span>
+            <div className="mx-3 my-2 border-t border-border" aria-hidden />
           )}
-        </NavLink>
+          <div className="space-y-0.5">
+            {group.items.map(({ to, label, hint, icon: Icon, end }) => (
+              <NavLink
+                key={to}
+                to={to}
+                end={end}
+                onClick={() => setMobileNavOpen(false)}
+                className={linkClass}
+                title={showLabels ? undefined : `${label}${hint ? ` · ${hint}` : ''}`}
+              >
+                <Icon className="h-4 w-4 shrink-0" aria-hidden />
+                {showLabels ? (
+                  <span className="flex min-w-0 flex-col leading-tight">
+                    <span>{label}</span>
+                    {hint ? <span className="text-[10px] text-text-muted">{hint}</span> : null}
+                  </span>
+                ) : (
+                  <span className="sr-only">{label}</span>
+                )}
+              </NavLink>
+            ))}
+          </div>
+        </div>
       ))}
     </nav>
   )
@@ -102,10 +140,9 @@ export function Sidebar() {
             )}
             {!sidebarCollapsed && <span>Collapse</span>}
           </button>
-          <NavLink to="/sources" className={linkClass}>
-            <Settings className="h-4 w-4" aria-hidden />
-            {!sidebarCollapsed && <span>Settings</span>}
-          </NavLink>
+          {/* A "Settings" entry used to sit here and navigate to /sources,
+              which is a second, mislabelled door onto a page already in the
+              nav. There is no settings screen, so there is no link. */}
         </div>
       </aside>
 

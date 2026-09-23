@@ -177,9 +177,16 @@ export function Forecast() {
 
       <Card className="min-h-[300px] flex-1 overflow-hidden">
         <CardBody className="h-full p-0">
+          {/* `embedded` suppresses the full map chrome. The map timeline is
+              off because the horizon buttons above already set the hour, and
+              two scrubbers for one value is how they drift apart. */}
           <AeroMap
+            embedded
             showControls={false}
-            forceLayers={{ forecast: true }}
+            showGlobeBar={false}
+            showTimeline={false}
+            showLegend={false}
+            forceLayers={{ forecast: true, pollution: true, fires: true, wind: false }}
             className="h-full w-full"
           />
         </CardBody>
@@ -273,7 +280,7 @@ export function Forecast() {
           </CardHeader>
           <CardBody className="space-y-2 p-3 text-xs">
             <div className="flex justify-between">
-              <span className="text-text-secondary">Peak expected</span>
+              <span className="text-text-secondary">Peak for Delhi NCR</span>
               <span className="font-mono font-medium">
                 {peak?.pm25 ?? 0} µg/m³ · +{peak?.hour ?? 0}h
               </span>
@@ -284,17 +291,24 @@ export function Forecast() {
                 {current?.confidenceLow ?? 0}–{current?.confidenceHigh ?? 0}
               </span>
             </div>
-            <div className="flex justify-between">
-              <span className="text-text-secondary">Forecast confidence</span>
-              <span className="font-mono">89%</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-text-secondary">vs persistence @ +6h</span>
-              <span className="font-mono text-emerald-400">−18% error</span>
-            </div>
+            {/* Skill against persistence is an offline evaluation result.
+                No served response carries it, so it is a demo figure. */}
+            {mode === 'demo' && (
+              <>
+                <div className="flex justify-between">
+                  <span className="text-text-secondary">Forecast confidence</span>
+                  <span className="font-mono">89%</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-text-secondary">vs persistence @ +6h</span>
+                  <span className="font-mono text-emerald-400">−18% error</span>
+                </div>
+              </>
+            )}
             <p className="border-t border-border pt-2 text-text-muted">
-              Smoke is advecting southeast from the Punjab fire cluster at ~22 km/h. Values are
-              model output, not measurements.
+              {mode === 'demo'
+                ? 'Smoke is advecting southeast from the Punjab fire cluster at ~22 km/h. Values are model output, not measurements.'
+                : 'These are model outputs, not measurements. Treat the band, not the line, as the answer.'}
             </p>
           </CardBody>
         </Card>

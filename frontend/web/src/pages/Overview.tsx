@@ -15,9 +15,30 @@ import { getBandLabel } from '../utils/aqi'
 import { formatFreshness } from '../utils/format'
 import { useDataMode } from '../context/DataModeContext'
 import { FallbackBanner, ModeContextNote, ScreenJobNote } from '../components/common/Provenance'
-import type { PollutionEvent } from '../types'
+import { HealthGuidance } from '../components/common/HealthGuidance'
+import { AdvancedOnly, useViewLevel } from '../context/ViewLevelContext'
+import type { ForecastPoint, PollutionEvent } from '../types'
 
 const FORECAST_HOURS = [1, 3, 6, 12]
+
+type Trend = 'rising' | 'falling' | 'steady' | 'unknown'
+
+/** Direction over the next three hours, from the forecast on this screen. */
+function readTrend(nowPm25: number | undefined, forecast: ForecastPoint[]): Trend {
+  const ahead = forecast.find((p) => p.hour === 3) ?? forecast.find((p) => p.hour === 1)
+  if (nowPm25 == null || !ahead) return 'unknown'
+  const change = ahead.pm25 - nowPm25
+  // Below 5 µg/m³ the move is inside the noise of the measurement itself.
+  if (Math.abs(change) < 5) return 'steady'
+  return change > 0 ? 'rising' : 'falling'
+}
+
+const TREND_COPY: Record<Trend, string> = {
+  rising: 'getting worse over the next 3 hours',
+  falling: 'easing over the next 3 hours',
+  steady: 'holding steady over the next 3 hours',
+  unknown: 'with no forecast available yet',
+}
 
 export function Overview() {
   const { mode } = useDataMode()
@@ -40,10 +61,11 @@ export function Overview() {
   const hero = pickHeroEvent(events)
   const activeCount = events.filter((e) => e.status === 'ACTIVE').length
   const exposureKnown = totalExposure !== null && totalExposure !== undefined
-  const topLikelihood = hero?.provenance?.unavailable?.includes('sourceLikelihood')
-    ? undefined
-    : hero?.sourceLikelihood[0]
-  const likelihoodKnown = !hero?.provenance?.unavailable?.includes('sourceLikelihood')
+
+  // The headline arrow used to be a hardcoded "up" while the forecast beside
+  // it fell from 185 to 94. Read the direction off the forecast that is on
+  // the same screen, so the two can never disagree.
+  const trend = readTrend(hero?.pm25, forecast)
 
   if (eventsLoading) return <LoadingState message="Loading command overview..." />
 
@@ -54,7 +76,7 @@ export function Overview() {
           Command overview
         </h1>
         <ScreenJobNote
-          question="How bad is it, and how many events?"
+          question="How bad is it, and what is driving it?"
           serves="catalog KPIs, event list, forecast peek, source freshness"
           notThis="the 1 km grid lab or a single-event Detect workspace"
         />
@@ -62,43 +84,14 @@ export function Overview() {
         <FallbackBanner />
       </div>
 
-      {hero ? (
-        <div className="shrink-0 border-b border-border px-4 py-3">
-          <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-text-muted">
-            Situation
-          </p>
-          <p className="mt-1 text-sm text-text-primary">
-            <span className="font-mono text-intel">{hero.id}</span> {hero.title} is{' '}
-            <span className="font-medium">{hero.status}</span>
-            {' · '}
-            {hero.region}
-          </p>
-          <p className="mt-1 text-[11px] text-text-secondary">
-            {likelihoodKnown && topLikelihood ? (
-              <>
-                Top likelihood {topLikelihood.source} {topLikelihood.probability}%
-                <span className="text-text-muted"> — ranking, not proof of cause. </span>
-              </>
-            ) : (
-              <span>Source likelihood is not on this screen. </span>
-            )}
-            Live Map shows every fire and 1 km cell. Events shows the evidence that fused this
-            episode.
-          </p>
-          <Link
-            to={`/events/${hero.id}`}
-            className="mt-2 inline-flex items-center gap-1 text-xs text-intel hover:underline"
-          >
-            Investigate {hero.id}
-            <ArrowRight className="h-3.5 w-3.5" />
-          </Link>
-        </div>
-      ) : null}
+      {hero ? <SituationBlock hero={hero} trend={trend} /> : null}
 
       <KpiStrip
         aqi={hero && !hero.provenance?.unavailable?.includes('pm25') ? hero.aqi : undefined}
         pm25={hero && !hero.provenance?.unavailable?.includes('pm25') ? hero.pm25 : undefined}
+        trend={trend}
         activeCount={activeCount}
+        totalCount={events.length}
         totalExposure={exposureKnown ? (totalExposure as number) : null}
       />
 
@@ -109,7 +102,7 @@ export function Overview() {
               Event catalog
             </p>
             <p className="mt-1 text-[11px] text-text-secondary">
-              {events.length} fused events · this list is not on Live Map
+              {events.length} events fused from multiple sources
             </p>
           </div>
           {events.length === 0 ? (
@@ -157,25 +150,44 @@ export function Overview() {
 
           <div className="border-b border-border px-4 py-3">
             <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-text-muted">
-              Source freshness
+              What to do now
             </p>
-            <ul className="mt-2 space-y-1">
-              {sources.slice(0, 5).map((source) => (
-                <li
-                  key={source.id}
-                  className="flex items-center justify-between gap-2 font-mono text-[11px]"
-                >
-                  <span className="text-text-secondary">{source.name}</span>
-                  <span className="text-text-muted">
-                    {source.status} · {formatFreshness(source.freshnessMinutes)}
-                  </span>
-                </li>
-              ))}
-            </ul>
-            <Link to="/sources" className="mt-2 inline-block text-[11px] text-intel hover:underline">
-              Open source health →
-            </Link>
+            <div className="mt-2">
+              <HealthGuidance
+                pm25={hero && !hero.provenance?.unavailable?.includes('pm25') ? hero.pm25 : null}
+              />
+            </div>
           </div>
+
+          {/* Repeats Source Health in full. Kept for the operator who wants
+              to know whether to trust the screen, hidden from everyone
+              answering "how bad is it". */}
+          <AdvancedOnly>
+            <div className="border-b border-border px-4 py-3">
+              <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-text-muted">
+                Source freshness
+              </p>
+              <ul className="mt-2 space-y-1">
+                {sources.slice(0, 5).map((source) => (
+                  <li
+                    key={source.id}
+                    className="flex items-center justify-between gap-2 font-mono text-[11px]"
+                  >
+                    <span className="text-text-secondary">{source.name}</span>
+                    <span className="text-text-muted">
+                      {source.status} · {formatFreshness(source.freshnessMinutes)}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+              <Link
+                to="/sources"
+                className="mt-2 inline-block text-[11px] text-intel hover:underline"
+              >
+                Open source health →
+              </Link>
+            </div>
+          </AdvancedOnly>
         </div>
       </div>
 
@@ -215,7 +227,73 @@ export function Overview() {
   )
 }
 
+/**
+ * The lede.
+ *
+ * Answers what is happening, where, how serious, which way it is going and
+ * what to do — in that order, in a sentence. The event id, the likelihood
+ * percentage and the "ranking not causality" caveat are true and important,
+ * but they are the second question, so they sit in advanced view.
+ */
+function SituationBlock({ hero, trend }: { hero: PollutionEvent; trend: Trend }) {
+  const { advanced } = useViewLevel()
+  const likelihoodKnown = !hero.provenance?.unavailable?.includes('sourceLikelihood')
+  const topLikelihood = likelihoodKnown ? hero.sourceLikelihood[0] : undefined
+  const pmKnown = !hero.provenance?.unavailable?.includes('pm25')
+
+  return (
+    <div className="shrink-0 border-b border-border px-4 py-3">
+      <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-text-muted">
+        Situation
+      </p>
+
+      {/* Live titles already end in the region ("Biomass burning event ·
+          Punjab"), so appending it produced "... Punjab in Punjab". */}
+      <p className="mt-1 text-sm text-text-primary">
+        <span className="font-medium">{hero.title}</span>
+        {hero.title.includes(hero.region) ? null : <> in {hero.region}</>}
+        {pmKnown ? <> — air quality is {getBandLabel(hero.pm25).toLowerCase()}</> : null}, and{' '}
+        {TREND_COPY[trend]}.
+      </p>
+
+      {topLikelihood ? (
+        <p className="mt-1 text-[11px] text-text-secondary">
+          The most likely driver is {topLikelihood.source.toLowerCase()}.
+          {advanced ? (
+            <span className="text-text-muted">
+              {' '}
+              Likelihood {topLikelihood.probability}% — a ranking across candidate sources, not
+              proof of cause.
+            </span>
+          ) : null}
+        </p>
+      ) : (
+        <p className="mt-1 text-[11px] text-text-secondary">
+          The driver has not been attributed for this event.
+        </p>
+      )}
+
+      <div className="mt-2 flex flex-wrap items-center gap-3">
+        <Link
+          to={`/events/${hero.id}`}
+          className="inline-flex items-center gap-1 text-xs text-intel hover:underline"
+        >
+          {advanced ? `Investigate ${hero.id}` : 'See the evidence'}
+          <ArrowRight className="h-3.5 w-3.5" />
+        </Link>
+        <Link to="/forecast" className="text-xs text-text-secondary hover:text-intel">
+          Where it is heading →
+        </Link>
+        <Link to="/risk" className="text-xs text-text-secondary hover:text-intel">
+          Who is affected →
+        </Link>
+      </div>
+    </div>
+  )
+}
+
 function EventRow({ event, featured }: { event: PollutionEvent; featured: boolean }) {
+  const { advanced } = useViewLevel()
   const pmKnown = !event.provenance?.unavailable?.includes('pm25')
   return (
     <Link
@@ -226,7 +304,7 @@ function EventRow({ event, featured }: { event: PollutionEvent; featured: boolea
     >
       <div className="flex items-start justify-between gap-2">
         <div>
-          <p className="font-mono text-[10px] text-text-muted">{event.id}</p>
+          {advanced && <p className="font-mono text-[10px] text-text-muted">{event.id}</p>}
           <p className="mt-0.5 text-sm text-text-primary">{event.title}</p>
           <p className="mt-0.5 text-[11px] text-text-muted">{event.region}</p>
         </div>
@@ -246,12 +324,16 @@ function EventRow({ event, featured }: { event: PollutionEvent; featured: boolea
 function KpiStrip({
   aqi,
   pm25,
+  trend,
   activeCount,
+  totalCount,
   totalExposure,
 }: {
   aqi: number | undefined
   pm25: number | undefined
+  trend: Trend
   activeCount: number
+  totalCount: number
   totalExposure: number | null
 }) {
   return (
@@ -278,7 +360,7 @@ function KpiStrip({
             label="PM2.5"
             value={pm25}
             unit="µg/m³"
-            trend="up"
+            trend={trend === 'rising' ? 'up' : trend === 'falling' ? 'down' : undefined}
             className="[&_span.font-mono]:text-2xl"
           />
         ) : (
@@ -286,7 +368,14 @@ function KpiStrip({
         )}
       </div>
       <div className="border-b border-border px-4 py-2.5 lg:border-b-0 lg:border-r">
-        <KpiStat label="Active Events" value={activeCount} className="[&_span.font-mono]:text-2xl" />
+        {/* The catalog below lists every event, active or not. Showing only
+            the active count next to a longer list read as a disagreement. */}
+        <KpiStat
+          label="Active Events"
+          value={activeCount}
+          sublabel={`of ${totalCount} tracked`}
+          className="[&_span.font-mono]:text-2xl"
+        />
       </div>
       <div className="px-4 py-2.5">
         {totalExposure != null ? (

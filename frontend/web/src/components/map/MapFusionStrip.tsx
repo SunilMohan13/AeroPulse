@@ -17,8 +17,12 @@ export function MapFusionStrip({ className }: MapFusionStripProps) {
     staleTime: 15_000,
   })
 
-  const healthy = sources.filter((s) => s.status === 'Healthy' || s.status === 'Delayed').length
-  const agreeing = Math.min(healthy, 4)
+  // Previously `min(healthy, 4)` and captioned "agree". Nothing here
+  // compares sources, so it reported an agreement it had not computed.
+  // It now says what it actually counted: sources that are reporting.
+  const reporting = sources.filter(
+    (s) => s.status === 'Healthy' || s.status === 'Delayed' || s.status === 'Registered',
+  ).length
 
   return (
     <div
@@ -32,14 +36,14 @@ export function MapFusionStrip({ className }: MapFusionStripProps) {
         aria-live="polite"
       >
         <span className="text-emerald-400/95">
-          Fusion {agreeing}/{sources.length || 6} agree · transport signal
+          {reporting}/{sources.length || 6} sources reporting
         </span>
         <span className="hidden text-border sm:inline">|</span>
         {sources.slice(0, 5).map((s) => (
           <span key={s.id} className="text-text-muted">
             <span
               className={
-                s.status === 'Healthy' || s.status === 'Delayed'
+                s.status === 'Healthy' || s.status === 'Delayed' || s.status === 'Registered'
                   ? 'text-emerald-400/90'
                   : 'text-amber-400/90'
               }

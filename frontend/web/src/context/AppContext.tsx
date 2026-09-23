@@ -87,11 +87,15 @@ const PHASE_DURATION = 2200
 
 export function AppProvider({ children }: { children: ReactNode }) {
   const [hourOffset, setHourOffset] = useState(0)
+  // Opens on "what is in the air and what is burning". Wind and the
+  // predicted plume answer the next question, so they are a deliberate
+  // second click rather than four layers stacked on arrival. The map story
+  // and the Forecast page switch them on themselves.
   const [layers, setLayers] = useState<MapLayerVisibility>({
     pollution: true,
     fires: true,
-    wind: true,
-    forecast: true,
+    wind: false,
+    forecast: false,
     industry: false,
     population: false,
   })

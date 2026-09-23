@@ -8,6 +8,30 @@ interface MapScenarioPanelProps {
   className?: string
 }
 
+/**
+ * The narrated 60-second walkthrough, on its own.
+ *
+ * It is the clearest thing on the map for a first-time viewer, so it stays
+ * out of the analyst panel that the rest of the scenario lab lives in.
+ */
+export function MapStoryButton({ className }: { className?: string }) {
+  const { mapStoryRunning, startMapStory, stopMapStory } = useApp()
+
+  return (
+    <button
+      type="button"
+      onClick={mapStoryRunning ? stopMapStory : startMapStory}
+      className={cn(
+        'pointer-events-auto absolute left-4 top-[4.5rem] z-20 flex items-center gap-2 rounded-md border border-cyan-500/30 bg-black/70 px-3 py-1.5 text-[11px] font-medium text-cyan-200 backdrop-blur-md hover:bg-cyan-500/20 sm:top-[4.25rem]',
+        className,
+      )}
+    >
+      <Film size={14} aria-hidden />
+      {mapStoryRunning ? 'Stop the story' : 'Play the 60s story'}
+    </button>
+  )
+}
+
 export function MapScenarioPanel({ scene, className }: MapScenarioPanelProps) {
   const {
     windBearingOffset,

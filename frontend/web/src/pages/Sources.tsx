@@ -10,11 +10,15 @@ import { ErrorState } from '../components/common/States'
 import { Sparkline } from '../components/charts/Sparkline'
 import { useDataMode } from '../context/DataModeContext'
 import { FallbackBanner, ModeContextNote } from '../components/common/Provenance'
+import { AdvancedOnly } from '../context/ViewLevelContext'
 import { ModelRegistryPanel } from '../components/events/ModelRegistryPanel'
 
 function statusVariant(status: SourceHealth['status']) {
   if (status === 'Healthy') return 'success' as const
   if (status === 'Delayed') return 'warning' as const
+  // `Registered` is a configuration fact, not a green light. Neutral, so it
+  // cannot be misread as a measured all-clear.
+  if (status === 'Registered') return 'default' as const
   return 'severe' as const
 }
 
@@ -33,9 +37,15 @@ export function Sources() {
         <ModeContextNote className="pt-1" />
         {mode === 'live' && (
           <p className="pt-1 text-xs text-amber-400/80">
-            <code className="font-mono">GET /api/v1/sources</code> is a registry, not a health
-            feed: it carries no freshness, latency, quality or record counts, so those columns
-            read &ldquo;unknown&rdquo; here.
+            These sources are configured and switched on, but nothing yet measures how fresh
+            each feed is — so freshness and quality read as unknown rather than as a guess.
+            <AdvancedOnly>
+              {' '}
+              <span className="text-text-muted">
+                <code className="font-mono">GET /api/v1/sources</code> is a registry, not a health
+                feed: no freshness, latency, quality or record counts.
+              </span>
+            </AdvancedOnly>
           </p>
         )}
       </div>
@@ -46,7 +56,7 @@ export function Sources() {
         <ErrorState
           title="Source temporarily unavailable"
           description={`${delayed.name} data is delayed by ${formatFreshness(delayed.freshnessMinutes)}. Predictions continue using available evidence.`}
-          action="View source health"
+          action={`Open ${delayed.name} detail`}
           onAction={() => setSelected(delayed)}
         />
       )}
@@ -91,11 +101,18 @@ export function Sources() {
                     {s.quality === null ? <span className="text-text-muted">&mdash;</span> : `${s.quality}%`}
                   </td>
                   <td className="px-4 py-3">
-                    <Sparkline
-                      seed={s.id}
-                      quality={s.quality ?? 0}
-                      color={s.status === 'Healthy' ? '#22d3ee' : '#f97316'}
-                    />
+                    {/* The sparkline is generated from the quality score. With
+                        no quality there is no trend, and drawing one anyway
+                        invents a history the source never reported. */}
+                    {s.quality === null ? (
+                      <span className="text-text-muted">&mdash;</span>
+                    ) : (
+                      <Sparkline
+                        seed={s.id}
+                        quality={s.quality}
+                        color={s.status === 'Healthy' ? '#22d3ee' : '#f97316'}
+                      />
+                    )}
                   </td>
                 </tr>
               ))}
@@ -104,7 +121,11 @@ export function Sources() {
         </CardBody>
       </Card>
 
-      <ModelRegistryPanel />
+      {/* Artifact ids, promotion gates and R² are engineering and judging
+          material, not operator material. */}
+      <AdvancedOnly>
+        <ModelRegistryPanel />
+      </AdvancedOnly>
 
       {selected && (
         <div className="fixed inset-x-0 bottom-0 z-40 max-h-[70vh] overflow-y-auto border-t border-border bg-bg-panel shadow-2xl sm:inset-y-0 sm:left-auto sm:right-0 sm:max-h-none sm:w-80 sm:border-l sm:border-t-0">

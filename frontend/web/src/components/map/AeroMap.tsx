@@ -49,7 +49,7 @@ import { MapToolbar } from './MapToolbar'
 import { MapTimeline } from './MapTimeline'
 import { MapLegend } from './MapLegend'
 import { MapFusionStrip } from './MapFusionStrip'
-import { MapScenarioPanel } from './MapScenarioPanel'
+import { MapScenarioPanel, MapStoryButton } from './MapScenarioPanel'
 import { MapGrapBanner } from './MapGrapBanner'
 import { MapStoryCaption } from './MapStoryCaption'
 import {
@@ -62,6 +62,7 @@ import { CORRIDOR_LOCATIONS, PUNJAB_FIRE_CENTER, TRANSPORT_BEARING_DEG, type Nam
 import { attachBasemapFallback } from './basemapStyle'
 import { useAnimationClock } from '../../hooks/useAnimationClock'
 import { useDataMode } from '../../context/DataModeContext'
+import { useViewLevel } from '../../context/ViewLevelContext'
 const CORRIDOR_VIEW = {
   longitude: 76.2,
   latitude: 29.8,
@@ -160,8 +161,12 @@ export function AeroMap({
   className,
 }: AeroMapProps) {
   const { mode } = useDataMode()
+  const { advanced: advancedView } = useViewLevel()
   const scenarioChrome = mode === 'demo'
-  const showGlobeBar = showGlobeBarProp ?? !compact
+  // On the full map the scene switch already lives in the layers panel. The
+  // bar stays for the globe, which is where the "enter the theater" call to
+  // action belongs, and for previews that have no layers panel at all.
+  const showGlobeBar = showGlobeBarProp ?? (compact || embedded)
   const mapContainerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<maplibregl.Map | null>(null)
   const {
@@ -792,7 +797,9 @@ export function AeroMap({
           return null
         }}
       />
-      {!compact && !embedded && (
+      {/* Connector freshness is engineering telemetry and repeats Source
+          Health verbatim; it covers the map for everyone else. */}
+      {advancedView && !compact && !embedded && (
         <MapFusionStrip className={scene === 'globe' ? 'top-12 sm:top-11' : undefined} />
       )}
       <MapToolbar
@@ -808,7 +815,7 @@ export function AeroMap({
         onToggleExpand={() => setExpanded((v) => !v)}
         onExportSnapshot={scene === 'corridor' ? exportSnapshot : undefined}
       />
-      {showGlobeBar && (
+      {(showGlobeBar || (!compact && !embedded && scene === 'globe')) && (
         <MapGlobeBar
           scene={scene}
           onSceneChange={goToScene}
@@ -818,8 +825,19 @@ export function AeroMap({
           className={!compact && chrome.timeline ? (embedded ? 'bottom-44' : 'bottom-40') : undefined}
         />
       )}
-      {scenarioChrome && !compact && !embedded && scene === 'globe' && <MapIntelChrome scene={scene} />}
-      {scenarioChrome && !compact && !embedded && <MapScenarioPanel scene={scene} className="!right-20 !left-auto" />}
+      {scenarioChrome && advancedView && !compact && !embedded && scene === 'globe' && (
+        <MapIntelChrome scene={scene} />
+      )}
+      {/* A what-if wind dial and a persistence-baseline overlay are an
+          analyst's tools; they read as clutter to anyone asking where the
+          smoke is. The narrated story stays available to both. */}
+      {scenarioChrome && !compact && !embedded && scene === 'corridor' && (
+        advancedView ? (
+          <MapScenarioPanel scene={scene} className="!right-20 !left-auto" />
+        ) : (
+          <MapStoryButton className="!right-20 !left-auto" />
+        )
+      )}
       {scenarioChrome && !compact && !embedded && <MapGrapBanner active={grapAlert} />}
       {scenarioChrome && !compact && <MapStoryCaption caption={mapStoryCaption} />}
       {!compact && !embedded && (

@@ -1,18 +1,12 @@
 import { useMemo, useState } from 'react'
-import { useApp } from '../../context/AppContext'
-import type { MapLayerVisibility } from '../../types'
 import { searchLocations, type NamedLocation } from '../../utils/geo'
 import type { MapScene } from './MapViewControls'
 
-const layerOptions: { key: keyof MapLayerVisibility; label: string }[] = [
-  { key: 'pollution', label: 'Pollution' },
-  { key: 'fires', label: 'Fires' },
-  { key: 'wind', label: 'Wind' },
-  { key: 'forecast', label: 'Forecast' },
-  { key: 'industry', label: 'Industry' },
-  { key: 'population', label: 'Population' },
-]
-
+/**
+ * Search and jump-to-fire. Layer toggles used to live here too, in a
+ * centred strip that the globe/corridor pill overlapped; they now belong to
+ * the single `MapViewControls` panel.
+ */
 export function MapControls({
   scene = 'corridor',
   onZoomToFire,
@@ -22,7 +16,6 @@ export function MapControls({
   onZoomToFire?: () => void
   onSelectLocation?: (location: NamedLocation) => void
 }) {
-  const { layers, toggleLayer } = useApp()
   const [query, setQuery] = useState('')
   const results = useMemo(() => searchLocations(query), [query])
 
@@ -66,24 +59,6 @@ export function MapControls({
           </ul>
         )}
       </div>
-
-      {scene === 'corridor' && (
-        <div className="absolute bottom-32 left-1/2 z-10 flex max-w-[calc(100%-2rem)] -translate-x-1/2 flex-wrap justify-center gap-1 rounded-lg border border-border bg-bg-panel/90 p-2 backdrop-blur">
-          {layerOptions.map(({ key, label }) => (
-            <button
-              key={key}
-              type="button"
-              onClick={() => toggleLayer(key)}
-              aria-pressed={layers[key]}
-              className={`rounded px-2.5 py-1 text-xs transition-colors ${
-                layers[key] ? 'bg-intel/20 text-intel' : 'text-text-muted hover:text-text-secondary'
-              }`}
-            >
-              {layers[key] ? '☑' : '☐'} {label}
-            </button>
-          ))}
-        </div>
-      )}
 
       {onZoomToFire && (
         <button

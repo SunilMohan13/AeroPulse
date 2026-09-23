@@ -63,10 +63,14 @@ export function Risk() {
 
       <Card className="overflow-hidden">
         <CardBody className="h-[360px] p-0">
+          {/* `embedded` suppresses the full map chrome. Without it the
+              display panel and scenario lab cover a map this short. */}
           <AeroMap
+            embedded
             showControls={false}
             showTimeline={false}
-            forceLayers={{ population: true }}
+            showGlobeBar={false}
+            forceLayers={{ population: true, pollution: true, fires: false, wind: false }}
             className="h-full"
           />
         </CardBody>
