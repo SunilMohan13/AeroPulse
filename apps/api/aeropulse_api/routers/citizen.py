@@ -1,8 +1,8 @@
 """Citizen report APIs (LLD section 25.5). No trained computer vision in this pass."""
 
+import re
 from datetime import UTC, datetime
 from pathlib import Path
-import re
 
 from aeropulse_auth.jwt import Role, TokenClaims
 from aeropulse_common.ids import new_ulid

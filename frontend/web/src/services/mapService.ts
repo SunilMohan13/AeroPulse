@@ -9,12 +9,13 @@ import { resolve } from './resolve'
 const delay = (ms = 100) => new Promise((r) => setTimeout(r, ms))
 
 /**
- * Mirrors GET /api/v1/map/air-quality.
+ * Observed grid cells at offset 0, forecast cells beyond it.
  *
- * The demo path takes an hour offset and an intensity so the scripted
- * narrative can scrub time and ramp the episode. Live has no such controls:
- * the API serves the latest persisted grid-hour, so the timeline scrubber is
- * inert in live mode and the UI disables it rather than pretending it works.
+ * Demo scrubs the scripted episode through `getGridAt`. Live requests the
+ * advection forecast for the nearest published horizon, so the scrubber
+ * moves real data in both modes. (It previously ignored the offset in Live
+ * and redrew the present under a future label; this comment claimed the
+ * control was disabled, which it never was.)
  */
 export async function fetchAirQuality(
   hourOffset = 0,
@@ -28,7 +29,7 @@ export async function fetchAirQuality(
       await delay()
       return getGridAt(hourOffset, intensity, bounds, transportBearingDeg)
     },
-    liveAirQuality,
+    () => liveAirQuality(hourOffset),
   )
 }
 

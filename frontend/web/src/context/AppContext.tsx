@@ -11,6 +11,7 @@ import {
 } from 'react'
 import type { DemoPhase, MapLayerVisibility, Notification } from '../types'
 import { mockNotifications } from '../data/mockPopulation'
+import { fetchAlerts } from '../services/alertService'
 import { bumpLivePm25 } from '../services/eventService'
 import { bumpSourceFreshness } from '../services/sourceService'
 import { isDemo, subscribeDataMode } from '../services/dataMode'
@@ -101,9 +102,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   })
   const [livePaused, setLivePaused] = useState(false)
   const [lastLiveUpdate, setLastLiveUpdate] = useState(new Date())
-  const [notifications, setNotifications] = useState<Notification[]>(() =>
-    isDemo() ? mockNotifications : [],
-  )
+  const [notifications, setNotifications] = useState<Notification[]>([])
   const [demoPhase, setDemoPhase] = useState<DemoPhase>('idle')
   const [demoRunning, setDemoRunning] = useState(false)
   const [demoPaused, setDemoPaused] = useState(false)
@@ -126,11 +125,32 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [, setMapStoryIndex] = useState(0)
   const [, setPhaseIndex] = useState(0)
 
-  useEffect(() => {
-    return subscribeDataMode(() => {
-      setNotifications(isDemo() ? mockNotifications : [])
-    })
+  // Alerts come from the API in Live and from the scripted set in Demo.
+  // `fetchAlerts` resolves that, so a live failure lands in the fallback
+  // banner instead of silently emptying the drawer.
+  const loadAlerts = useCallback(() => {
+    let cancelled = false
+    fetchAlerts()
+      .then((items) => {
+        if (!cancelled) setNotifications(items)
+      })
+      .catch(() => {
+        // resolve() has already recorded the failure for the banner.
+        if (!cancelled) setNotifications([])
+      })
+    return () => {
+      cancelled = true
+    }
   }, [])
+
+  useEffect(() => {
+    const cancel = loadAlerts()
+    const unsubscribe = subscribeDataMode(() => loadAlerts())
+    return () => {
+      cancel()
+      unsubscribe()
+    }
+  }, [loadAlerts])
 
   const toggleLayer = useCallback((key: keyof MapLayerVisibility) => {
     setLayers((prev) => ({ ...prev, [key]: !prev[key] }))

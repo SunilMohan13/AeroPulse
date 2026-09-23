@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Play, Sparkles, Square } from 'lucide-react'
 import { ScientificBadge } from '../common/Badge'
-import { queryCopilot } from '../../services/copilotService'
+import { explainEvent } from '../../services/copilotService'
 import { KM_PER_DEG_LAT } from '../../utils/geo'
 import { cn } from '../../utils/cn'
 import type { CopilotMessage } from '../../types'
@@ -115,12 +115,15 @@ export function DetectDecisionLab({
   onScenario,
   horizon,
   onHorizon,
+  eventId,
   className,
 }: {
   scenario: DetectScenario
   onScenario: (next: DetectScenario) => void
   horizon: DetectHorizon
   onHorizon: (hours: DetectHorizon) => void
+  /** The event this panel is describing. Explain is scoped to it. */
+  eventId: string
   className?: string
 }) {
   const [open, setOpen] = useState(false)
@@ -151,7 +154,10 @@ export function DetectDecisionLab({
     if (answer || loading) return
     setLoading(true)
     try {
-      const response = await queryCopilot('Where is the current plume moving?')
+      // Scoped to the open event. This used to send a fixed question to
+      // /copilot/query, which described whichever event the backend
+      // happened to return first.
+      const response = await explainEvent(eventId)
       setAnswer(response)
     } finally {
       setLoading(false)

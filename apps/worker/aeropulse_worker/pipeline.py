@@ -6,7 +6,7 @@ free except for the optional repository callbacks.
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any, Protocol
 
 from aeropulse_common.hashing import dedup_key
@@ -52,15 +52,29 @@ class ObservationRepository(Protocol):
 
 
 class InMemoryRepository:
-    """Test double that enforces dedup_key uniqueness."""
+    """Test double that enforces dedup_key uniqueness.
 
-    def __init__(self) -> None:
+    Also serves as the worker's live feature snapshot, which is why it carries
+    a retention window: under a scheduler this object is long-lived and would
+    otherwise accumulate every observation the process has ever seen.
+    """
+
+    def __init__(self, retention_hours: int | None = None) -> None:
+        """Create a repository, optionally bounded by observation age.
+
+        Args:
+            retention_hours: Drop observations older than this many hours,
+                measured against the newest observation seen. ``None`` keeps
+                everything, which is what unit tests want.
+        """
         self.air_quality: dict[str, Observation] = {}
         self.fires: dict[str, FireObservation] = {}
         self.weather: dict[str, MeteorologicalObservation] = {}
         self.rasters: list[RasterObservation] = []
         self.dlq: list[dict[str, Any]] = []
         self.event_store = EventStore()
+        self.retention_hours = retention_hours
+        self._newest_seen: datetime | None = None
 
     def upsert_air_quality(self, observation: Observation) -> bool:
         """Store air quality if the dedup key is new."""
@@ -68,6 +82,7 @@ class InMemoryRepository:
         if key in self.air_quality:
             return False
         self.air_quality[key] = observation
+        self._evict(observation.observed_at)
         return True
 
     def upsert_fire(self, observation: FireObservation) -> bool:
@@ -76,6 +91,7 @@ class InMemoryRepository:
         if key in self.fires:
             return False
         self.fires[key] = observation
+        self._evict(observation.observed_at)
         return True
 
     def upsert_weather(self, observation: MeteorologicalObservation) -> bool:
@@ -84,6 +100,7 @@ class InMemoryRepository:
         if key in self.weather:
             return False
         self.weather[key] = observation
+        self._evict(observation.observed_at)
         return True
 
     def record_dlq(self, source_id: str, payload: dict[str, Any], error: str) -> None:
@@ -93,6 +110,24 @@ class InMemoryRepository:
     def add_raster(self, raster: RasterObservation) -> None:
         """Keep raster metadata in the snapshot."""
         self.rasters.append(raster)
+        self._evict(raster.acquisition_time)
+
+    def _evict(self, observed_at: datetime) -> None:
+        """Drop observations that fall outside the retention window.
+
+        The cutoff tracks the newest observation seen rather than wall-clock
+        now, so a backfill replaying historical data does not evict itself on
+        arrival.
+        """
+        if self.retention_hours is None:
+            return
+        if self._newest_seen is None or observed_at > self._newest_seen:
+            self._newest_seen = observed_at
+        cutoff = self._newest_seen - timedelta(hours=self.retention_hours)
+        self.air_quality = {k: v for k, v in self.air_quality.items() if v.observed_at >= cutoff}
+        self.fires = {k: v for k, v in self.fires.items() if v.observed_at >= cutoff}
+        self.weather = {k: v for k, v in self.weather.items() if v.observed_at >= cutoff}
+        self.rasters = [r for r in self.rasters if r.acquisition_time >= cutoff]
 
 
 def process_air_quality(

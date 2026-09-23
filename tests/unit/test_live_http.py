@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 import httpx
@@ -29,9 +30,19 @@ class _FakeClock:
 
 
 class _Response:
-    def __init__(self, status: int, payload: Any) -> None:
+    """Minimal stand-in for an httpx response.
+
+    ``text`` and ``headers`` are part of the contract because the client reads
+    bodies as text (CSV sources) and captures rate-limit headers.
+    """
+
+    def __init__(
+        self, status: int, payload: Any, *, text: str | None = None, headers: Any = None
+    ) -> None:
         self.status_code = status
         self._payload = payload
+        self._text = text
+        self.headers = headers or {}
 
     def raise_for_status(self) -> None:
         if self.status_code >= 400:
@@ -40,6 +51,12 @@ class _Response:
                 request=httpx.Request("GET", "https://example.test"),
                 response=httpx.Response(self.status_code),
             )
+
+    @property
+    def text(self) -> str:
+        if self._text is not None:
+            return self._text
+        return json.dumps(self._payload)
 
     def json(self) -> Any:
         return self._payload

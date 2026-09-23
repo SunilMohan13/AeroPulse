@@ -41,3 +41,22 @@ export function formatPopulation(n: number): string {
   if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`
   return String(n)
 }
+
+/**
+ * Render an ISO timestamp as an age, e.g. "2 min ago".
+ *
+ * The notification drawer shows when an alert fired. An absolute clock time
+ * reads as "is this current?"; an age answers that directly.
+ */
+export function relativeTime(iso: string): string {
+  const then = new Date(iso).getTime()
+  if (Number.isNaN(then)) return '—'
+  const seconds = Math.round((Date.now() - then) / 1000)
+  if (seconds < 0) return 'just now'
+  if (seconds < 60) return `${seconds}s ago`
+  const minutes = Math.round(seconds / 60)
+  if (minutes < 60) return `${minutes} min ago`
+  const hours = Math.round(minutes / 60)
+  if (hours < 24) return `${hours}h ago`
+  return `${Math.round(hours / 24)}d ago`
+}

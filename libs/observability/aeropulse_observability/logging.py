@@ -16,6 +16,24 @@ from opentelemetry import trace
 
 _CONFIGURED = False
 
+# httpx logs every request at INFO including the full URL. FIRMS carries its
+# MAP_KEY in the URL *path*, and other providers use query parameters, so an
+# enabled httpx logger writes credentials into logs (against LLD §35.2). This
+# belongs in the shared logging setup, not in one entry point: the connector
+# process is the one that actually makes credentialed upstream calls.
+_NOISY_CREDENTIAL_BEARING_LOGGERS = ("httpx", "httpcore")
+
+
+def suppress_credential_bearing_loggers() -> None:
+    """Silence HTTP client loggers that echo full request URLs.
+
+    Safe to call on its own by entry points that must not adopt the full JSON
+    logging setup — the ML CLI writes machine-readable JSON to stdout and
+    cannot have INFO records interleaved with it.
+    """
+    for noisy in _NOISY_CREDENTIAL_BEARING_LOGGERS:
+        logging.getLogger(noisy).setLevel(logging.WARNING)
+
 
 def configure_logging(settings: Settings | None = None) -> None:
     """Configure process-wide JSON logging.
@@ -33,6 +51,8 @@ def configure_logging(settings: Settings | None = None) -> None:
         level=level,
         force=True,
     )
+
+    suppress_credential_bearing_loggers()
 
     structlog.configure(
         processors=[

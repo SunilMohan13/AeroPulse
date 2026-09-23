@@ -238,8 +238,36 @@ export interface ApiIndustryProperties {
   resolution?: string
 }
 
-/** `copilot.v1` */
+/** `alert.v1` */
+export interface ApiAlert {
+  alert_id: string
+  event_id: string
+  severity: string
+  recipient_group?: string
+  message_template?: string
+  message: string
+  evidence?: { evidence_id?: string; type?: string }[]
+  channel?: string
+  created_at: string
+  expires_at?: string | null
+}
+
+/** `copilot.v2` */
+export interface ApiCopilotToolCall {
+  name: string
+  arguments?: Record<string, unknown>
+}
+
+/** Verdict from the server-side numeric grounding check. */
+export interface ApiCopilotGrounding {
+  grounded: boolean
+  numbers_checked?: number
+  ungrounded_values?: number[]
+}
+
+/** `copilot.v2` */
 export interface ApiCopilot {
+  schema_version?: string
   answer: string
   observed_facts?: string[]
   predicted_conditions?: string[]
@@ -247,7 +275,14 @@ export interface ApiCopilot {
   evidence?: { source?: string; time?: string; summary?: string; evidence_type?: string }[]
   recommended_actions?: string[]
   limitations?: string[]
+  /** True only when a model produced the text AND its numbers passed grounding. */
   llm_used?: boolean
+  model?: string | null
+  /** Which tools were actually consulted. Replaces the old scripted spinner. */
+  tool_calls?: ApiCopilotToolCall[]
+  grounding?: ApiCopilotGrounding
+  /** Why deterministic retrieval answered, when it did. */
+  degraded_reason?: string | null
   confidence?: Record<string, number>
 }
 

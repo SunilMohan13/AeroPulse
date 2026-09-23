@@ -1,20 +1,50 @@
-"""Copilot APIs (LLD section 25.4). Evidence retrieval only; llm_used is always false."""
+"""Copilot APIs (LLD section 25.4).
+
+Gemini answers by calling AeroPulse tools; it is never handed raw data and
+cannot state a number a tool did not return. A grounding check runs before
+anything reaches the caller, and a failure degrades to deterministic
+retrieval rather than shipping an unvalidated figure. ``llm_used`` therefore
+reports what actually happened.
+
+This supersedes ADR-0006's "llm_used is always false", but keeps its
+requirement: the validator that rejects ungrounded numbers is what makes the
+model safe to put in front of this data. The event-detection path remains
+deterministic and LLM-free.
+"""
 
 from aeropulse_auth.jwt import TokenClaims
-from aeropulse_intelligence.copilot import explain_event, query_store
+from aeropulse_contracts.copilot import (
+    CopilotGrounding,
+    CopilotResponse,
+    CopilotToolCall,
+)
+from aeropulse_intelligence.copilot import explain_event
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 
+from aeropulse_api.copilot_service import build_tool_context, get_copilot_service
 from aeropulse_api.deps import get_claims
-from aeropulse_api.event_store import current_store
+from aeropulse_api.event_store import current_store, get_event_reader
+from aeropulse_api.grid_store import get_grid_reader
+from aeropulse_api.map_store import get_map_reader
 
 router = APIRouter(prefix="/api/v1/copilot", tags=["copilot"])
 
 
-class CopilotQuery(BaseModel):
-    """Natural-language question. Only retrieved evidence is used."""
+class CopilotTurn(BaseModel):
+    """One prior message, so a follow-up question has context."""
 
-    question: str = Field(..., min_length=1)
+    model_config = {"extra": "forbid"}
+
+    role: str = Field(..., pattern="^(user|assistant)$")
+    text: str = Field(..., min_length=1)
+
+
+class CopilotQuery(BaseModel):
+    """Natural-language question, optionally with conversation history."""
+
+    question: str = Field(..., min_length=1, max_length=2000)
+    history: list[CopilotTurn] = Field(default_factory=list, max_length=20)
 
 
 class ExplainBody(BaseModel):
@@ -23,19 +53,60 @@ class ExplainBody(BaseModel):
     event_id: str
 
 
-@router.post("/query")
-def copilot_query(body: CopilotQuery, _claims: TokenClaims = Depends(get_claims)) -> dict:
-    """Answer from the event store. Does not invent sensor readings."""
-    return query_store(current_store(), body.question).model_dump(mode="json")
+def _answer(body: CopilotQuery, grid, map_reader, events) -> CopilotResponse:
+    service = get_copilot_service()
+    ctx = build_tool_context(grid, map_reader, events)
+    result = service.ask(
+        body.question,
+        ctx,
+        history=[{"role": t.role, "text": t.text} for t in body.history],
+    )
+    return CopilotResponse(
+        answer=result.answer,
+        evidence=result.evidence,
+        limitations=result.limitations,
+        llm_used=result.llm_used,
+        model=result.model,
+        tool_calls=[
+            CopilotToolCall(name=c["name"], arguments=c["arguments"]) for c in result.tool_calls
+        ],
+        grounding=CopilotGrounding(grounded=result.grounded),
+        degraded_reason=result.degraded_reason,
+    )
 
 
-@router.post("/investigate")
-def copilot_investigate(body: CopilotQuery, _claims: TokenClaims = Depends(get_claims)) -> dict:
-    """Same retrieval path as query (investigate intent)."""
-    return query_store(current_store(), body.question).model_dump(mode="json")
+@router.post("/query", response_model=CopilotResponse)
+def copilot_query(
+    body: CopilotQuery,
+    _claims: TokenClaims = Depends(get_claims),
+    grid=Depends(get_grid_reader),
+    map_reader=Depends(get_map_reader),
+    events=Depends(get_event_reader),
+) -> CopilotResponse:
+    """Answer a question using tool lookups over live intelligence."""
+    return _answer(body, grid, map_reader, events)
 
 
-@router.post("/explain-event")
-def copilot_explain(body: ExplainBody, _claims: TokenClaims = Depends(get_claims)) -> dict:
-    """Explain one event using stored evidence, forecast, and confidence."""
-    return explain_event(current_store(), body.event_id).model_dump(mode="json")
+@router.post("/investigate", response_model=CopilotResponse)
+def copilot_investigate(
+    body: CopilotQuery,
+    _claims: TokenClaims = Depends(get_claims),
+    grid=Depends(get_grid_reader),
+    map_reader=Depends(get_map_reader),
+    events=Depends(get_event_reader),
+) -> CopilotResponse:
+    """Same grounded path as query, kept for the investigate intent."""
+    return _answer(body, grid, map_reader, events)
+
+
+@router.post("/explain-event", response_model=CopilotResponse)
+def copilot_explain(
+    body: ExplainBody, _claims: TokenClaims = Depends(get_claims)
+) -> CopilotResponse:
+    """Explain one event from stored evidence, forecast and confidence.
+
+    Deterministic by design: this endpoint restates what the event engine
+    recorded, so there is nothing for a model to add and no reason to pay
+    for one.
+    """
+    return explain_event(current_store(), body.event_id)

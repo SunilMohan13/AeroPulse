@@ -12,11 +12,17 @@ docker compose -f infrastructure/docker/compose.yaml config
 docker compose -f infrastructure/docker/compose.yaml up --build
 ```
 
-Enable live connector workers:
+Switch ingestion to live upstreams (OpenAQ + Open-Meteo + FIRMS):
 
 ```bash
-docker compose -f infrastructure/docker/compose.yaml --profile connectors up --build
+cp .env.example .env          # fill AEROPULSE_OPENAQ_API_KEY and AEROPULSE_FIRMS_MAP_KEY
+echo 'AEROPULSE_CONNECTOR_MODE=live' >> .env
+docker compose -f infrastructure/docker/compose.yaml up --build
 ```
+
+The connector is a scheduled loop, not a one-shot job: each source runs on its own
+`interval_seconds` from `config/sources.yaml`. There is no `--profile connectors`; no service ever
+declared a profile, so passing it was always a no-op.
 
 Mint a local JWT:
 
@@ -32,11 +38,32 @@ uv run python -c "from aeropulse_auth import encode_token, Role; print(encode_to
 - A served prediction must state its own provenance: `model_version`, and `degraded` when it came
   from a deterministic fallback. A hazard score also carries `calibrated`, because an
   uncalibrated score ranks but is not a probability. Never render an unlabelled number.
-- New sources: implement `DataConnector`, add fixture + contract test, register in `config/sources.yaml` (`enabled: false` actually skips replay — the runner reads this file). Do not change the event engine or UI unless the data type is new.
+- New sources: implement `DataConnector`, add a fixture + contract test, add a `SourceSpec` to
+  `apps/connector/.../registry.py`, and register in `config/sources.yaml` (`enabled: false` really
+  does skip it). Topic is derived from the contract a connector returns, so one source may emit
+  several. Do not change the event engine or UI unless the data type is new.
+- Live ingestion: `AEROPULSE_CONNECTOR_MODE=live`. Open-Meteo needs no key; OpenAQ and FIRMS each
+  need a free one (`.env.example`). A live-capable source whose credential is absent reports
+  `NOT_CONFIGURED` and publishes nothing — it never silently serves a fixture under a live banner.
+- IMD is `enabled: false` on purpose: no public API, no credential, and Open-Meteo already emits
+  the same `meteo.v1` for the same sites. Two source ids carrying identical numbers would inflate
+  `sensor_coverage` on every event.
 - Auth: HS256 JWT in development (`AEROPULSE_JWT_SECRET`). OIDC later.
 - H3 resolution 8 is the 1 km grid.
 - Phase 3 scoring is deterministic (`libs/intelligence`). Do not call an LLM from the event path.
+  Detection, anomaly, source likelihood and forecast must stay LLM-free. The copilot is the only
+  LLM surface and lives in its own package (`libs/copilot`) so this boundary is structural, not a
+  convention: `libs/intelligence` has no LLM dependency. See ADR-0007.
 - Source likelihoods are independent, not a softmax.
+- The copilot may only obtain a number by calling a tool in `libs/copilot/tools.py`, and every
+  answer passes `grounding.validate_answer` before it is returned. `llm_used` is true only when a
+  model produced the text and its numbers traced to tool results; a missing key, an upstream
+  error or a grounding failure all degrade to deterministic retrieval with a stated reason.
+- Air quality bands are the CPCB National Air Quality Index, never US EPA. The same concentration
+  maps to a different label on each scale, so the wrong table misstates public risk.
+- Ground-station measurements outrank model output for the same cell-hour
+  (`snapshot.MODEL_DERIVED_SOURCES`). Open-Meteo corridor sites share H3 cells with CPCB stations,
+  and without that rule a CAMS-derived value silently replaces a real measurement.
 - List endpoints (`GET /api/v1/events`, `GET /api/v1/sources`) take `limit`/`offset`; keep new list endpoints consistent with that shape (`items`, `total`, `limit`, `offset`).
 
 ## ML rules

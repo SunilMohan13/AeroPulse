@@ -1,5 +1,5 @@
 import type { CopilotMessage } from '../types'
-import { liveCopilot } from '../api/live'
+import { liveCopilot, liveExplainEvent } from '../api/live'
 import { resolve } from './resolve'
 
 const delay = (ms: number) => new Promise((r) => setTimeout(r, ms))
@@ -79,18 +79,37 @@ async function demoAnswer(query: string): Promise<CopilotMessage> {
   }
 }
 
-export async function queryCopilot(query: string): Promise<CopilotMessage> {
+export async function queryCopilot(
+  query: string,
+  history: { role: 'user' | 'assistant'; text: string }[] = [],
+): Promise<CopilotMessage> {
   return resolve(
     'copilot',
     () => demoAnswer(query),
-    () => liveCopilot(query),
+    () => liveCopilot(query, history),
+  )
+}
+
+/**
+ * Explain one specific event.
+ *
+ * `DetectDecisionLab` previously sent the literal question "Where is the
+ * current plume moving?" to /copilot/query for every event, so the panel
+ * described whichever event the backend happened to pick first rather than
+ * the one on screen.
+ */
+export async function explainEvent(eventId: string): Promise<CopilotMessage> {
+  return resolve(
+    'copilot-explain',
+    () => demoAnswer(`Explain event ${eventId}`),
+    () => liveExplainEvent(eventId),
   )
 }
 
 export const suggestedQuestions = [
-  'What is causing the pollution near Delhi?',
-  'Where is the current plume moving?',
-  'Which areas will be affected in the next 3 hours?',
-  'Why is this event considered high confidence?',
-  'What evidence supports biomass burning?',
+  'What is the air quality in Delhi?',
+  'Are there any fires near Amritsar?',
+  'Which way is the wind blowing in Ludhiana?',
+  'Is there a hazard risk for Delhi?',
+  'What pollution events are active right now?',
 ]

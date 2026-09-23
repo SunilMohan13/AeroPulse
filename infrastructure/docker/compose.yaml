@@ -25,6 +25,7 @@ services:
       - ../db/migrations/0003_phase4.sql:/docker-entrypoint-initdb.d/0003_phase4.sql:ro
       - ../db/migrations/0004_raster_observation.sql:/docker-entrypoint-initdb.d/0004_raster_observation.sql:ro
       - ../db/migrations/0005_shadow_prediction.sql:/docker-entrypoint-initdb.d/0005_shadow_prediction.sql:ro
+      - ../db/migrations/0006_alert.sql:/docker-entrypoint-initdb.d/0006_alert.sql:ro
     ports:
       - "127.0.0.1:5433:5432"
     networks: [aeropulse-backend]
@@ -118,6 +119,10 @@ services:
       AEROPULSE_KAFKA_BOOTSTRAP_SERVERS: redpanda:9092
       AEROPULSE_MINIO_ENDPOINT: minio:9000
       AEROPULSE_JWT_SECRET: dev-only-change-me-use-32-bytes-min
+      # Copilot only. Server-side: this must never reach the web bundle.
+      # Absent means the copilot degrades to deterministic retrieval.
+      AEROPULSE_GEMINI_API_KEY: ${AEROPULSE_GEMINI_API_KEY:-}
+      AEROPULSE_GEMINI_MODEL: ${AEROPULSE_GEMINI_MODEL:-gemini-3.6-flash}
     ports:
       - "127.0.0.1:8000:8000"
     depends_on:
@@ -174,14 +179,24 @@ services:
     build:
       context: ../..
       dockerfile: infrastructure/docker/Dockerfile
-    restart: "no"
+    # The connector is now a scheduled loop, not a one-shot job.
+    restart: unless-stopped
+    stop_grace_period: 30s
     command: ["uv", "run", "aeropulse-connector"]
     environment:
       AEROPULSE_SERVICE_NAME: aeropulse-connector
-      AEROPULSE_CONNECTOR_MODE: replay
+      AEROPULSE_CONNECTOR_MODE: ${AEROPULSE_CONNECTOR_MODE:-replay}
       AEROPULSE_KAFKA_BOOTSTRAP_SERVERS: redpanda:9092
+      # Required for connector_checkpoint reads/writes. Without it
+      # runner._checkpoint_repository() returns None and every cycle restarts
+      # from cursor zero, so live sources can never resume where they left off.
+      AEROPULSE_DATABASE_URL: postgresql://aeropulse:aeropulse@timescaledb:5432/aeropulse
+      AEROPULSE_OPENAQ_API_KEY: ${AEROPULSE_OPENAQ_API_KEY:-}
+      AEROPULSE_FIRMS_MAP_KEY: ${AEROPULSE_FIRMS_MAP_KEY:-}
     depends_on:
       redpanda:
+        condition: service_healthy
+      timescaledb:
         condition: service_healthy
     networks: [aeropulse-backend]
     mem_limit: 256m

@@ -11,6 +11,8 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import TypeVar
 
+from aeropulse_connector_sdk.cursor import parse_cursor
+
 T = TypeVar("T")
 
 
@@ -20,17 +22,15 @@ def apply_cursor(items: Sequence[T], cursor: str | None) -> list[T]:
     Args:
         items: Sequence to slice.
         cursor: Optional zero-based index. ``None`` or empty means start at the
-            beginning. Negative values are clamped to zero.
+            beginning. Negative values are clamped to zero. A live source's
+            watermark token carries no offset, so it reads as "start at the
+            beginning" rather than raising — a live connector windows its own
+            fetch by time and never slices a fixture.
 
     Returns:
         A new list representing the remaining records after the cursor.
     """
     if cursor is None or cursor == "":
         return list(items)
-    try:
-        start = int(cursor)
-    except ValueError:
-        return list(items)
-    if start < 0:
-        start = 0
+    start = parse_cursor(cursor).as_offset()
     return list(items)[start:]

@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from aeropulse_contracts.alert import Alert
 from aeropulse_contracts.event import EventEvidence, PollutionEvent
 from aeropulse_contracts.feature import GridFeature
 from aeropulse_contracts.fire import FireObservation
@@ -150,6 +151,23 @@ ON CONFLICT (acquisition_time, observation_id) DO UPDATE SET
     quality_score = EXCLUDED.quality_score,
     payload = EXCLUDED.payload
 """
+
+UPSERT_ALERT = """
+INSERT INTO alert (
+    alert_id, event_id, severity, recipient_group, message_template, message,
+    evidence, channel, created_at, expires_at
+) VALUES (
+    %(alert_id)s, %(event_id)s, %(severity)s, %(recipient_group)s,
+    %(message_template)s, %(message)s, %(evidence)s::jsonb, %(channel)s,
+    %(created_at)s, %(expires_at)s
+)
+ON CONFLICT (alert_id) DO UPDATE SET
+    severity = EXCLUDED.severity,
+    message = EXCLUDED.message,
+    evidence = EXCLUDED.evidence,
+    expires_at = EXCLUDED.expires_at
+"""
+
 
 UPSERT_EVENT = """
 INSERT INTO pollution_event (
@@ -422,6 +440,31 @@ class TimescaleRepository:
             cur.execute(sql, {"source_id": source_id})
             row = cur.fetchone()
         return row[0] if row else None
+
+    def upsert_alert(self, alert: Alert) -> None:
+        """Insert or update one alert row.
+
+        Alerts are produced worker-side by the event engine. Without this the
+        API process never sees them and GET /api/v1/alerts is empty in every
+        deployment.
+        """
+        with self.conn.cursor() as cur:
+            cur.execute(
+                UPSERT_ALERT,
+                {
+                    "alert_id": alert.alert_id,
+                    "event_id": alert.event_id,
+                    "severity": alert.severity,
+                    "recipient_group": alert.recipient_group,
+                    "message_template": alert.message_template,
+                    "message": alert.message,
+                    "evidence": json.dumps(alert.evidence),
+                    "channel": alert.channel,
+                    "created_at": alert.created_at,
+                    "expires_at": alert.expires_at,
+                },
+            )
+        self.conn.commit()
 
     def upsert_event(self, event: PollutionEvent) -> None:
         """Insert or update a pollution event row."""

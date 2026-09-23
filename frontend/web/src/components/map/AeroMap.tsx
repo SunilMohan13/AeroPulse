@@ -248,7 +248,7 @@ export function AeroMap({
   const transportBearing = TRANSPORT_BEARING_DEG + windBearingOffset
 
   const { data: grid = [] } = useQuery({
-    queryKey: ['airQuality', mode, hourOffset, demoIntensity, boundsKey, windBearingOffset],
+    queryKey: ['air-quality', mode, hourOffset, demoIntensity, boundsKey, windBearingOffset],
     queryFn: () => fetchAirQuality(hourOffset, demoIntensity, bounds, transportBearing),
     placeholderData: (previous) => previous,
     // Each snapshot is tens of MB and every hour/viewport combination is a

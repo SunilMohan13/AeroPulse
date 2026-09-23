@@ -111,11 +111,19 @@ def satellite(
 @router.get("/forecast")
 def forecast(
     limit: int = Query(default=500, ge=1, le=2000),
+    horizon_hours: int | None = Query(default=None, ge=0, le=48),
     _claims: TokenClaims = Depends(get_claims),
     reader: MapReader = Depends(get_map_reader),
 ) -> dict:
-    """Return latest persisted advection forecast points as GeoJSON."""
-    return _collection(reader.forecast(limit))
+    """Return persisted advection forecast points as GeoJSON.
+
+    Args:
+        limit: Maximum features.
+        horizon_hours: Return only this horizon. Omit for every horizon.
+            The map timeline uses this so scrubbing forward shows the
+            forecast for that hour instead of redrawing the present.
+    """
+    return _collection(reader.forecast(limit, horizon_hours))
 
 
 @router.get("/grid")

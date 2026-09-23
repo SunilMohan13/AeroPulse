@@ -14,7 +14,11 @@ from aeropulse_connector_sdk.contracts import (
 )
 from aeropulse_connector_sdk.quality import QualityResult, evaluate_observation
 from aeropulse_connector_sdk.retry import retry_http
-from aeropulse_connector_sdk.testing import load_fixture, load_yaml_metadata
+from aeropulse_connector_sdk.testing import (
+    FixtureMissingError,
+    load_fixture,
+    load_yaml_metadata,
+)
 
 __all__ = [
     "CircuitBreaker",
@@ -22,6 +26,7 @@ __all__ = [
     "ConnectorMetadata",
     "DataConnector",
     "FetchRequest",
+    "FixtureMissingError",
     "HealthStatus",
     "QualityResult",
     "RawRecord",

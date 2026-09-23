@@ -160,6 +160,22 @@ def seed_replay_episode(store: EventStore | None = None) -> None:
     _seed_forecast(target)
     _seed_graph(target)
     _seed_citizen(target)
+    _seed_alerts(target)
+
+
+def _seed_alerts(store: EventStore) -> None:
+    """Raise alerts for the seeded HIGH/CRITICAL events.
+
+    Alerts are normally produced worker-side. Seeding them here means the
+    notification drawer has something to show against a database-free API,
+    matching how events, forecasts and citizen reports are already seeded.
+    """
+    from aeropulse_intelligence.alerts import alert_from_event
+
+    for event_id, event in store.events.items():
+        alert = alert_from_event(event, store.evidence.get(event_id, []))
+        if alert is not None:
+            store.alerts[alert.alert_id] = alert
 
 
 def _seed_grid(store: EventStore) -> None:

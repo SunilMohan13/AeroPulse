@@ -18,7 +18,7 @@ from aeropulse_intelligence.geometry import (
     wind_direction_to,
     wind_speed,
 )
-from aeropulse_intelligence.snapshot import FeatureSnapshot
+from aeropulse_intelligence.snapshot import FeatureSnapshot, precedence
 
 FIRE_RADIUS_KM = 100.0
 #: Shorter FIRMS rings. A single 100 km ring cannot distinguish a fire in the
@@ -92,7 +92,12 @@ def build_features(
     pollutants: dict[str, float] = {}
     station_distance: float | None = None
     quality_scores: list[float] = []
-    for obs in aq:
+    # Sorting by precedence makes the last write the winner: a ground-station
+    # reading beats a CAMS-derived model value for the same cell-hour, and the
+    # newest wins within a tier. Without this the value depended on list order,
+    # so an Open-Meteo site sharing an H3 cell with a CPCB station could
+    # silently replace the station's measurement.
+    for obs in sorted(aq, key=precedence):
         pollutants[obs.measurement.parameter] = obs.measurement.value
         dist = haversine_km(center_lat, center_lon, obs.location.lat, obs.location.lon)
         station_distance = dist if station_distance is None else min(station_distance, dist)

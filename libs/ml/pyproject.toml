@@ -10,6 +10,7 @@ dependencies = [
     "aeropulse-intelligence",
     "aeropulse-connector-sdk",
     "aeropulse-connector-openmeteo",
+    "aeropulse-observability",
     "numpy>=1.26",
     "pandas>=2.2",
     "scikit-learn>=1.5",
