@@ -129,14 +129,40 @@ def test_map_air_quality(client: TestClient, settings: Settings) -> None:
     assert len(body["features"]) >= 1
 
 
-def test_events_empty(client: TestClient, settings: Settings) -> None:
-    response = client.get("/api/v1/events", headers=_auth(settings, Role.VIEWER))
-    assert response.status_code == 200
-    body = response.json()
-    assert body["items"] == []
-    assert body["total"] == 0
-    assert body["limit"] is None
-    assert body["offset"] == 0
+def test_replay_seed_serves_hero_episode(client: TestClient, settings: Settings) -> None:
+    """DB-free API answers the same Punjab episode the UI demo narrates."""
+    headers = _auth(settings, Role.VIEWER)
+    events = client.get("/api/v1/events", headers=headers).json()
+    ids = {item["event_id"] for item in events["items"]}
+    assert "EVT-1024" in ids
+    assert events["total"] >= 5
+
+    hero = client.get("/api/v1/events/EVT-1024", headers=headers)
+    assert hero.status_code == 200
+    assert hero.json()["status"] == "ACTIVE"
+
+    evidence = client.get("/api/v1/events/EVT-1024/evidence", headers=headers)
+    assert evidence.status_code == 200
+    assert len(evidence.json()["items"]) >= 4
+
+    forecast = client.get("/api/v1/events/EVT-1024/forecast", headers=headers)
+    assert forecast.status_code == 200
+    assert forecast.json()["grid_predictions"]
+
+    graph = client.get("/api/v1/events/EVT-1024/graph", headers=headers)
+    assert graph.status_code == 200
+    assert graph.json()["vertices"]
+
+    features = client.get("/api/v1/grid-features?limit=50", headers=headers)
+    assert features.status_code == 200
+    assert features.json()["total"] > 0
+    origin = hero.json()["grid_ids"][0]
+    latest = client.get(f"/api/v1/grid-features/{origin}/latest", headers=headers)
+    assert latest.status_code == 200
+    assert latest.json()["pm25"] is not None
+
+    fires = client.get("/api/v1/map/fire", headers=headers).json()
+    assert len(fires["features"]) >= 10
 
 
 def test_events_rejects_invalid_pagination_params(client: TestClient, settings: Settings) -> None:

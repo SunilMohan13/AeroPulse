@@ -3,7 +3,7 @@ import { AlertTriangle, Users, Wind } from 'lucide-react'
 import type { PollutionEvent } from '../../types'
 import { ScientificBadge, StatusBadge } from '../common/Badge'
 import { formatPopulation } from '../../utils/format'
-import { HERO_EVENT_ID } from '../../data/mockEvents'
+import { useDataMode } from '../../context/DataModeContext'
 
 interface ActionBriefProps {
   event: PollutionEvent
@@ -34,7 +34,8 @@ const briefActions = [
 ]
 
 export function ActionBrief({ event }: ActionBriefProps) {
-  const isHero = event.id === HERO_EVENT_ID
+  const { mode } = useDataMode()
+  const scriptedHero = mode === 'demo' && event.provenance?.mode !== 'live'
 
   return (
     <div
@@ -91,31 +92,38 @@ export function ActionBrief({ event }: ActionBriefProps) {
         </div>
       </div>
 
-      <ul className="mt-4 space-y-2">
-        {(isHero
-          ? briefActions
-          : event.recommendedActions.map((a, i) => ({
-              id: `ra-${i}`,
-              label: a.length > 48 ? `${a.slice(0, 45)}…` : a,
-              detail: a,
-              kind: 'RECOMMENDED' as const,
-              confidence: 80,
-            }))
-        ).map((item) => (
-          <li
-            key={item.id}
-            className="flex flex-wrap items-baseline justify-between gap-2 rounded-md border border-border/60 px-3 py-2 text-sm"
-          >
-            <div>
-              <span className="font-medium text-text-primary">{item.label}</span>
-              <p className="text-xs text-text-muted">{item.detail}</p>
-            </div>
-            <span className="font-mono text-[10px] text-cyan-300/80">
-              {item.kind} · {item.confidence}%
-            </span>
-          </li>
-        ))}
-      </ul>
+      {scriptedHero || event.recommendedActions.length > 0 ? (
+        <ul className="mt-4 space-y-2">
+          {(scriptedHero
+            ? briefActions
+            : event.recommendedActions.map((a, i) => ({
+                id: `ra-${i}`,
+                label: a.length > 48 ? `${a.slice(0, 45)}…` : a,
+                detail: a,
+                kind: 'RECOMMENDED' as const,
+                confidence: 80,
+              }))
+          ).map((item) => (
+            <li
+              key={item.id}
+              className="flex flex-wrap items-baseline justify-between gap-2 rounded-md border border-border/60 px-3 py-2 text-sm"
+            >
+              <div>
+                <span className="font-medium text-text-primary">{item.label}</span>
+                <p className="text-xs text-text-muted">{item.detail}</p>
+              </div>
+              <span className="font-mono text-[10px] text-cyan-300/80">
+                {item.kind} · {item.confidence}%
+              </span>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="mt-4 rounded border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
+          Live events do not carry an authored action list. Ask Copilot to retrieve the
+          evidence-grounded recommendations for this id.
+        </p>
+      )}
 
       <div className="mt-4 flex flex-wrap gap-2">
         <Link
@@ -125,7 +133,7 @@ export function ActionBrief({ event }: ActionBriefProps) {
           Open forecast
         </Link>
         <Link
-          to={`/citizen?highlight=${isHero ? 'cr_5' : 'cr_1'}`}
+          to={scriptedHero ? '/citizen?highlight=cr_5' : '/citizen'}
           className="rounded-md border border-border px-3 py-1.5 text-xs text-text-secondary hover:text-intel"
         >
           Citizen corroboration

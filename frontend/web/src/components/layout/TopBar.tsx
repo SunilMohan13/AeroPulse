@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { Bell, Command, Play, Pause, Menu } from 'lucide-react'
 import { StatusBadge } from '../common/Badge'
 import { useApp } from '../../context/AppContext'
@@ -23,6 +24,7 @@ export function TopBar() {
     setMobileNavOpen,
   } = useApp()
   const { mode } = useDataMode()
+  const navigate = useNavigate()
   const [now, setNow] = useState(() => new Date())
 
   useEffect(() => {
@@ -84,7 +86,10 @@ export function TopBar() {
             </button>
             <button
               type="button"
-              onClick={startDemo}
+              onClick={() => {
+                navigate('/')
+                startDemo()
+              }}
               className="hidden rounded-md border border-border px-2 py-1.5 text-xs text-text-muted hover:text-text-secondary sm:inline"
             >
               Map demo

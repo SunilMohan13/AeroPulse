@@ -16,57 +16,6 @@ from aeropulse_api.map_store import MapReader, get_map_reader
 
 router = APIRouter(prefix="/api/v1/map", tags=["map"])
 
-# Seed points matching fixtures so the UI has data before Timescale is populated.
-_AQ = [
-    {
-        "type": "Feature",
-        "geometry": {"type": "Point", "coordinates": [77.241, 28.628]},
-        "properties": {
-            "source_id": "cpcb",
-            "parameter": "pm25",
-            "value": 142.3,
-            "unit": "ug/m3",
-            "observed_at": "2026-09-08T05:15:00Z",
-        },
-    },
-    {
-        "type": "Feature",
-        "geometry": {"type": "Point", "coordinates": [75.857, 30.901]},
-        "properties": {
-            "source_id": "cpcb",
-            "parameter": "pm25",
-            "value": 186.0,
-            "unit": "ug/m3",
-            "observed_at": "2026-09-08T05:15:00Z",
-        },
-    },
-]
-_FIRE = [
-    {
-        "type": "Feature",
-        "geometry": {"type": "Point", "coordinates": [75.71, 30.12]},
-        "properties": {
-            "source_id": "firms",
-            "frp": 82.4,
-            "confidence": 0.91,
-            "observed_at": "2026-09-08T04:40:00Z",
-        },
-    }
-]
-_WEATHER = [
-    {
-        "type": "Feature",
-        "geometry": {"type": "Point", "coordinates": [77.206, 28.585]},
-        "properties": {
-            "source_id": "imd",
-            "wind_u": -2.1,
-            "wind_v": 3.4,
-            "temperature": 25.1,
-            "observed_at": "2026-09-08T05:00:00Z",
-        },
-    }
-]
-
 
 def _collection(features: list[dict]) -> dict:
     return {

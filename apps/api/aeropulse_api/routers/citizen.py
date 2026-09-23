@@ -12,7 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from aeropulse_api.deps import get_claims, require
-from aeropulse_api.event_store import EVENT_STORE
+from aeropulse_api.event_store import current_store
 
 router = APIRouter(prefix="/api/v1/citizen", tags=["citizen"])
 
@@ -51,20 +51,21 @@ def create_report(
         grid_id=to_grid_id(body.lat, body.lon),
     )
     classify_report(report)
-    for event in EVENT_STORE.events.values():
+    store = current_store()
+    for event in store.events.values():
         if report.grid_id and report.grid_id in event.grid_ids:
             if event.severity.value not in {"HIGH", "CRITICAL"}:
                 report.correlated_event_id = event.event_id
                 report.moderation = "accepted"
             break
-    EVENT_STORE.citizen_reports[report.report_id] = report
+    store.citizen_reports[report.report_id] = report
     return report.model_dump(mode="json")
 
 
 @router.get("/reports")
 def list_reports(_claims: TokenClaims = Depends(get_claims)) -> dict:
     """List citizen reports currently held by the API event repository."""
-    items = [report.model_dump(mode="json") for report in EVENT_STORE.citizen_reports.values()]
+    items = [report.model_dump(mode="json") for report in current_store().citizen_reports.values()]
     items.sort(key=lambda report: report["observed_at"], reverse=True)
     return {"items": items, "total": len(items)}
 
@@ -76,7 +77,7 @@ def attach_media(
     _claims: TokenClaims = Depends(require(Role.CITIZEN, Role.VIEWER, Role.ADMIN)),
 ) -> dict:
     """Attach a media object URI (placeholder bytes). CV is not run."""
-    report = EVENT_STORE.citizen_reports.get(report_id)
+    report = current_store().citizen_reports.get(report_id)
     if report is None:
         raise HTTPException(status_code=404, detail="Report not found")
     uri = put_raw_json("citizen", body.filename, b"placeholder")
@@ -88,7 +89,7 @@ def attach_media(
 @router.get("/reports/{report_id}", responses={404: {"description": "Report not found"}})
 def get_report(report_id: str, _claims: TokenClaims = Depends(get_claims)) -> dict:
     """Fetch a citizen report."""
-    report = EVENT_STORE.citizen_reports.get(report_id)
+    report = current_store().citizen_reports.get(report_id)
     if report is None:
         raise HTTPException(status_code=404, detail="Report not found")
     return report.model_dump(mode="json")

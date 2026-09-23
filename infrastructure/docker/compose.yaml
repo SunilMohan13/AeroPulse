@@ -26,7 +26,7 @@ services:
       - ../db/migrations/0004_raster_observation.sql:/docker-entrypoint-initdb.d/0004_raster_observation.sql:ro
       - ../db/migrations/0005_shadow_prediction.sql:/docker-entrypoint-initdb.d/0005_shadow_prediction.sql:ro
     ports:
-      - "127.0.0.1:5432:5432"
+      - "127.0.0.1:5433:5432"
     networks: [aeropulse-backend]
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U aeropulse -d aeropulse"]
@@ -86,7 +86,7 @@ services:
     mem_limit: 256m
 
   minio:
-    image: minio/minio:RELEASE.2025-01-20T14-49-07Z
+    image: quay.io/minio/minio:RELEASE.2025-01-20T14-49-07Z
     restart: unless-stopped
     command: server /data --console-address ":9001"
     environment:

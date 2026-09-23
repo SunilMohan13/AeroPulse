@@ -11,6 +11,8 @@ from aeropulse_contracts.feature import GridFeature
 from aeropulse_contracts.prediction import GridPrediction
 from fastapi import HTTPException
 
+from aeropulse_api import event_store as event_store_mod
+
 
 class GridReader(Protocol):
     """Read contract for materialized grid intelligence."""
@@ -141,11 +143,114 @@ def _prediction(row: tuple[Any, ...]) -> GridPrediction:
     )
 
 
+class InMemoryGridReader:
+    """Serve the replay episode's latest features when Timescale is not configured."""
+
+    def list_features(
+        self,
+        grid_id: str | None,
+        start: datetime | None,
+        end: datetime | None,
+        limit: int,
+        offset: int,
+    ) -> tuple[list[GridFeature], int]:
+        items = list(event_store_mod.EVENT_STORE.latest_features.values())
+        if grid_id is not None:
+            items = [item for item in items if item.grid_id == grid_id]
+        if start is not None:
+            items = [item for item in items if item.timestamp >= start]
+        if end is not None:
+            items = [item for item in items if item.timestamp <= end]
+        items.sort(key=lambda item: item.timestamp, reverse=True)
+        total = len(items)
+        return items[offset : offset + limit], total
+
+    def latest_feature(self, grid_id: str) -> GridFeature | None:
+        return event_store_mod.EVENT_STORE.latest_features.get(grid_id)
+
+    def list_predictions(
+        self,
+        grid_id: str | None,
+        model_version: str | None,
+        start: datetime | None,
+        end: datetime | None,
+        limit: int,
+        offset: int,
+    ) -> tuple[list[GridPrediction], int]:
+        items = list(event_store_mod.EVENT_STORE.latest_predictions.values())
+        if grid_id is not None:
+            items = [item for item in items if item.grid_id == grid_id]
+        if model_version is not None:
+            items = [item for item in items if item.model_version == model_version]
+        if start is not None:
+            items = [item for item in items if item.timestamp >= start]
+        if end is not None:
+            items = [item for item in items if item.timestamp <= end]
+        total = len(items)
+        return items[offset : offset + limit], total
+
+    def latest_prediction(self, grid_id: str, model_version: str | None) -> GridPrediction | None:
+        item = event_store_mod.EVENT_STORE.latest_predictions.get(grid_id)
+        if item is None:
+            return None
+        if model_version is not None and item.model_version != model_version:
+            return None
+        return item
+
+
+class ReplayFallbackGridReader:
+    """Timescale when it has feature rows; otherwise the in-memory Punjab replay.
+
+    Compose always sets ``AEROPULSE_DATABASE_URL``. An empty ``grid_feature``
+    table 404s ``/latest`` for every seeded event cell, so Live Overview
+    renders AQI 0 at lat/lon 0. Fall back only when the table is empty.
+    """
+
+    def __init__(self, primary: GridReader, fallback: GridReader) -> None:
+        self.primary = primary
+        self.fallback = fallback
+        self._use_fallback: bool | None = None
+
+    def _source(self) -> GridReader:
+        if self._use_fallback is None:
+            _, total = self.primary.list_features(None, None, None, 1, 0)
+            self._use_fallback = total == 0
+        return self.fallback if self._use_fallback else self.primary
+
+    def list_features(
+        self,
+        grid_id: str | None,
+        start: datetime | None,
+        end: datetime | None,
+        limit: int,
+        offset: int,
+    ) -> tuple[list[GridFeature], int]:
+        return self._source().list_features(grid_id, start, end, limit, offset)
+
+    def latest_feature(self, grid_id: str) -> GridFeature | None:
+        return self._source().latest_feature(grid_id)
+
+    def list_predictions(
+        self,
+        grid_id: str | None,
+        model_version: str | None,
+        start: datetime | None,
+        end: datetime | None,
+        limit: int,
+        offset: int,
+    ) -> tuple[list[GridPrediction], int]:
+        return self._source().list_predictions(grid_id, model_version, start, end, limit, offset)
+
+    def latest_prediction(self, grid_id: str, model_version: str | None) -> GridPrediction | None:
+        return self._source().latest_prediction(grid_id, model_version)
+
+
 def get_grid_reader() -> Generator[GridReader, None, None]:
-    """Provide a request-scoped Timescale grid reader."""
+    """Provide a request-scoped Timescale grid reader, or the in-memory replay."""
     database_url = get_settings().database_url
     if not database_url:
-        raise HTTPException(status_code=503, detail="Grid intelligence database not configured")
+        yield InMemoryGridReader()
+        return
     try:
         import psycopg
 
@@ -155,6 +260,6 @@ def get_grid_reader() -> Generator[GridReader, None, None]:
             status_code=503, detail="Grid intelligence database unavailable"
         ) from exc
     try:
-        yield TimescaleGridReader(connection)
+        yield ReplayFallbackGridReader(TimescaleGridReader(connection), InMemoryGridReader())
     finally:
         connection.close()

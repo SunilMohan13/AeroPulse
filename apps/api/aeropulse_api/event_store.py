@@ -184,6 +184,44 @@ def _vertex_type(value: str) -> str:
     }.get(prefix, "entity")
 
 
+class ReplayFallbackEventReader:
+    """Timescale when it has events; otherwise the in-memory Punjab replay.
+
+    Compose always sets ``AEROPULSE_DATABASE_URL``, so the worker's empty
+    ``pollution_event`` table would 404 ``EVT-1024`` until ingest persists a
+    row. Falling back only when the table is empty keeps a later worker
+    episode authoritative.
+    """
+
+    def __init__(self, primary: EventReader, fallback: EventReader) -> None:
+        self.primary = primary
+        self.fallback = fallback
+        self._use_fallback: bool | None = None
+
+    def _source(self) -> EventReader:
+        if self._use_fallback is None:
+            _, total = self.primary.list_events(None, 1, 0)
+            self._use_fallback = total == 0
+        return self.fallback if self._use_fallback else self.primary
+
+    def list_events(
+        self, status: EventStatus | None, limit: int | None, offset: int
+    ) -> tuple[list[PollutionEvent], int]:
+        return self._source().list_events(status, limit, offset)
+
+    def get_event(self, event_id: str) -> PollutionEvent | None:
+        return self._source().get_event(event_id)
+
+    def get_evidence(self, event_id: str) -> list[EventEvidence]:
+        return self._source().get_evidence(event_id)
+
+    def get_forecast(self, event_id: str) -> ForecastResult | None:
+        return self._source().get_forecast(event_id)
+
+    def get_graph(self, event_id: str) -> EvidenceGraph | None:
+        return self._source().get_graph(event_id)
+
+
 def get_event_reader() -> Generator[EventReader, None, None]:
     """Provide a Timescale reader when configured, otherwise the in-memory test double."""
     database_url = get_settings().database_url
@@ -197,7 +235,7 @@ def get_event_reader() -> Generator[EventReader, None, None]:
     except Exception as exc:
         raise HTTPException(status_code=503, detail="Event database unavailable") from exc
     try:
-        yield TimescaleEventReader(connection)
+        yield ReplayFallbackEventReader(TimescaleEventReader(connection), InMemoryEventReader())
     finally:
         connection.close()
 
@@ -206,4 +244,9 @@ def reset_event_store() -> EventStore:
     """Replace the process store (tests)."""
     global EVENT_STORE
     EVENT_STORE = EventStore()
+    return EVENT_STORE
+
+
+def current_store() -> EventStore:
+    """Return the process store. Call this at request time — tests replace it."""
     return EVENT_STORE

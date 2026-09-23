@@ -7,8 +7,10 @@ import type { GridCell, FireObservation, MapLayerVisibility } from '../../types'
 import { cn } from '../../utils/cn'
 import {
   buildSmokeParticles,
+  buildFireRadarRings,
   createFireGlowLayer,
   createFireLayer,
+  createFireRadarLayer,
   createGeographyLayer,
   createGlobeArcLayer,
   createIndustryLayer,
@@ -140,6 +142,8 @@ interface AeroMapProps {
   sceneRequest?: MapScene
   /** Show Globe / Corridor bar inside compact dashboard cards. */
   showGlobeBar?: boolean
+  /** Sit inside Detect rails: drop overlapping HUD chrome. */
+  embedded?: boolean
   className?: string
 }
 
@@ -152,6 +156,7 @@ export function AeroMap({
   initialScene = 'corridor',
   sceneRequest,
   showGlobeBar: showGlobeBarProp,
+  embedded = false,
   className,
 }: AeroMapProps) {
   const { mode } = useDataMode()
@@ -166,6 +171,7 @@ export function AeroMap({
     demoIntensity,
     setSelectedFireId,
     setSelectedGridId,
+    selectedFireId,
     windBearingOffset,
     showBaselinePlume,
     showGrapZone,
@@ -253,7 +259,7 @@ export function AeroMap({
   })
   const { data: wind = [] } = useQuery({ queryKey: ['wind', mode], queryFn: fetchWeather })
   const { data: industries = [] } = useQuery({
-    queryKey: ['industries'],
+    queryKey: ['industries', mode],
     queryFn: fetchIndustries,
   })
 
@@ -581,6 +587,21 @@ export function AeroMap({
     () => createFireGlowLayer(fires, showEnvironmentalLayers && layers.fires, pulse),
     [fires, layers.fires, showEnvironmentalLayers, pulse],
   )
+  const radarFires = useMemo(() => {
+    if (fires.length === 0) return []
+    const ranked = [...fires].sort((a, b) => b.frp - a.frp)
+    const ids = new Set(ranked.slice(0, 2).map((f) => f.id))
+    if (selectedFireId) ids.add(selectedFireId)
+    return fires.filter((f) => ids.has(f.id))
+  }, [fires, selectedFireId])
+  const fireRadarLayer = useMemo(
+    () =>
+      createFireRadarLayer(
+        buildFireRadarRings(radarFires, pulse, 4),
+        showEnvironmentalLayers && layers.fires,
+      ),
+    [radarFires, pulse, layers.fires, showEnvironmentalLayers],
+  )
   const fireLayer = useMemo(
     () => createFireLayer(fires, showEnvironmentalLayers && layers.fires, handleFireClick),
     [fires, layers.fires, showEnvironmentalLayers, handleFireClick],
@@ -646,6 +667,7 @@ export function AeroMap({
             windLayer,
             industryLayer,
             fireGlowLayer,
+            fireRadarLayer,
             smokeLayer,
             fireLayer,
             placeDotLayer,
@@ -670,6 +692,7 @@ export function AeroMap({
       windLayer,
       industryLayer,
       fireGlowLayer,
+      fireRadarLayer,
       smokeLayer,
       fireLayer,
       placeDotLayer,
@@ -767,7 +790,9 @@ export function AeroMap({
           return null
         }}
       />
-      {!compact && <MapFusionStrip className={scene === 'globe' ? 'top-12 sm:top-11' : undefined} />}
+      {!compact && !embedded && (
+        <MapFusionStrip className={scene === 'globe' ? 'top-12 sm:top-11' : undefined} />
+      )}
       <MapToolbar
         scene={scene}
         onToggleScene={toggleScene}
@@ -787,15 +812,15 @@ export function AeroMap({
           onSceneChange={goToScene}
           bearing={viewState.bearing}
           onEnterTheater={enterTheater}
-          compact={compact}
-          className={!compact && chrome.timeline ? 'bottom-40' : undefined}
+          compact={compact || embedded}
+          className={!compact && chrome.timeline ? (embedded ? 'bottom-44' : 'bottom-40') : undefined}
         />
       )}
-      {!compact && scene === 'globe' && <MapIntelChrome scene={scene} />}
-      {!compact && <MapScenarioPanel scene={scene} className="!right-20 !left-auto" />}
-      {!compact && <MapGrapBanner active={grapAlert} />}
+      {!compact && !embedded && scene === 'globe' && <MapIntelChrome scene={scene} />}
+      {!compact && !embedded && <MapScenarioPanel scene={scene} className="!right-20 !left-auto" />}
+      {!compact && !embedded && <MapGrapBanner active={grapAlert} />}
       {!compact && <MapStoryCaption caption={mapStoryCaption} />}
-      {!compact && (
+      {!compact && !embedded && (
         <MapViewControls
           scene={scene}
           onSceneChange={goToScene}

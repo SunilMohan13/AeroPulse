@@ -6,11 +6,10 @@
  * product feature, not a stub. It works with no backend, no token and no
  * network, which is exactly what a demo has to do.
  *
- * `live` calls the AeroPulse API. What it can show is bounded by what the
- * backend actually has — two H3 cells of replayed fixture data, models that
- * are mostly withheld by the promotion gate — so it will look sparser than
- * the demo. That is the honest picture, and the UI says so rather than
- * quietly filling the gaps with demo values.
+ * `live` calls the AeroPulse API. Without Timescale the API serves the same
+ * Punjab replay episode the demo narrates, as contract-valid records. With
+ * Timescale it shows whatever the worker has persisted. Models withheld by
+ * the promotion gate stay labelled baselines.
  *
  * Why a module-level store rather than React state alone: the service layer
  * is plain async functions called from React Query `queryFn`s, and threading
@@ -18,6 +17,8 @@
  * behavioural gain. The store is tiny, explicit and observable; the React
  * binding lives in `DataModeProvider`.
  */
+
+import { DEFAULT_DATA_MODE } from '../config/env'
 
 export type DataMode = 'demo' | 'live'
 
@@ -54,7 +55,7 @@ function writeStored(value: DataMode): void {
   }
 }
 
-let mode: DataMode = readStored() ?? 'demo'
+let mode: DataMode = readStored() ?? DEFAULT_DATA_MODE
 let blocker: LiveBlocker = null
 const listeners = new Set<Listener>()
 

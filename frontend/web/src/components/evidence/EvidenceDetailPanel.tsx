@@ -5,17 +5,18 @@ import { ScientificBadge } from '../common/Badge'
 import type { EvidenceNode } from '../../types'
 import { NODE_THEMES } from './evidenceNodeTheme'
 import { formatDateTimeIST } from '../../utils/format'
-import { HERO_EVENT_ID } from '../../data/mockEvents'
 import { useReducedMotion } from '../../hooks/useReducedMotion'
 
 interface EvidenceDetailPanelProps {
   selected: EvidenceNode | null
+  eventId: string
   linkedCount: number
   totalSources: number
 }
 
 export function EvidenceDetailPanel({
   selected,
+  eventId,
   linkedCount,
   totalSources,
 }: EvidenceDetailPanelProps) {
@@ -31,7 +32,7 @@ export function EvidenceDetailPanel({
           Evidence details
         </p>
         <p className="mt-0.5 text-xs text-text-muted">
-          {linkedCount}/{totalSources} connectors fused · EVT-1024
+          {linkedCount}/{totalSources} connectors fused · {eventId}
         </p>
       </div>
 
@@ -107,7 +108,7 @@ export function EvidenceDetailPanel({
             </div>
 
             <Link
-              to={`/events/${HERO_EVENT_ID}`}
+              to={`/events/${eventId}`}
               className="inline-flex items-center gap-1.5 text-xs font-medium text-intel hover:underline"
             >
               Open full event intelligence

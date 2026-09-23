@@ -27,6 +27,9 @@ class Settings(BaseSettings):
     jwt_secret: SecretStr = Field(default=SecretStr("dev-only-change-me-use-32-bytes-min"))
     jwt_algorithm: str = "HS256"
     jwt_issuer: str = "aeropulse"
+    # Extra CORS origins, comma-separated. Localhost and the Netlify demo
+    # host are always allowed; this is for preview URLs and a custom API host.
+    cors_origins: str = ""
 
     # Local Compose defaults only. Override via AEROPULSE_* in every non-dev env.
     database_url: str | None = Field(

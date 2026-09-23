@@ -1,4 +1,5 @@
 import type { DemoPhase } from '../types'
+import { heroEventPath } from '../utils/heroEvent'
 import { HERO_EVENT_ID } from '../data/mockEvents'
 
 export interface JudgeTourStep {
@@ -19,66 +20,78 @@ export interface JudgeTourStep {
   }>
 }
 
-export const JUDGE_TOUR_STEPS: JudgeTourStep[] = [
-  {
-    route: '/map?scene=corridor',
-    durationMs: 5500,
-    phase: 'fire',
-    caption: 'Fire detected · FIRMS thermal anomalies · Punjab corridor',
-    hourOffset: 0,
-    layers: { pollution: true, fires: true, wind: false, forecast: false },
-  },
-  {
-    route: '/map?scene=corridor',
-    durationMs: 4500,
-    phase: 'plume',
-    caption: 'Plume transport · wind-aligned movement toward NCR',
-    hourOffset: 3,
-    layers: { pollution: true, fires: true, wind: true, forecast: true },
-  },
-  {
-    route: `/events/${HERO_EVENT_ID}`,
-    durationMs: 6000,
-    phase: 'confirmed',
-    caption: 'Event fused · four confidence dimensions · source likelihood',
-    hourOffset: 1,
-  },
-  {
-    route: `/evidence?eventId=${HERO_EVENT_ID}`,
-    durationMs: 5000,
-    phase: 'confirmed',
-    caption: 'Evidence graph · independent connectors converge',
-  },
-  {
-    route: '/forecast',
-    durationMs: 5500,
-    phase: 'forecast',
-    caption: 'Nowcast beats persistence baseline · +6h horizon',
-    hourOffset: 6,
-    layers: { forecast: true, pollution: true, fires: true },
-  },
-  {
-    route: '/risk',
-    durationMs: 5000,
-    phase: 'risk',
-    caption: 'Population exposure · sensitive corridors',
-    hourOffset: 4,
-    layers: { population: true, forecast: true },
-  },
-  {
-    route: '/copilot',
-    durationMs: 8000,
-    phase: 'forecast',
-    caption: 'Copilot explains retrieved evidence — not the science engine',
-    copilotQuestion: 'What evidence supports biomass burning near Delhi?',
-  },
-  {
-    route: '/',
-    durationMs: 4000,
-    phase: 'complete',
-    caption: 'Tour complete · mock UI today · contract-first platform tomorrow',
-  },
-]
+export function judgeTourSteps(heroEventId: string): JudgeTourStep[] {
+  return [
+    {
+      route: '/',
+      durationMs: 6000,
+      phase: 'plume',
+      caption:
+        'Detect · fused fire cluster · predicted transport toward Delhi NCR — not a generic AQI map',
+      hourOffset: 3,
+    },
+    {
+      route: '/map?scene=corridor',
+      durationMs: 5000,
+      phase: 'fire',
+      caption: 'Corridor grid · FIRMS + CPCB fuse · 1 km cells',
+      hourOffset: 0,
+      layers: { pollution: true, fires: true, wind: false, forecast: false },
+    },
+    {
+      route: '/map?scene=corridor',
+      durationMs: 4500,
+      phase: 'plume',
+      caption: 'Plume transport · wind-aligned movement toward NCR',
+      hourOffset: 3,
+      layers: { pollution: true, fires: true, wind: true, forecast: true },
+    },
+    {
+      route: heroEventPath(heroEventId),
+      durationMs: 6000,
+      phase: 'confirmed',
+      caption: 'Event fused · four confidence dimensions · source likelihood',
+      hourOffset: 1,
+    },
+    {
+      route: heroEventId ? `/evidence?eventId=${heroEventId}` : '/evidence',
+      durationMs: 5000,
+      phase: 'confirmed',
+      caption: 'Evidence graph · independent connectors converge',
+    },
+    {
+      route: '/forecast',
+      durationMs: 5500,
+      phase: 'forecast',
+      caption: 'Nowcast beats persistence baseline · +6h horizon',
+      hourOffset: 6,
+      layers: { forecast: true, pollution: true, fires: true },
+    },
+    {
+      route: '/risk',
+      durationMs: 5000,
+      phase: 'risk',
+      caption: 'Population exposure · sensitive corridors',
+      hourOffset: 4,
+      layers: { population: true, forecast: true },
+    },
+    {
+      route: '/copilot',
+      durationMs: 8000,
+      phase: 'forecast',
+      caption: 'Copilot explains retrieved evidence — not the science engine',
+      copilotQuestion: 'What evidence supports biomass burning near Delhi?',
+    },
+    {
+      route: '/',
+      durationMs: 4000,
+      phase: 'complete',
+      caption: 'Tour complete · Demo or Live from the header toggle',
+    },
+  ]
+}
+
+export const JUDGE_TOUR_STEPS = judgeTourSteps(HERO_EVENT_ID)
 
 export const JUDGE_TOUR_TOTAL_SEC = Math.round(
   JUDGE_TOUR_STEPS.reduce((s, step) => s + step.durationMs, 0) / 1000,
