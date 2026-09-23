@@ -3,6 +3,8 @@ import { Link } from 'react-router-dom'
 import {
   Activity,
   Camera,
+  ChevronLeft,
+  ChevronRight,
   Flame,
   Search,
   Satellite,
@@ -58,6 +60,7 @@ export function DetectWorkspace({
 }) {
   const [query, setQuery] = useState('')
   const [selectedEvidenceId, setSelectedEvidenceId] = useState<string | null>(null)
+  const [railCollapsed, setRailCollapsed] = useState(true)
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
@@ -73,13 +76,22 @@ export function DetectWorkspace({
   const selected = evidence.find((item) => item.id === selectedEvidenceId) ?? filtered[0]
 
   return (
-    <div className="grid min-h-0 flex-1 lg:grid-cols-[240px_minmax(0,1fr)_272px]">
+    <div
+      className={cn(
+        'grid min-h-0 flex-1',
+        railCollapsed
+          ? 'lg:grid-cols-[40px_minmax(0,1fr)_272px]'
+          : 'lg:grid-cols-[240px_minmax(0,1fr)_272px]',
+      )}
+    >
       <EvidenceRail
         items={filtered}
         selectedId={selected?.id ?? null}
         query={query}
         onQuery={setQuery}
         onSelect={setSelectedEvidenceId}
+        collapsed={railCollapsed}
+        onToggle={() => setRailCollapsed((v) => !v)}
       />
 
       <div className="relative min-h-[420px] border-x border-border/80">
@@ -112,19 +124,51 @@ function EvidenceRail({
   query,
   onQuery,
   onSelect,
+  collapsed,
+  onToggle,
 }: {
   items: EvidenceItem[]
   selectedId: string | null
   query: string
   onQuery: (value: string) => void
   onSelect: (id: string) => void
+  collapsed: boolean
+  onToggle: () => void
 }) {
+  if (collapsed) {
+    return (
+      <aside className="flex min-h-0 flex-col items-center border-border bg-bg-panel/30 py-2">
+        <button
+          type="button"
+          onClick={onToggle}
+          aria-label="Expand evidence panel"
+          className="rounded-md p-1.5 text-text-muted hover:bg-white/5 hover:text-text-primary"
+        >
+          <ChevronRight className="h-4 w-4" />
+        </button>
+        <p className="mt-3 rotate-180 text-[10px] font-medium uppercase tracking-[0.18em] text-text-muted [writing-mode:vertical-rl]">
+          Evidence
+        </p>
+      </aside>
+    )
+  }
+
   return (
     <aside className="flex min-h-0 flex-col border-border bg-bg-panel/30">
       <div className="border-b border-border px-3 py-2">
-        <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-text-secondary">
-          Evidence
-        </p>
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-text-secondary">
+            Evidence
+          </p>
+          <button
+            type="button"
+            onClick={onToggle}
+            aria-label="Collapse evidence panel"
+            className="rounded-md p-1 text-text-muted hover:bg-white/5 hover:text-text-primary"
+          >
+            <ChevronLeft className="h-3.5 w-3.5" />
+          </button>
+        </div>
         <label className="mt-2 flex items-center gap-2 rounded border border-border bg-bg-base/60 px-2 py-1">
           <Search className="h-3.5 w-3.5 text-text-muted" />
           <input
