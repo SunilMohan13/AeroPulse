@@ -10,12 +10,13 @@ from __future__ import annotations
 
 import argparse
 import json
-import logging
 import os
 import sys
 import time
 from pathlib import Path
 from typing import Any
+
+from aeropulse_observability.logging import suppress_credential_bearing_loggers
 
 from aeropulse_ml.dataset import (
     build_grid_features,
@@ -375,12 +376,10 @@ def main(argv: list[str] | None = None) -> int:
     Returns:
         Process exit code.
     """
-    # httpx logs every request at INFO including the full URL with its query
-    # string. Several sources (FIRMS, OpenAQ) carry their API key as a query
-    # parameter, so leaving this enabled would write credentials into logs,
-    # against LLD §35.2. It also pollutes stdout and breaks JSON piping.
-    logging.getLogger("httpx").setLevel(logging.WARNING)
-    logging.getLogger("httpcore").setLevel(logging.WARNING)
+    # Shared with every other service via aeropulse_observability. Only the
+    # suppression is applied here: this CLI writes JSON to stdout, so it must
+    # not adopt the full stdout logging setup.
+    suppress_credential_bearing_loggers()
 
     parser = build_parser()
     args = parser.parse_args(argv)

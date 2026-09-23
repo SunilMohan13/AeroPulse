@@ -26,6 +26,12 @@ export function NotificationDrawer() {
             <X className="h-4 w-4 text-text-muted" />
           </button>
         </div>
+        {notifications.length === 0 && (
+          <p className="px-4 py-6 text-sm text-text-muted">
+            No alerts. AeroPulse has no alert delivery endpoint yet, so this stays empty in
+            Live mode even while events are open — see the Events page for current detections.
+          </p>
+        )}
         <ul className="divide-y divide-border">
           {notifications.map((n) => {
             const Icon = iconMap[n.icon]

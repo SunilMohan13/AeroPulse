@@ -843,6 +843,7 @@ export function EventDetectMap({
         onScenario={setScenario}
         horizon={horizon}
         onHorizon={setHorizon}
+        eventId={event.id}
         className="absolute bottom-[7.25rem] left-3 z-20"
       />
     </div>

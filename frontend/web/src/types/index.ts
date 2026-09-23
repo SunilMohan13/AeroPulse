@@ -268,6 +268,19 @@ export interface CopilotMessage {
   role: 'user' | 'assistant'
   content: string
   citations?: { source: string; time: string }[]
+  /** Actions the backend retrieved. Previously dropped on the floor even
+   *  though ActionBrief sends users here expecting them. */
+  recommendedActions?: string[]
+  /** Split confidence, when the answer is about a specific event. */
+  confidence?: { detection?: number; source?: number; forecast?: number; overall?: number }
+  /** Tools the backend actually called, for honest provenance. */
+  toolCalls?: { name: string; arguments?: Record<string, unknown> }[]
+  /** False only if the server surfaced an ungrounded answer, which it should
+   *  never do; rendered as a warning if it ever happens. */
+  grounded?: boolean
+  llmUsed?: boolean
+  model?: string | null
+  degradedReason?: string | null
 }
 
 export interface MapLayerVisibility {

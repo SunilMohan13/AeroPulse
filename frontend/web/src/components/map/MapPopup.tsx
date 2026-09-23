@@ -9,6 +9,7 @@ import { useHeroEventId } from '../../hooks/useHeroEventId'
 import { heroEventPath } from '../../utils/heroEvent'
 import { copilotQuestionForCell, evidenceForCell } from './mapCellEvidence'
 import { useApp } from '../../context/AppContext'
+import { useDataMode } from '../../context/DataModeContext'
 
 function Row({ label, value }: { label: string; value: string }) {
   return (
@@ -34,13 +35,15 @@ export function MapPopup({
 }) {
   const navigate = useNavigate()
   const { setPendingCopilotQuestion } = useApp()
+  const { mode } = useDataMode()
+  const isDemo = mode === 'demo'
   const heroEventId = useHeroEventId()
   const nearbyFires = fire
     ? fires.filter((f) => f.id !== fire.id && distanceKm(fire.lat, fire.lon, f.lat, f.lon) < 25)
         .length
     : 0
 
-  const cellEvidence = cell ? evidenceForCell(cell, hourOffset) : []
+  const cellEvidence = cell ? evidenceForCell(cell, hourOffset, { demo: isDemo }) : []
 
   const askCopilot = () => {
     if (!cell) return
@@ -72,10 +75,14 @@ export function MapPopup({
           <Row label="Fire Radiative Power" value={`${fire.frp.toFixed(0)} MW`} />
           <Row label="Confidence" value={`${Math.round(fire.confidence * 100)}%`} />
           <Row label="Nearby fires" value={String(nearbyFires)} />
-          <div className="flex justify-between gap-4">
-            <span className="text-text-secondary">Estimated impact</span>
-            <span className="font-medium text-pollution-severe">HIGH</span>
-          </div>
+          {/* "HIGH" was a constant, not a computed impact. Only the demo
+              episode is scripted to justify it. */}
+          {isDemo && (
+            <div className="flex justify-between gap-4">
+              <span className="text-text-secondary">Estimated impact</span>
+              <span className="font-medium text-pollution-severe">HIGH</span>
+            </div>
+          )}
           <Link
             to={heroEventPath(heroEventId)}
             className="mt-3 block w-full rounded-md bg-intel/20 py-2 text-center text-xs font-medium text-intel hover:bg-intel/30 focus:outline-none focus-visible:ring-2 focus-visible:ring-intel"

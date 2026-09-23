@@ -140,6 +140,13 @@ class OpenMeteoConnector(DataConnector):
         past_days: How many trailing days to request. The feature builder needs
             at least 24 hours of history to populate its lag and rolling
             windows, so the default reaches back further than one day.
+        drop_future_hours: Discard hours later than the fetch time. The API
+            returns the whole of today, so the tail of every response is a
+            forecast. Those rows score ``temporal_q = 0`` in the quality
+            engine and land in the dead-letter table as ``future_timestamp``,
+            which is a day of noise per site per cycle. Ingestion wants this
+            on; a training fetch that deliberately wants the forecast window
+            can turn it off.
     """
 
     def __init__(
@@ -149,10 +156,12 @@ class OpenMeteoConnector(DataConnector):
         sites: Sequence[dict[str, Any]] | None = None,
         client: LiveHttpClient | None = None,
         past_days: int = 2,
+        drop_future_hours: bool = True,
     ) -> None:
         self.fixture_path = fixture_path
         self.sites = list(sites) if sites is not None else list(DEFAULT_SITES)
         self.past_days = past_days
+        self.drop_future_hours = drop_future_hours
         self._client = client
 
     @property
@@ -240,6 +249,10 @@ class OpenMeteoConnector(DataConnector):
                 fetched_at=datetime.now(UTC),
             )
 
+    def _is_future(self, observed_at: datetime, fetched_at: datetime) -> bool:
+        """True when an hour lies beyond the fetch time, i.e. is a forecast."""
+        return self.drop_future_hours and observed_at > fetched_at
+
     def normalize(
         self, record: RawRecord
     ) -> Sequence[Observation | MeteorologicalObservation | RasterObservation]:
@@ -298,6 +311,8 @@ class OpenMeteoConnector(DataConnector):
             if index >= len(series) or series[index] is None:
                 continue
             acquired = _parse_hour(str(raw_time))
+            if self._is_future(acquired, record.fetched_at):
+                continue
             observations.append(
                 RasterObservation(
                     observation_id=new_ulid("ras"),
@@ -340,6 +355,8 @@ class OpenMeteoConnector(DataConnector):
                 if value is None:
                     continue
                 observed_at = _parse_hour(str(raw_time))
+                if self._is_future(observed_at, record.fetched_at):
+                    continue
                 observations.append(
                     Observation(
                         observation_id=new_ulid("obs"),
@@ -370,6 +387,9 @@ class OpenMeteoConnector(DataConnector):
         times = weather.get("time") or []
         observations: list[MeteorologicalObservation] = []
         for index, raw_time in enumerate(times):
+            observed_at = _parse_hour(str(raw_time))
+            if self._is_future(observed_at, record.fetched_at):
+                continue
             speed = _at(weather, "wind_speed_10m", index)
             direction = _at(weather, "wind_direction_10m", index)
             wind_u: float | None = None
@@ -381,7 +401,7 @@ class OpenMeteoConnector(DataConnector):
                     observation_id=new_ulid("met"),
                     source_id=SOURCE_ID,
                     source_record_id=f"{site_id}_{raw_time}_weather",
-                    observed_at=_parse_hour(str(raw_time)),
+                    observed_at=observed_at,
                     received_at=record.fetched_at,
                     location=location,
                     parameter="weather",

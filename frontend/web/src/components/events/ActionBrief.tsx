@@ -78,16 +78,41 @@ export function ActionBrief({ event }: ActionBriefProps) {
           <Wind className="mt-0.5 h-4 w-4 shrink-0 text-intel" />
           <div>
             <p className="text-[10px] uppercase tracking-wider text-text-muted">Transport</p>
-            <p className="text-sm font-medium">NW → SE · ~14–22 km/h</p>
-            <p className="text-xs text-text-muted">IMD alignment · INFERRED</p>
+            {/* Demo-only: these are scripted figures for the Punjab episode.
+                Rendering them in Live put an invented wind speed and a
+                fabricated "89% forecast conf." under a Live header. */}
+            {scriptedHero ? (
+              <>
+                <p className="text-sm font-medium">NW → SE · ~14–22 km/h</p>
+                <p className="text-xs text-text-muted">IMD alignment · INFERRED</p>
+              </>
+            ) : (
+              <>
+                <p className="text-sm font-medium text-text-muted">&mdash;</p>
+                <p className="text-xs text-text-muted">
+                  Transport summary is not on the event contract. Ask Copilot for wind.
+                </p>
+              </>
+            )}
           </div>
         </div>
         <div className="flex items-start gap-2 rounded-md border border-border/80 bg-black/20 p-3">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-400" />
           <div>
             <p className="text-[10px] uppercase tracking-wider text-text-muted">Peak window</p>
-            <p className="text-sm font-medium">+3 to +6 hours</p>
-            <p className="text-xs text-text-muted">PREDICTED · 89% forecast conf.</p>
+            {scriptedHero ? (
+              <>
+                <p className="text-sm font-medium">+3 to +6 hours</p>
+                <p className="text-xs text-text-muted">PREDICTED · 89% forecast conf.</p>
+              </>
+            ) : (
+              <>
+                <p className="text-sm font-medium text-text-muted">&mdash;</p>
+                <p className="text-xs text-text-muted">
+                  No peak window on this event. The forecast chart shows the horizon.
+                </p>
+              </>
+            )}
           </div>
         </div>
       </div>

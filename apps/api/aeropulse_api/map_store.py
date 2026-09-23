@@ -19,7 +19,7 @@ class MapReader(Protocol):
 
     def weather(self, bbox: list[float] | None, limit: int) -> list[dict]: ...
 
-    def forecast(self, limit: int) -> list[dict]: ...
+    def forecast(self, limit: int, horizon_hours: int | None = None) -> list[dict]: ...
 
     def grid(self, limit: int) -> list[dict]: ...
 
@@ -43,13 +43,24 @@ class FixtureMapReader:
     def weather(self, bbox: list[float] | None, limit: int) -> list[dict]:
         return _filter_bbox(self._weather, bbox)[:limit]
 
-    def forecast(self, limit: int) -> list[dict]:
+    def forecast(self, limit: int, horizon_hours: int | None = None) -> list[dict]:
+        """Advection forecast points, optionally for one horizon.
+
+        ``grid_predictions[0]`` is the origin cell at horizon 0 and the rest
+        line up with ``horizons`` in order (forecast.py builds them that way).
+        The horizon was previously dropped here, which is why a map scrubbed
+        to "+12h" could only ever redraw the present.
+        """
         from aeropulse_api.event_store import current_store
 
         features: list[dict] = []
         for forecast in current_store().forecasts.values():
-            for cell in forecast.grid_predictions:
+            horizons = [0, *forecast.horizons]
+            for index, cell in enumerate(forecast.grid_predictions):
                 if cell.center_lon is None or cell.center_lat is None:
+                    continue
+                cell_horizon = horizons[index] if index < len(horizons) else None
+                if horizon_hours is not None and cell_horizon != horizon_hours:
                     continue
                 features.append(
                     _point(
@@ -59,6 +70,7 @@ class FixtureMapReader:
                             "grid_id": cell.grid_id,
                             "pm25": cell.pm25,
                             "confidence": cell.confidence,
+                            "horizon_hours": cell_horizon,
                             "event_id": forecast.event_id,
                             "model_version": forecast.model_version,
                             "cams_applied": forecast.cams_applied,
@@ -129,7 +141,7 @@ class TimescaleMapReader:
         """
         return self._features(sql, [*params, limit], _weather_properties, 8, 9)
 
-    def forecast(self, limit: int) -> list[dict]:
+    def forecast(self, limit: int, horizon_hours: int | None = None) -> list[dict]:
         sql = """
         SELECT event_id, grid_id, horizon_hours, pm25, confidence, model_version,
                cams_applied, time
@@ -139,12 +151,13 @@ class TimescaleMapReader:
                 cams_applied, time
             FROM forecast_value
             WHERE event_id IS NOT NULL
+              AND (%s::int IS NULL OR horizon_hours = %s::int)
             ORDER BY event_id, horizon_hours, time DESC
         ) latest
         ORDER BY time DESC, event_id, horizon_hours LIMIT %s
         """
         with self.connection.cursor() as cursor:
-            cursor.execute(sql, (limit,))
+            cursor.execute(sql, (horizon_hours, horizon_hours, limit))
             rows = cursor.fetchall()
         features: list[dict] = []
         for row in rows:
@@ -368,8 +381,8 @@ class ReplayFallbackMapReader:
     def weather(self, bbox: list[float] | None, limit: int) -> list[dict]:
         return self._source().weather(bbox, limit)
 
-    def forecast(self, limit: int) -> list[dict]:
-        return self._source().forecast(limit)
+    def forecast(self, limit: int, horizon_hours: int | None = None) -> list[dict]:
+        return self._source().forecast(limit, horizon_hours)
 
     def grid(self, limit: int) -> list[dict]:
         return self._source().grid(limit)

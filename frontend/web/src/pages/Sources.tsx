@@ -158,11 +158,15 @@ export function Sources() {
             </div>
             <div className="flex justify-between">
               <span className="text-text-muted">Error rate</span>
-              <span className="font-mono">{selected.errorRate}%</span>
+              <span className="font-mono">
+                {selected.errorRate === null ? '\u2014' : `${selected.errorRate}%`}
+              </span>
             </div>
             <div className="flex justify-between">
               <span className="text-text-muted">Quality</span>
-              <span className="font-mono">{selected.quality}%</span>
+              <span className="font-mono">
+                {selected.quality === null ? '\u2014' : `${selected.quality}%`}
+              </span>
             </div>
             <div className="flex justify-between">
               <span className="text-text-muted">Connector</span>

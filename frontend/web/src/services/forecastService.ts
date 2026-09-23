@@ -1,8 +1,8 @@
 import { getForecastSeries, mockForecast, mockObservedHistory } from '../data/mockForecast'
 import type { ForecastPoint } from '../types'
+import { ApiError } from '../api/client'
 import { liveForecast } from '../api/live'
 import { resolve } from './resolve'
-import { isDemo } from './dataMode'
 
 const delay = (ms = 80) => new Promise((r) => setTimeout(r, ms))
 
@@ -15,11 +15,25 @@ const delay = (ms = 80) => new Promise((r) => setTimeout(r, ms))
  * endpoint exists, rather than faking one from a single latest value.
  */
 export async function fetchObservedHistory(): Promise<{ hour: number; pm25: number }[]> {
-  if (isDemo()) {
-    await delay(60)
-    return mockObservedHistory
-  }
-  return []
+  // Routed through resolve() so the absence is recorded as a fallback and
+  // FallbackBanner names it. Returning [] directly made the observed series
+  // disappear from the chart in Live with nothing on screen to explain why.
+  return resolve(
+    'observed-history',
+    async () => {
+      await delay(60)
+      return mockObservedHistory
+    },
+    async () => {
+      // 404, not 0: the backend is reachable, the route does not exist.
+      // Status 0 would render as "backend unreachable", which is wrong.
+      throw new ApiError(
+        'no endpoint returns a per-cell observed PM2.5 series',
+        404,
+        '/api/v1/grid-features (series)',
+      )
+    },
+  )
 }
 
 async function demoForecast(): Promise<ForecastPoint[]> {

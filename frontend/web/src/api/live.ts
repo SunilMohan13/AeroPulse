@@ -7,6 +7,7 @@
  */
 
 import type {
+  ApiAlert,
   ApiAqProperties,
   ApiCitizenReport,
   ApiCopilot,
@@ -38,6 +39,7 @@ import type {
   HazardCell,
   IndustrySite,
   ModelCatalogEntry,
+  Notification,
   PeakForecastCell,
   PollutionEvent,
   PopulationRiskArea,
@@ -45,6 +47,7 @@ import type {
   TimelineEvent,
   WindObservation,
 } from '../types'
+import { relativeTime } from '../utils/format'
 import { apiGet, apiPost, apiPostForm, ApiError, type FeatureCollection, type ListResponse } from './client'
 import {
   stationToGridCell,
@@ -158,7 +161,33 @@ export async function liveForecast(eventId?: string): Promise<ForecastPoint[]> {
   }
 }
 
-export async function liveAirQuality(): Promise<GridCell[]> {
+/** Horizons the advection forecast actually publishes (forecast.py HORIZONS_H). */
+const FORECAST_HORIZONS = [3, 6, 12, 24, 48]
+
+/** Snap a scrubber offset to the nearest published forecast horizon.
+ *
+ *  Asking for +9h would return nothing, because the forecast is computed at
+ *  fixed horizons rather than continuously.
+ */
+export function nearestHorizon(hourOffset: number): number | null {
+  if (hourOffset <= 0) return null
+  return FORECAST_HORIZONS.reduce((best, h) =>
+    Math.abs(h - hourOffset) < Math.abs(best - hourOffset) ? h : best,
+  )
+}
+
+/**
+ * Grid cells for the pollution layer.
+ *
+ * At `hourOffset` 0 this is observed data. Beyond that it is the advection
+ * forecast for the nearest published horizon — previously the offset was
+ * ignored entirely, so scrubbing to "+12h" redrew the present under a future
+ * label.
+ */
+export async function liveAirQuality(hourOffset = 0): Promise<GridCell[]> {
+  const horizon = nearestHorizon(hourOffset)
+  if (horizon !== null) return liveForecastCells(horizon)
+
   let cells: GridCell[] = []
   try {
     const response = await apiGet<ListResponse<ApiGridFeature>>('/api/v1/grid-features', {
@@ -183,7 +212,7 @@ export async function liveAirQuality(): Promise<GridCell[]> {
   try {
     const collection = await apiGet<
       FeatureCollection<{ pm25?: number; grid_id?: string; confidence?: number }>
-    >('/api/v1/map/forecast', { limit: 500 })
+    >('/api/v1/map/forecast', { limit: 500, horizon_hours: 0 })
     for (const feature of collection.features) {
       const pm25 = feature.properties.pm25
       if (pm25 == null) continue
@@ -214,6 +243,87 @@ export async function liveAirQuality(): Promise<GridCell[]> {
   }
 
   return cells
+}
+
+/** Forecast cells for one horizon, used when the timeline is scrubbed forward. */
+async function liveForecastCells(horizonHours: number): Promise<GridCell[]> {
+  const collection = await apiGet<
+    FeatureCollection<{ pm25?: number; grid_id?: string; confidence?: number }>
+  >('/api/v1/map/forecast', { limit: 500, horizon_hours: horizonHours })
+
+  const cells: GridCell[] = []
+  for (const feature of collection.features) {
+    const pm25 = feature.properties.pm25
+    if (pm25 == null) continue
+    const [lon, lat] = feature.geometry.coordinates as unknown as [number, number]
+    const cell = stationToGridCell(
+      lat,
+      lon,
+      pm25,
+      feature.properties.grid_id ?? `forecast_${lat.toFixed(3)}_${lon.toFixed(3)}`,
+      KM1_DEG,
+    )
+    cell.plume = pm25
+    cells.push(cell)
+  }
+
+  if (cells.length === 0) {
+    // An empty forecast is a real answer, but a silently empty map is not.
+    // Throwing puts the endpoint in the fallback banner with a reason.
+    throw new ApiError(
+      `no advection forecast published for +${horizonHours}h`,
+      404,
+      '/api/v1/map/forecast',
+    )
+  }
+  return cells
+}
+
+/** Structured explanation of one event, from stored evidence. */
+export async function liveExplainEvent(eventId: string): Promise<CopilotMessage> {
+  const response = await apiPost<ApiCopilot>('/api/v1/copilot/explain-event', {
+    event_id: eventId,
+  })
+  const sections: string[] = [response.answer]
+  if (response.observed_facts?.length) {
+    sections.push(`OBSERVED\n${response.observed_facts.map((f) => `• ${f}`).join('\n')}`)
+  }
+  if (response.predicted_conditions?.length) {
+    sections.push(`PREDICTED\n${response.predicted_conditions.map((p) => `• ${p}`).join('\n')}`)
+  }
+  if (response.limitations?.length) {
+    sections.push(`LIMITATIONS\n${response.limitations.map((l) => `• ${l}`).join('\n')}`)
+  }
+  return {
+    id: `explain_${eventId}`,
+    role: 'assistant',
+    content: sections.join('\n\n'),
+    citations: (response.evidence ?? [])
+      .map((item) => ({
+        source: item.source ?? item.evidence_type ?? '',
+        time: item.time ?? '',
+      }))
+      .filter((item) => item.source),
+    recommendedActions: response.recommended_actions ?? [],
+    confidence: response.confidence as CopilotMessage['confidence'],
+    llmUsed: response.llm_used ?? false,
+    grounded: response.grounding?.grounded ?? true,
+  }
+}
+
+/** Alerts raised by the event engine, newest first. */
+export async function liveAlerts(): Promise<Notification[]> {
+  const response = await apiGet<ListResponse<ApiAlert>>('/api/v1/alerts', { limit: 50 })
+  return response.items.map((alert) => ({
+    id: alert.alert_id,
+    title: `${alert.severity.toUpperCase()} pollution event`,
+    message: alert.message,
+    time: relativeTime(alert.created_at),
+    route: `/events/${alert.event_id}`,
+    // Severity drives the icon: the engine only raises alerts for
+    // HIGH/CRITICAL, so there is no "informational" case to style.
+    icon: alert.severity.toLowerCase() === 'critical' ? 'warning' : 'fire',
+  }))
 }
 
 export async function liveFires(): Promise<FireObservation[]> {
@@ -403,36 +513,43 @@ export async function liveIndustries(): Promise<IndustrySite[]> {
   })
 }
 
-export async function liveCopilot(query: string): Promise<CopilotMessage> {
-  const response = await apiPost<ApiCopilot>('/api/v1/copilot/query', { question: query })
+export async function liveCopilot(
+  query: string,
+  history: { role: 'user' | 'assistant'; text: string }[] = [],
+): Promise<CopilotMessage> {
+  const response = await apiPost<ApiCopilot>('/api/v1/copilot/query', {
+    question: query,
+    history,
+  })
+
+  // The answer is the model's prose. The structured lists are appended only
+  // when the deterministic path produced them; a Gemini answer already reads
+  // as prose and does not need OBSERVED/INFERRED headers bolted on.
   const sections: string[] = [response.answer]
-  if (response.observed_facts?.length) {
-    sections.push(`OBSERVED\n${response.observed_facts.map((f) => `• ${f}`).join('\n')}`)
-  }
-  if (response.likely_sources?.length) {
-    const lines = response.likely_sources.map((source) => {
-      if (typeof source === 'string') return `• ${source}`
-      const note = source.note ?? 'Independent source likelihood'
-      const conf =
-        source.source_confidence != null
-          ? ` (${Math.round(source.source_confidence * 100)}%)`
-          : ''
-      return `• ${note}${conf}`
-    })
-    sections.push(`INFERRED\n${lines.join('\n')}`)
-  }
-  if (response.predicted_conditions?.length) {
-    sections.push(`PREDICTED\n${response.predicted_conditions.map((p) => `• ${p}`).join('\n')}`)
+  if (!response.llm_used) {
+    if (response.observed_facts?.length) {
+      sections.push(`OBSERVED\n${response.observed_facts.map((f) => `• ${f}`).join('\n')}`)
+    }
+    if (response.likely_sources?.length) {
+      const lines = response.likely_sources.map((source) => {
+        if (typeof source === 'string') return `• ${source}`
+        const note = source.note ?? 'Independent source likelihood'
+        const conf =
+          source.source_confidence != null
+            ? ` (${Math.round(source.source_confidence * 100)}%)`
+            : ''
+        return `• ${note}${conf}`
+      })
+      sections.push(`INFERRED\n${lines.join('\n')}`)
+    }
+    if (response.predicted_conditions?.length) {
+      sections.push(`PREDICTED\n${response.predicted_conditions.map((p) => `• ${p}`).join('\n')}`)
+    }
   }
   if (response.limitations?.length) {
     sections.push(`LIMITATIONS\n${response.limitations.map((l) => `• ${l}`).join('\n')}`)
   }
-  // `llm_used` is false in this build: the Copilot copies numbers from stored
-  // events rather than generating them. Saying so on the message keeps a
-  // reader from crediting it with reasoning it did not do.
-  if (response.llm_used === false) {
-    sections.push('Evidence lookup only — no language model was used to produce this answer.')
-  }
+
   return {
     id: `msg_${Date.now()}`,
     role: 'assistant',
@@ -443,6 +560,15 @@ export async function liveCopilot(query: string): Promise<CopilotMessage> {
         time: item.time ?? '',
       }))
       .filter((item) => item.source),
+    // Previously received and silently discarded, while ActionBrief told the
+    // user to come here for exactly these.
+    recommendedActions: response.recommended_actions ?? [],
+    confidence: response.confidence as CopilotMessage['confidence'],
+    toolCalls: response.tool_calls ?? [],
+    grounded: response.grounding?.grounded ?? true,
+    llmUsed: response.llm_used ?? false,
+    model: response.model ?? null,
+    degradedReason: response.degraded_reason ?? null,
   }
 }
 

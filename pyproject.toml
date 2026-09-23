@@ -10,6 +10,7 @@ dependencies = [
     "aeropulse-auth",
     "aeropulse-contracts",
     "aeropulse-connector-sdk",
+    "aeropulse-copilot[gemini]",
     "aeropulse-geospatial",
     "aeropulse-intelligence",
     "aeropulse-api",
@@ -27,6 +28,7 @@ dependencies = [
     "aeropulse-connector-industry",
     "aeropulse-connector-osm",
     "aeropulse-connector-openmeteo",
+    "aeropulse-connector-openaq",
     "aeropulse-ml",
 ]
 
@@ -48,11 +50,13 @@ members = [
     "libs/connector_sdk",
     "libs/geospatial",
     "libs/intelligence",
+    "libs/copilot",
     "libs/ml",
     "apps/api",
     "apps/worker",
     "apps/connector",
     "connectors/cpcb",
+    "connectors/openaq",
     "connectors/firms",
     "connectors/imd",
     "connectors/sentinel5p",
@@ -72,6 +76,7 @@ aeropulse-observability = { workspace = true }
 aeropulse-auth = { workspace = true }
 aeropulse-contracts = { workspace = true }
 aeropulse-connector-sdk = { workspace = true }
+aeropulse-copilot = { workspace = true }
 aeropulse-geospatial = { workspace = true }
 aeropulse-intelligence = { workspace = true }
 aeropulse-ml = { workspace = true }
@@ -90,6 +95,7 @@ aeropulse-connector-icar = { workspace = true }
 aeropulse-connector-industry = { workspace = true }
 aeropulse-connector-osm = { workspace = true }
 aeropulse-connector-openmeteo = { workspace = true }
+aeropulse-connector-openaq = { workspace = true }
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

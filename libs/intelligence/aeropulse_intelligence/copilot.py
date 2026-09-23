@@ -54,9 +54,7 @@ def explain_event(store: EventStore, event_id: str) -> CopilotResponse:
         limitations=LIMITATIONS,
         llm_used=False,
     )
-    from aeropulse_intelligence.llm import maybe_rewrite_answer
-
-    return maybe_rewrite_answer(payload)
+    return payload
 
 
 def query_store(store: EventStore, question: str) -> CopilotResponse:

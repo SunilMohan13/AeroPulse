@@ -19,11 +19,28 @@ from aeropulse_contracts.observation import Observation
 from aeropulse_contracts.raster import RasterObservation
 from aeropulse_geospatial.grid import to_grid_id
 
+#: Sources whose air quality is model output rather than a ground measurement.
+#: Open-Meteo serves CAMS-derived values — its own provider string says so, and
+#: AGENTS.md forbids presenting them as station accuracy. Its corridor sites
+#: share H3 cells with real stations, so without an explicit rule the cell's
+#: value for an hour came down to list order.
+MODEL_DERIVED_SOURCES = frozenset({"openmeteo", "cams"})
+
 
 def _hour(ts: datetime) -> datetime:
     """Floor a timestamp to the UTC hour."""
     aware = ts if ts.tzinfo else ts.replace(tzinfo=UTC)
     return aware.replace(minute=0, second=0, microsecond=0)
+
+
+def precedence(obs: Observation) -> tuple[bool, datetime]:
+    """Rank an observation for the same cell-hour.
+
+    Ground truth outranks model output; within a tier, the newest wins. This
+    is a total order over the fields involved, so the winner does not depend
+    on the order observations arrived in.
+    """
+    return (obs.source_id not in MODEL_DERIVED_SOURCES, obs.observed_at)
 
 
 @dataclass
@@ -67,6 +84,9 @@ class FeatureSnapshot:
         aq_index: dict[tuple[str, datetime], list[Observation]] = {}
         pm25_index: dict[str, dict[datetime, float]] = {}
         pm25_cell_index: dict[datetime, dict[str, tuple[str, float, float, float]]] = {}
+        # Tracks which observation currently owns each cell-hour, so a later
+        # one only replaces it when it genuinely outranks it.
+        pm25_winner: dict[tuple[str, datetime], tuple[bool, datetime]] = {}
         for obs in self.air_quality:
             cell = obs.grid_id or to_grid_id(obs.location.lat, obs.location.lon)
             # Cache the resolved cell so repeated H3 lookups are avoided.
@@ -74,6 +94,11 @@ class FeatureSnapshot:
             bucket = _hour(obs.observed_at)
             aq_index.setdefault((cell, bucket), []).append(obs)
             if obs.measurement.parameter == "pm25":
+                rank = precedence(obs)
+                key = (cell, bucket)
+                if key in pm25_winner and rank <= pm25_winner[key]:
+                    continue
+                pm25_winner[key] = rank
                 pm25_index.setdefault(cell, {})[bucket] = obs.measurement.value
                 pm25_cell_index.setdefault(bucket, {})[cell] = (
                     cell,

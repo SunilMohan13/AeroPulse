@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import asyncio
 import json
+import random
+import time
 from typing import Any
 
 from aeropulse_common.settings import get_settings
@@ -76,6 +78,88 @@ def _init_shadow_scorer() -> Any | None:
         return None
 
 
+class DetectionTrigger:
+    """Decides when a detection sweep is worth running.
+
+    ``run_detection`` rebuilds a ``FeatureSnapshot`` over the entire in-memory
+    repository, so its cost scales with the snapshot, not with the message
+    that triggered it. Running it per message was invisible at ~20 records per
+    replay cycle and is quadratic once live sources arrive. Detection is a
+    pure recompute, so one sweep per batch produces the same answer as one
+    sweep per message.
+    """
+
+    def __init__(self, *, interval_seconds: float, max_batch: int, clock: Any = None) -> None:
+        """Create a trigger.
+
+        Args:
+            interval_seconds: Minimum wall-clock gap between sweeps.
+            max_batch: Force a sweep after this many pending observations.
+            clock: Monotonic time source, injected for tests.
+        """
+        self._interval = interval_seconds
+        self._max_batch = max_batch
+        self._clock = clock or time.monotonic
+        self._pending = 0
+        self._last_run: float | None = None
+
+    def record(self) -> None:
+        """Note one newly persisted observation."""
+        self._pending += 1
+
+    def should_run(self) -> bool:
+        """True when either the batch or the interval threshold is reached."""
+        if self._pending == 0:
+            return False
+        if self._pending >= self._max_batch:
+            return True
+        if self._last_run is None:
+            return True
+        return (self._clock() - self._last_run) >= self._interval
+
+    def mark_run(self) -> int:
+        """Reset the batch counter and report how many observations it covered."""
+        covered = self._pending
+        self._pending = 0
+        self._last_run = self._clock()
+        return covered
+
+    @property
+    def pending(self) -> int:
+        """Observations persisted since the last sweep."""
+        return self._pending
+
+
+async def _start_consumer(consumer: Any, *, attempts: int = 30) -> None:
+    """Start a Kafka consumer, retrying while the broker comes up.
+
+    The worker previously died on the first failed ``start()``, which under
+    ``restart: unless-stopped`` turned a broker blip into a crash loop and,
+    on a cold ``compose up``, a race the worker usually lost.
+
+    Args:
+        consumer: An ``AIOKafkaConsumer``.
+        attempts: Maximum attempts before giving up.
+
+    Raises:
+        Exception: The final failure, when every attempt is exhausted.
+    """
+    delay = 1.0
+    for attempt in range(1, attempts + 1):
+        try:
+            await consumer.start()
+            return
+        except Exception as exc:
+            if attempt == attempts:
+                logger.error("worker.kafka.unavailable", attempts=attempts, error=str(exc))
+                raise
+            logger.warning(
+                "worker.kafka.retry", attempt=attempt, delay_seconds=round(delay, 2), error=str(exc)
+            )
+            await asyncio.sleep(delay + random.uniform(0, 0.5))
+            delay = min(delay * 2, 30.0)
+
+
 def _repository() -> ObservationRepository:
     """Prefer Timescale; fall back to in-memory if the database is down."""
     settings = get_settings()
@@ -101,7 +185,15 @@ async def _run() -> None:
     configure_telemetry(settings)
     logger.info("worker.starting", kafka=settings.kafka_bootstrap_servers)
     persist = _repository()
-    snapshot_repo = persist if isinstance(persist, InMemoryRepository) else InMemoryRepository()
+    snapshot_repo = (
+        persist
+        if isinstance(persist, InMemoryRepository)
+        else InMemoryRepository(retention_hours=settings.worker_snapshot_hours)
+    )
+    trigger = DetectionTrigger(
+        interval_seconds=settings.worker_detection_interval_seconds,
+        max_batch=settings.worker_detection_max_batch,
+    )
     global _SHADOW_SCORER
     _SHADOW_SCORER = _init_shadow_scorer()
 
@@ -121,15 +213,36 @@ async def _run() -> None:
         enable_auto_commit=True,
         value_deserializer=lambda v: json.loads(v.decode("utf-8")),
     )
-    await consumer.start()
+    await _start_consumer(consumer)
     logger.info("worker.consuming")
     try:
         async for msg in consumer:
             if not isinstance(msg.value, dict):
                 continue
-            _handle(msg.topic, msg.value, persist, snapshot_repo)
+            _handle(msg.topic, msg.value, persist, snapshot_repo, trigger)
+            if trigger.should_run():
+                _sweep(persist, snapshot_repo, trigger)
     finally:
+        # A partial batch still holds unswept observations; detection on the
+        # way out keeps a clean shutdown from silently dropping them.
+        if trigger.pending:
+            _sweep(persist, snapshot_repo, trigger)
         await consumer.stop()
+
+
+def _sweep(
+    persist: ObservationRepository,
+    snapshot_repo: InMemoryRepository,
+    trigger: DetectionTrigger,
+) -> None:
+    """Run one detection pass and persist what it produced."""
+    covered = trigger.mark_run()
+    try:
+        detection = run_detection(snapshot_repo)
+        logger.info("worker.detection", observations=covered, **detection)
+        _persist_intelligence(persist, snapshot_repo)
+    except Exception:
+        logger.exception("worker.detection_failed", observations=covered)
 
 
 def _handle(
@@ -137,6 +250,7 @@ def _handle(
     value: dict[str, Any],
     persist: ObservationRepository,
     snapshot_repo: InMemoryRepository,
+    trigger: DetectionTrigger | None = None,
 ) -> None:
     correlation = value.get("correlation_id", "")
     bind_context(**{"correlation.id": correlation})
@@ -166,9 +280,14 @@ def _handle(
                 process_weather(obs_w, snapshot_repo)
         logger.info("worker.processed", topic=topic, status=result["status"])
         if result.get("status") == "persisted":
-            detection = run_detection(snapshot_repo)
-            logger.info("worker.detection", **detection)
-            _persist_intelligence(persist, snapshot_repo)
+            if trigger is None:
+                # No trigger supplied (unit tests, single-shot callers): keep
+                # the original sweep-per-observation behaviour.
+                detection = run_detection(snapshot_repo)
+                logger.info("worker.detection", **detection)
+                _persist_intelligence(persist, snapshot_repo)
+            else:
+                trigger.record()
     except Exception:
         logger.exception("worker.failed", topic=topic)
 
@@ -195,6 +314,11 @@ def _persist_intelligence(persist: ObservationRepository, snapshot: InMemoryRepo
         if hasattr(persist, "upsert_grid_prediction"):
             for prediction in store.latest_predictions.values():
                 persist.upsert_grid_prediction(prediction)  # type: ignore[attr-defined]
+        if hasattr(persist, "upsert_alert"):
+            # The event engine raises these into the in-process store; they
+            # only reach the API once they are persisted.
+            for alert in store.alerts.values():
+                persist.upsert_alert(alert)  # type: ignore[attr-defined]
         if hasattr(persist, "upsert_source_health"):
             persist.upsert_source_health("cpcb", len(snapshot.air_quality))  # type: ignore[attr-defined]
     except Exception:

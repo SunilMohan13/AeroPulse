@@ -17,7 +17,11 @@ from aeropulse_intelligence.forecast import forecast_event
 from aeropulse_intelligence.geometry import haversine_km
 from aeropulse_intelligence.likelihood import score_sources
 from aeropulse_intelligence.lineage import build_graph
-from aeropulse_intelligence.snapshot import FeatureSnapshot
+
+# MODEL_DERIVED_SOURCES lives in the snapshot, where per-cell-hour fusion
+# happens. Detect applies the same precedence when choosing a cell's
+# representative timestamp, and re-exports it for callers.
+from aeropulse_intelligence.snapshot import MODEL_DERIVED_SOURCES, FeatureSnapshot
 
 logger = get_logger("aeropulse.intelligence")
 
@@ -43,11 +47,18 @@ def process_snapshot(
     history = history_by_grid or {}
     cells: dict[str, tuple[float, float]] = {}
     timestamps = {}
+    # (is_ground_truth, observed_at) per cell, so the winner is deterministic
+    # rather than whichever observation the iteration happened to reach last.
+    ranking: dict[str, tuple[bool, object]] = {}
     for obs in snapshot.air_quality:
         if obs.measurement.parameter != "pm25":
             continue
         grid_id = obs.grid_id or to_grid_id(obs.location.lat, obs.location.lon)
         obs.grid_id = grid_id
+        candidate = (obs.source_id not in MODEL_DERIVED_SOURCES, obs.observed_at)
+        if grid_id in ranking and candidate <= ranking[grid_id]:
+            continue
+        ranking[grid_id] = candidate
         cells[grid_id] = (obs.location.lat, obs.location.lon)
         timestamps[grid_id] = obs.observed_at
 

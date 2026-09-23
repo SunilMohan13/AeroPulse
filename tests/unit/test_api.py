@@ -248,7 +248,12 @@ def test_citizen_photo_upload_is_processed(client: TestClient, settings: Setting
     created = client.post(
         "/api/v1/citizen/reports",
         headers=headers,
-        json={"lat": 28.61, "lon": 77.21, "observation_type": "photo", "notes": "heavy haze over Delhi"},
+        json={
+            "lat": 28.61,
+            "lon": 77.21,
+            "observation_type": "photo",
+            "notes": "heavy haze over Delhi",
+        },
     )
     assert created.status_code == 201
     report_id = created.json()["report_id"]

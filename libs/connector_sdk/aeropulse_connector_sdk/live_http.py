@@ -12,6 +12,7 @@ connector could not obtain a hardened transport without assembling it by hand.
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 import httpx
@@ -68,20 +69,78 @@ class LiveHttpClient:
         breaker: CircuitBreaker | None = None,
         transport_get: Any | None = None,
         require_live_mode: bool = True,
+        burst: float | None = None,
     ) -> None:
         self.source_id = source_id
         self.timeout = timeout
         self.breaker = breaker or CircuitBreaker()
-        self.limiter = RateLimiter(rate_per_second)
+        self.limiter = (
+            RateLimiter(rate_per_second, burst=burst)
+            if burst is not None
+            else RateLimiter(rate_per_second)
+        )
         self.require_live_mode = require_live_mode
         self._get = transport_get or httpx.get
         self.throttled_seconds = 0.0
+        #: Response headers from the most recent call. Providers publish their
+        #: remaining quota here (OpenAQ's ``x-ratelimit-remaining``), which is
+        #: unreadable if only the parsed body is returned.
+        self.last_headers: dict[str, str] = {}
 
     def _assert_live_mode(self) -> None:
         if not self.require_live_mode:
             return
         if get_settings().connector_mode != "live":
             raise LiveModeDisabledError
+
+    def get_text(
+        self,
+        url: str,
+        *,
+        params: dict[str, Any] | None = None,
+        headers: dict[str, str] | None = None,
+    ) -> str:
+        """GET a response body as text, applying every reliability primitive.
+
+        The JSON path is built on this one so both share a single chain of
+        rate limiter, breaker, retry and timeout. Sources that answer in CSV
+        (FIRMS) use this directly.
+
+        Args:
+            url: Absolute HTTPS URL. Some providers put the credential in the
+                path, so this must never be logged.
+            params: Query parameters.
+            headers: Request headers. Credentials come from the environment
+                and are never logged.
+
+        Returns:
+            The raw response body.
+
+        Raises:
+            LiveModeDisabledError: If the platform is in replay mode.
+            CircuitOpenError: If this source's breaker is open.
+            httpx.HTTPError: On transport failure after retries are exhausted.
+        """
+        self._assert_live_mode()
+        if not self.breaker.allow():
+            raise CircuitOpenError(self.source_id)
+
+        self.throttled_seconds += self.limiter.acquire()
+
+        @retry_http
+        def _call() -> Any:
+            response = self._get(url, params=params, headers=headers, timeout=self.timeout)
+            response.raise_for_status()
+            return response
+
+        try:
+            response = _call()
+        except Exception:
+            self.breaker.record_failure()
+            raise
+        self.breaker.record_success()
+        self.last_headers = {str(k).lower(): str(v) for k, v in dict(response.headers).items()}
+        return response.text
 
     def get_json(
         self,
@@ -106,25 +165,7 @@ class LiveHttpClient:
             CircuitOpenError: If this source's breaker is open.
             httpx.HTTPError: On transport failure after retries are exhausted.
         """
-        self._assert_live_mode()
-        if not self.breaker.allow():
-            raise CircuitOpenError(self.source_id)
-
-        self.throttled_seconds += self.limiter.acquire()
-
-        @retry_http
-        def _call() -> Any:
-            response = self._get(url, params=params, headers=headers, timeout=self.timeout)
-            response.raise_for_status()
-            return response.json()
-
-        try:
-            payload = _call()
-        except Exception:
-            self.breaker.record_failure()
-            raise
-        self.breaker.record_success()
-        return payload
+        return json.loads(self.get_text(url, params=params, headers=headers))
 
 
 def fetch_json(

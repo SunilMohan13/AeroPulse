@@ -84,7 +84,9 @@ def test_timescale_forecast_maps_latest_event_horizons_to_h3_centers() -> None:
     assert features[0]["properties"]["event_id"] == "evt_1"
     sql, params = connection.calls[0]
     assert "DISTINCT ON (event_id, horizon_hours)" in sql
-    assert params == (100,)
+    # No horizon requested: both filter placeholders bind NULL so the SQL
+    # returns every horizon, then the limit.
+    assert params == (None, None, 100)
 
 
 def test_timescale_grid_maps_latest_features_to_closed_h3_polygons() -> None:
@@ -149,7 +151,7 @@ class _FakeMapReader:
     def weather(self, bbox, limit):
         return [_feature("imd", 77.206, 28.585, {"wind_u": -2.1, "temperature": 25.1})]
 
-    def forecast(self, limit):
+    def forecast(self, limit, horizon_hours=None):
         return [
             _feature(
                 "forecast",

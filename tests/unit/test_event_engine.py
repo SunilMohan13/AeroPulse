@@ -46,7 +46,18 @@ def test_fixture_replay_creates_punjab_event() -> None:
         if e.status not in {EventStatus.REJECTED, EventStatus.RESOLVED}
     ]
     assert open_events
-    event = max(open_events, key=lambda e: e.overall_confidence)
+
+    # Select the fire-corroborated event explicitly rather than assuming it
+    # ranks highest. Since OpenAQ joined the replay it contributes Delhi
+    # ground stations reading ~186 ug/m3 with no nearby fire, so the
+    # top-confidence open event is no longer necessarily the Punjab one.
+    fire_events = [
+        e
+        for e in open_events
+        if any(ev.evidence_type == "fire_detection" for ev in repo.event_store.evidence[e.event_id])
+    ]
+    assert fire_events, "fixture replay must still produce a fire-corroborated event"
+    event = max(fire_events, key=lambda e: e.overall_confidence)
     types = {ev.evidence_type for ev in repo.event_store.evidence[event.event_id]}
     assert "cpcb_anomaly" in types
     assert "fire_detection" in types
