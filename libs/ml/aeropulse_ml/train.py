@@ -1142,13 +1142,18 @@ def evaluate_promotion_gate(result: TrainingResult) -> list[str]:
     metrics = result.metrics
 
     if result.model_name == "pm25_estimator":
-        temporal = metrics.get("temporal", {})
-        if not temporal.get("evaluated"):
-            failures.append("temporal holdout was not evaluable")
-        else:
-            skill = temporal.get("skill_vs_baseline")
+        for holdout in ("temporal", "spatial", "seasonal"):
+            block = metrics.get(holdout) or {}
+            if not block.get("evaluated"):
+                reason = block.get("reason")
+                suffix = f" ({reason})" if reason else ""
+                failures.append(f"{holdout} holdout was not evaluable{suffix}")
+                continue
+            skill = block.get("skill_vs_baseline")
             if skill is not None and skill <= 0:
-                failures.append(f"temporal skill vs persistence is {skill:+.4f} (must exceed 0)")
+                failures.append(f"{holdout} skill vs persistence is {skill:+.4f} (must exceed 0)")
+        temporal = metrics.get("temporal", {})
+        if temporal.get("evaluated"):
             r2 = temporal.get("r2")
             if r2 is not None and r2 <= 0:
                 failures.append(f"temporal R2 is {r2:.4f} (must exceed 0)")

@@ -81,7 +81,7 @@ Metrics are only worth computing if a bad one can stop a release. `evaluate_prom
 
 | Model | Blocks promotion when |
 |---|---|
-| `pm25_estimator` | Temporal skill vs persistence ≤ 0, or temporal R² ≤ 0, or the temporal holdout was not evaluable |
+| `pm25_estimator` | Temporal, spatial, or seasonal holdout not evaluable; temporal/spatial/seasonal skill vs persistence ≤ 0; or temporal R² ≤ 0 |
 | `anomaly_detector` | Detection F1 < 0.30 against the CPCB "Very Poor" exceedance label |
 | `source_likelihood` | Macro F1 < 0.50, or any class with support is never predicted correctly |
 | `propagation_forecast` | Any horizon has temporal skill ≤ 0 |
@@ -96,7 +96,7 @@ source_likelihood     class 'traffic' never predicted correctly
 propagation_forecast  24h skill -0.1192
 ```
 
-And on the small offline fixture it blocked the fourth as well (`skill -2.6697`, `R² -0.4376`), preventing a model that overfits 144 rows from ever serving. Coverage: `tests/unit/test_promotion_gate.py`, 15 tests, each pinned to a failure actually observed on real data.
+And on the small offline fixture it blocked the fourth as well (seasonal holdout not evaluable on a single-month window), preventing a 3-day CAMS toy fit from ever serving. Coverage: `tests/unit/test_promotion_gate.py`.
 
 ---
 

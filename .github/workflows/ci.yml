@@ -23,8 +23,9 @@ jobs:
   # Trains from the committed fixture with no network and no credential. This
   # guards the pieces that silently rot: the shared train/serve feature spec,
   # the leakage assertions, and the promotion gate. The gate is EXPECTED to
-  # refuse this model -- three days of fixture data cannot beat persistence --
-  # so the assertion is that a bad model is blocked, not that one is promoted.
+  # refuse this model -- a 3-day single-month window cannot produce a seasonal
+  # holdout -- so the assertion is that a short fixture is blocked, not that
+  # one is promoted.
   ml:
     runs-on: ubuntu-latest
     steps:
