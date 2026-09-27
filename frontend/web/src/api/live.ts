@@ -151,14 +151,29 @@ async function primaryEventId(): Promise<string | null> {
 
 export async function liveForecast(eventId?: string): Promise<ForecastPoint[]> {
   const target = eventId ?? (await primaryEventId())
-  if (!target) return []
-  try {
-    const forecast = await apiGet<ApiForecast>(`/api/v1/events/${target}/forecast`)
-    return toForecastPoints(forecast)
-  } catch (error) {
-    if (error instanceof ApiError && error.status === 404) return []
-    throw error
+  if (!target) {
+    throw new ApiError('no live event to forecast', 404, '/api/v1/events')
   }
+  const forecast = await apiGet<ApiForecast>(`/api/v1/events/${target}/forecast`)
+  const points = toForecastPoints(forecast)
+  if (points.length === 0) {
+    throw new ApiError(
+      `no forecast cells for event ${target}`,
+      404,
+      `/api/v1/events/${target}/forecast`,
+    )
+  }
+  return points
+}
+
+export async function liveObservedHistory(
+  gridId: string,
+): Promise<{ hour: number; pm25: number }[]> {
+  const response = await apiGet<{ items: { hour: number; pm25: number }[] }>(
+    `/api/v1/grid-features/${encodeURIComponent(gridId)}/history`,
+    { limit: 48 },
+  )
+  return response.items.map((item) => ({ hour: item.hour, pm25: item.pm25 }))
 }
 
 /** Horizons the advection forecast actually publishes (forecast.py HORIZONS_H). */

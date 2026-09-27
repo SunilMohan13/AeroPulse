@@ -3,6 +3,10 @@
 **Date:** 2026-09-08
 **Scope:** the four models of LLD §18, as implemented in `libs/ml/` and served through `libs/ml/aeropulse_ml/inference.py`.
 
+The MapLibre UI in `frontend/web` is part of this repository. Demo/Live both exist; Live reads
+the FastAPI service. Connector ingest is a scheduled loop driven by `config/sources.yaml`, not
+a one-shot job.
+
 Every number in this document was produced by one reproducible command against live data. None is copied from a design document, and none is estimated.
 
 ```bash

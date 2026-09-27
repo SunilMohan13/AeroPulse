@@ -2,8 +2,16 @@ export function formatNumber(n: number, decimals = 0): string {
   return n.toLocaleString('en-IN', { maximumFractionDigits: decimals })
 }
 
+function parsedInstant(iso: string | null | undefined): Date | null {
+  if (!iso) return null
+  const when = new Date(iso)
+  return Number.isNaN(when.getTime()) ? null : when
+}
+
 export function formatTimeIST(iso: string): string {
-  return new Date(iso).toLocaleTimeString('en-IN', {
+  const when = parsedInstant(iso)
+  if (!when) return '—'
+  return when.toLocaleTimeString('en-IN', {
     hour: '2-digit',
     minute: '2-digit',
     timeZone: 'Asia/Kolkata',
@@ -11,7 +19,9 @@ export function formatTimeIST(iso: string): string {
 }
 
 export function formatDateTimeIST(iso: string): string {
-  return new Date(iso).toLocaleString('en-IN', {
+  const when = parsedInstant(iso)
+  if (!when) return '—'
+  return when.toLocaleString('en-IN', {
     day: '2-digit',
     month: 'short',
     year: 'numeric',

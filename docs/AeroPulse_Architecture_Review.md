@@ -18,6 +18,11 @@
 > **Serving-path update (2026-09-14):** The event API now reads TimescaleDB through a request-scoped
 > repository (events, evidence, latest forecast and latest graph). Actual connector fixtures were
 > verified end to end through Kafka/worker/database/authenticated HTTP. The frontend now consumes authenticated event, source, map, evidence, citizen, and copilot paths; population risk areas remain demo-backed.
+>
+> **Wiring/honesty update (2026-09-27):** Demo/Live is a first-class switch. Live reads the API and
+> does not substitute demo values. `GET /sources` carries connector telemetry. Compose `migrate`
+> reapplies SQL on existing volumes. One Open-Meteo live HTTP cycle was verified; OpenAQ/FIRMS still
+> need operator keys. The UI is not mock-only.
 
 AeroPulse was, before this review, a **well-engineered deterministic evidence pipeline that ran entirely on replay fixtures**, plus two disconnected satellites: a real-ML notebook track that had never been executed, and a React UI wired to static mock data. The architecture was sound; the claim of being an ML platform was not supported by the code.
 
@@ -130,6 +135,6 @@ Calibration work sits alongside these: the anomaly alert threshold is one residu
 
 **Yes:** live credential-free ingestion, canonical contracts, H3 grid assignment, point-in-time-correct features including real satellite AOD, four models trained on 90 days of real corridor data, evaluated on three independent holdouts with skill scores against honest baselines, registered with full provenance, gated on quality, and served with contract validation and measured latency (inference 0.056 s). One model earned promotion on merit; three were refused on merit. That path is reproducible with two commands and no credential.
 
-**No:** not through the UI, which is mock-only. Not on operationally validated ground-truth data. And not with the anomaly, source or forecast trained models serving, because they failed their gates. **The persisted HTTP event path now works** (2026-09-14), but it serves deterministic runtime outputs rather than notebook challengers.
+**No:** not on licensed WorldPop/Census data, and not with the anomaly, source or forecast trained models serving, because they failed their gates. **The persisted HTTP event path and the Live UI both work** (2026-09-27); they serve deterministic runtime outputs rather than notebook challengers.
 
 The distinction worth holding onto is that the *pipeline* is now demonstrably real and the *deployment* is not. Before this pass neither was.

@@ -26,6 +26,7 @@ services:
       - ../db/migrations/0004_raster_observation.sql:/docker-entrypoint-initdb.d/0004_raster_observation.sql:ro
       - ../db/migrations/0005_shadow_prediction.sql:/docker-entrypoint-initdb.d/0005_shadow_prediction.sql:ro
       - ../db/migrations/0006_alert.sql:/docker-entrypoint-initdb.d/0006_alert.sql:ro
+      - ../db/migrations/0007_source_health_run.sql:/docker-entrypoint-initdb.d/0007_source_health_run.sql:ro
     ports:
       - "127.0.0.1:5433:5432"
     networks: [aeropulse-backend]
@@ -35,6 +36,29 @@ services:
       timeout: 5s
       retries: 20
     mem_limit: 1g
+
+  # Init scripts under /docker-entrypoint-initdb.d run only on first volume
+  # create. This job re-applies the same idempotent SQL on every `up`.
+  migrate:
+    image: timescale/timescaledb-ha:pg16
+    restart: "no"
+    environment:
+      PGPASSWORD: aeropulse
+    volumes:
+      - ../db/migrations:/migrations:ro
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -eu
+        for f in /migrations/*.sql; do
+          echo "migrate: $$f"
+          psql -h timescaledb -U aeropulse -d aeropulse -v ON_ERROR_STOP=1 -f "$$f"
+        done
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+    networks: [aeropulse-backend]
+    mem_limit: 256m
 
   redpanda:
     image: docker.redpanda.com/redpandadata/redpanda:v24.2.11
@@ -87,7 +111,9 @@ services:
     mem_limit: 256m
 
   minio:
-    image: quay.io/minio/minio:RELEASE.2025-01-20T14-49-07Z
+    # Local registry name. The running stack already uses this image;
+    # quay.io/minio/minio returned 401 from this environment.
+    image: minio/minio:RELEASE.2025-01-20T14-49-07Z
     restart: unless-stopped
     command: server /data --console-address ":9001"
     environment:
@@ -118,6 +144,10 @@ services:
       AEROPULSE_REDIS_URL: redis://redis:6379/0
       AEROPULSE_KAFKA_BOOTSTRAP_SERVERS: redpanda:9092
       AEROPULSE_MINIO_ENDPOINT: minio:9000
+      # Same local-dev MinIO root user as the minio service above. Compose
+      # injects these so put_raw_json can write; they are not production secrets.
+      AEROPULSE_MINIO_ACCESS_KEY: aeropulse
+      AEROPULSE_MINIO_SECRET_KEY: aeropulse_secret
       AEROPULSE_JWT_SECRET: dev-only-change-me-use-32-bytes-min
       # Copilot only. Server-side: this must never reach the web bundle.
       # Absent means the copilot degrades to deterministic retrieval.
@@ -128,6 +158,8 @@ services:
     depends_on:
       timescaledb:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
       redis:
         condition: service_healthy
     networks: [aeropulse-frontend, aeropulse-backend]
@@ -153,6 +185,8 @@ services:
     depends_on:
       timescaledb:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     networks: [aeropulse-backend]
     mem_limit: 256m
 
@@ -167,9 +201,15 @@ services:
       AEROPULSE_DATABASE_URL: postgresql://aeropulse:aeropulse@timescaledb:5432/aeropulse
       AEROPULSE_REDIS_URL: redis://redis:6379/0
       AEROPULSE_KAFKA_BOOTSTRAP_SERVERS: redpanda:9092
+      # Prometheus scrape port for worker domain counters. Bind localhost only.
+      AEROPULSE_WORKER_METRICS_PORT: 9090
+    ports:
+      - "127.0.0.1:9090:9090"
     depends_on:
       timescaledb:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
       redpanda:
         condition: service_healthy
     networks: [aeropulse-backend]
@@ -191,6 +231,9 @@ services:
       # runner._checkpoint_repository() returns None and every cycle restarts
       # from cursor zero, so live sources can never resume where they left off.
       AEROPULSE_DATABASE_URL: postgresql://aeropulse:aeropulse@timescaledb:5432/aeropulse
+      AEROPULSE_MINIO_ENDPOINT: minio:9000
+      AEROPULSE_MINIO_ACCESS_KEY: aeropulse
+      AEROPULSE_MINIO_SECRET_KEY: aeropulse_secret
       AEROPULSE_OPENAQ_API_KEY: ${AEROPULSE_OPENAQ_API_KEY:-}
       AEROPULSE_FIRMS_MAP_KEY: ${AEROPULSE_FIRMS_MAP_KEY:-}
     depends_on:
@@ -198,6 +241,8 @@ services:
         condition: service_healthy
       timescaledb:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     networks: [aeropulse-backend]
     mem_limit: 256m
 

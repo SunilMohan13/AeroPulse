@@ -103,6 +103,8 @@ export interface PollutionEvent {
   frpMw: number
   sourceLikelihood: SourceLikelihood[]
   recommendedActions: string[]
+  /** H3 cells this event covers. Live adapters fill this; demo may omit it. */
+  gridIds?: string[]
   provenance?: DataProvenance
 }
 

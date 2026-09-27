@@ -17,6 +17,8 @@ import { AeroMap } from '../components/map/AeroMap'
 import { Card, CardBody, CardHeader } from '../components/common/Card'
 import { ScientificBadge } from '../components/common/Badge'
 import { fetchForecastSeries } from '../services/forecastService'
+import { fetchEvents } from '../services/eventService'
+import { pickHeroEvent } from '../utils/heroEvent'
 import { useApp } from '../context/AppContext'
 import { useReducedMotion } from '../hooks/useReducedMotion'
 import { getPollutionSwatch, getBandLabel } from '../utils/aqi'
@@ -30,11 +32,13 @@ export function Forecast() {
   const { mode } = useDataMode()
   const { data: series = [] } = useQuery({
     queryKey: ['forecastSeries', mode],
-    // Wrapped, not passed by reference: React Query hands `queryFn` a context
-    // object, which would arrive as the optional `eventId` argument and
-    // request /api/v1/events/[object Object]/forecast.
     queryFn: () => fetchForecastSeries(),
   })
+  const { data: events } = useQuery({
+    queryKey: ['events', mode],
+    queryFn: fetchEvents,
+  })
+  const region = pickHeroEvent(events)?.region ?? '—'
   const { hourOffset, setHourOffset } = useApp()
   const [playing, setPlaying] = useState(false)
   const reducedMotion = useReducedMotion()
@@ -63,20 +67,19 @@ export function Forecast() {
     [series],
   )
 
-  const current = useMemo(
-    () =>
-      series.reduce(
-        (best, p) =>
-          Math.abs(p.hour - hourOffset) < Math.abs(best.hour - hourOffset) ? p : best,
-        series[0] ?? { hour: 0, pm25: 0, confidenceLow: 0, confidenceHigh: 0, timestamp: '' },
-      ),
-    [series, hourOffset],
-  )
+  const current = useMemo(() => {
+    if (series.length === 0) return null
+    return series.reduce(
+      (best, p) =>
+        Math.abs(p.hour - hourOffset) < Math.abs(best.hour - hourOffset) ? p : best,
+      series[0],
+    )
+  }, [series, hourOffset])
 
-  const peak = useMemo(
-    () => series.reduce((a, b) => (b.pm25 > a.pm25 ? b : a), series[0]),
-    [series],
-  )
+  const peak = useMemo(() => {
+    if (series.length === 0) return null
+    return series.reduce((a, b) => (b.pm25 > a.pm25 ? b : a), series[0])
+  }, [series])
 
   const yDomain = useMemo(() => {
     if (series.length === 0) return { min: 0, max: 100 }
@@ -102,20 +105,20 @@ export function Forecast() {
         <div className="flex items-center gap-3">
           <div className="text-right">
             <p className="text-[10px] uppercase tracking-wider text-text-muted">
-              Delhi NCR · {hourOffset === 0 ? 'now' : `+${hourOffset}h`}
+              {region} · {hourOffset === 0 ? 'now' : `+${hourOffset}h`}
             </p>
             <div className="flex items-baseline gap-2">
               <motion.span
-                key={current?.pm25}
+                key={current?.pm25 ?? 'empty'}
                 initial={{ opacity: 0, y: -4 }}
                 animate={{ opacity: 1, y: 0 }}
                 className="font-mono text-2xl font-bold tabular-nums"
-                style={{ color: getPollutionSwatch(current?.pm25 ?? 0) }}
+                style={{ color: current ? getPollutionSwatch(current.pm25) : undefined }}
               >
-                {current?.pm25 ?? 0}
+                {current ? current.pm25 : '—'}
               </motion.span>
               <span className="text-xs text-text-muted">
-                µg/m³ · {getBandLabel(current?.pm25 ?? 0)}
+                {current ? `µg/m³ · ${getBandLabel(current.pm25)}` : 'no forecast'}
               </span>
             </div>
           </div>
@@ -197,7 +200,7 @@ export function Forecast() {
       <div className="grid shrink-0 gap-3 md:grid-cols-3">
         <Card className="md:col-span-2">
           <CardHeader className="flex items-center justify-between py-2">
-            <span className="text-xs font-medium">PM2.5 trajectory · Delhi NCR</span>
+            <span className="text-xs font-medium">PM2.5 trajectory · {region}</span>
             <span className="text-[10px] text-text-muted">
               cyan = model · dashed = persistence baseline
             </span>
@@ -280,15 +283,15 @@ export function Forecast() {
           </CardHeader>
           <CardBody className="space-y-2 p-3 text-xs">
             <div className="flex justify-between">
-              <span className="text-text-secondary">Peak for Delhi NCR</span>
+              <span className="text-text-secondary">Peak</span>
               <span className="font-mono font-medium">
-                {peak?.pm25 ?? 0} µg/m³ · +{peak?.hour ?? 0}h
+                {peak ? `${peak.pm25} µg/m³ · +${peak.hour}h` : '—'}
               </span>
             </div>
             <div className="flex justify-between">
               <span className="text-text-secondary">Confidence range</span>
               <span className="font-mono">
-                {current?.confidenceLow ?? 0}–{current?.confidenceHigh ?? 0}
+                {current ? `${current.confidenceLow}–${current.confidenceHigh}` : '—'}
               </span>
             </div>
             {/* Skill against persistence is an offline evaluation result.

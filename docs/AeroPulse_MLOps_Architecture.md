@@ -1,7 +1,7 @@
 # AeroPulse India — MLOps Architecture
 
 **Date:** 2026-09-08
-**Implements:** LLD §19 (registry and lifecycle), §20 (feature store), §45 (scientific validation), §46 (drift — not yet built).
+**Implements:** LLD §19 (registry and lifecycle), §20 (feature store), §45 (scientific validation), §46 (on-demand `/api/v1/drift` plus hourly `aeropulse-drift-monitor`; error drift still needs delayed labels).
 
 ---
 
@@ -158,18 +158,18 @@ Artifacts are memoised per process, so champion loading does not dominate infere
 
 | Gap | LLD | Severity |
 |---|---|---|
-| Drift monitoring is on-demand only: feature/prediction PSI+KS exist, but no scheduler/alerts or delayed-label error drift | §46 | P1 |
-| Features and predictions never persisted, so no offline/online consistency check and no post-hoc error tracking once labels arrive | §13, §20 | P1 |
+| Drift monitoring: on-demand `/api/v1/drift` plus hourly Compose `aeropulse-drift-monitor`; error drift still needs delayed labels | §46 | P1 |
+| ~~Features and predictions never persisted~~ **CLOSED 2026-09-14:** `grid_feature` / `grid_prediction` plus Timescale readers | §13, §20 | — |
 | No model-metadata table in SQL; the registry is a JSON index, not queryable alongside predictions | §13 | P2 |
-| Artifacts local-only; MinIO writes silently no-op without credentials | §11 | P2 |
-| No shadow-traffic mechanism — `SHADOW`/`CANARY` are recorded stages but nothing routes live traffic to a challenger for comparison | §19 | P2 |
+| Artifacts local-only unless Compose MinIO keys are present (`AEROPULSE_MINIO_ACCESS_KEY` / `SECRET_KEY`) | §11 | P2 |
+| ~~No shadow-traffic mechanism~~ **CLOSED:** worker scores registered challengers into `shadow_prediction` after the served answer | §19 | — |
 | No ML job in CI; nothing retrains or re-validates automatically | §46 | P2 |
 | No automated retraining trigger | §46 | P3 |
 
 `grid_feature`/`grid_prediction` persistence and the event API read path are implemented as of
-2026-09-14. The highest-value next MLOps step is shadow inference telemetry: compare registered
-challengers against the deterministic primary without changing served output, then feed those
-measurements into promotion gates and drift monitoring.
+2026-09-14. Shadow inference compares registered challengers against the served path without
+changing the response. Hourly distribution drift is logged; error drift still needs delayed
+ground-truth labels.
 
 On-demand distribution monitoring is available at `/api/v1/drift` for whitelisted persisted
 feature/prediction signals. It uses PSI bands (0.10 warning, 0.25 drift), sample-size-aware KS, and

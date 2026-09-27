@@ -10,8 +10,9 @@ from aeropulse_common.objects import put_raw_json
 from aeropulse_contracts.citizen import CitizenReport
 from aeropulse_geospatial.grid import to_grid_id
 from aeropulse_intelligence.cv import classify_report
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
+from starlette.datastructures import UploadFile
 
 from aeropulse_api.deps import get_claims, require
 from aeropulse_api.event_store import current_store
@@ -83,11 +84,17 @@ def create_report(
 
 
 @router.get("/reports")
-def list_reports(_claims: TokenClaims = Depends(get_claims)) -> dict:
+def list_reports(
+    _claims: TokenClaims = Depends(get_claims),
+    limit: int | None = Query(default=None, ge=1, le=500, description="Max items to return"),
+    offset: int = Query(default=0, ge=0, description="Items to skip"),
+) -> dict:
     """List citizen reports currently held by the API event repository."""
     items = [report.model_dump(mode="json") for report in current_store().citizen_reports.values()]
     items.sort(key=lambda report: report["observed_at"], reverse=True)
-    return {"items": items, "total": len(items)}
+    total = len(items)
+    page = items[offset : offset + limit] if limit is not None else items[offset:]
+    return {"items": page, "total": total, "limit": limit, "offset": offset}
 
 
 @router.post("/reports/{report_id}/media", responses={404: {"description": "Report not found"}})
@@ -105,7 +112,7 @@ async def attach_media(
     if content_type.startswith("multipart/form-data"):
         form = await request.form()
         upload = form.get("file")
-        if upload is None or not hasattr(upload, "read"):
+        if not isinstance(upload, UploadFile):
             raise HTTPException(status_code=400, detail="Missing photo file")
         payload = await upload.read()
         if len(payload) > MAX_PHOTO_BYTES:

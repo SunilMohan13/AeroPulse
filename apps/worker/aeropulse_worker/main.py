@@ -6,6 +6,7 @@ When Kafka is unavailable the process still starts and logs readiness failures.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import random
 import time
@@ -183,7 +184,14 @@ async def _run() -> None:
     settings.service_name = "aeropulse-worker"  # type: ignore[misc]
     configure_logging(settings)
     configure_telemetry(settings)
-    logger.info("worker.starting", kafka=settings.kafka_bootstrap_servers)
+    from prometheus_client import start_http_server
+
+    start_http_server(settings.worker_metrics_port)
+    logger.info(
+        "worker.starting",
+        kafka=settings.kafka_bootstrap_servers,
+        metrics_port=settings.worker_metrics_port,
+    )
     persist = _repository()
     snapshot_repo = (
         persist
@@ -228,6 +236,15 @@ async def _run() -> None:
         if trigger.pending:
             _sweep(persist, snapshot_repo, trigger)
         await consumer.stop()
+
+
+def _abort_txn(persist: ObservationRepository) -> None:
+    """Clear an aborted Postgres transaction so the next message can run."""
+    conn = getattr(persist, "conn", None)
+    if conn is None:
+        return
+    with contextlib.suppress(Exception):
+        conn.rollback()
 
 
 def _sweep(
@@ -290,6 +307,7 @@ def _handle(
                 trigger.record()
     except Exception:
         logger.exception("worker.failed", topic=topic)
+        _abort_txn(persist)
 
 
 def _persist_intelligence(persist: ObservationRepository, snapshot: InMemoryRepository) -> None:
@@ -319,10 +337,9 @@ def _persist_intelligence(persist: ObservationRepository, snapshot: InMemoryRepo
             # only reach the API once they are persisted.
             for alert in store.alerts.values():
                 persist.upsert_alert(alert)  # type: ignore[attr-defined]
-        if hasattr(persist, "upsert_source_health"):
-            persist.upsert_source_health("cpcb", len(snapshot.air_quality))  # type: ignore[attr-defined]
     except Exception:
         logger.exception("worker.intelligence_persist_failed")
+        _abort_txn(persist)
 
     _score_shadow(persist, snapshot)
 

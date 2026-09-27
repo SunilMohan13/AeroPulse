@@ -36,7 +36,7 @@ export function MapFusionStrip({ className }: MapFusionStripProps) {
         aria-live="polite"
       >
         <span className="text-emerald-400/95">
-          {reporting}/{sources.length || 6} sources reporting
+          {reporting}/{sources.length || 0} sources reporting
         </span>
         <span className="hidden text-border sm:inline">|</span>
         {sources.slice(0, 5).map((s) => (

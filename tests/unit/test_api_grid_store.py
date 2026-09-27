@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from aeropulse_api.app import create_app
@@ -114,6 +114,52 @@ def _client() -> tuple[TestClient, dict[str, str]]:
     app.dependency_overrides[get_grid_reader] = lambda: _FakeGridReader()
     token = encode_token("grid-test", [Role.VIEWER])
     return TestClient(app), {"Authorization": f"Bearer {token}"}
+
+
+def test_grid_feature_history_returns_relative_hour_series() -> None:
+    older = _feature().model_copy(update={"timestamp": NOW - timedelta(hours=3), "pm25": 110.0})
+    newer = _feature()
+
+    class _HistoryReader(_FakeGridReader):
+        def list_features(self, grid_id, start, end, limit, offset):
+            assert grid_id == GRID_ID
+            return ([newer, older], 2)
+
+    get_settings.cache_clear()
+    app = create_app()
+    app.dependency_overrides[get_grid_reader] = lambda: _HistoryReader()
+    token = encode_token("grid-test", [Role.VIEWER])
+    client = TestClient(app)
+    headers = {"Authorization": f"Bearer {token}"}
+
+    response = client.get(f"/api/v1/grid-features/{GRID_ID}/history", headers=headers)
+    assert response.status_code == 200
+    body = response.json()
+    assert body["grid_id"] == GRID_ID
+    assert body["total"] == 2
+    hours = [item["hour"] for item in body["items"]]
+    assert hours == [-3, 0]
+    assert body["items"][0]["pm25"] == 110.0
+    assert body["items"][1]["pm25"] == 142.3
+
+
+def test_grid_feature_history_is_empty_when_pm25_is_missing() -> None:
+    blank = _feature().model_copy(update={"pm25": None})
+
+    class _EmptyPm(_FakeGridReader):
+        def list_features(self, grid_id, start, end, limit, offset):
+            return ([blank], 1)
+
+    get_settings.cache_clear()
+    app = create_app()
+    app.dependency_overrides[get_grid_reader] = lambda: _EmptyPm()
+    token = encode_token("grid-test", [Role.VIEWER])
+    client = TestClient(app)
+    headers = {"Authorization": f"Bearer {token}"}
+
+    response = client.get(f"/api/v1/grid-features/{GRID_ID}/history", headers=headers)
+    assert response.status_code == 200
+    assert response.json()["items"] == []
 
 
 def test_grid_endpoints_return_contracts_and_pagination() -> None:

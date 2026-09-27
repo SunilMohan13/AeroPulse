@@ -11,10 +11,11 @@
 
 | Source | Connector | Mode | Credential | Live verified |
 |---|---|---|---|---|
-| **Open-Meteo** (AQ + weather) | `connectors/openmeteo` | **live + replay** | **none required** | **YES** — 2026-09-08, 10 requests, 87,360 observations |
-| CPCB CAAQMS | `connectors/cpcb` | replay | api_key | NO — requires CPCB credential |
-| NASA FIRMS | `connectors/firms` | replay | `MAP_KEY` | NO — requires FIRMS `MAP_KEY` |
-| IMD | `connectors/imd` | replay | api_key | NO — requires IMD credential |
+| **Open-Meteo** (AQ + weather) | `connectors/openmeteo` | **live + replay** | **none required** | **YES** — 2026-09-27 Compose one-shot: `HEALTHY`, 2600 records, 1950 AQ + 325 weather rows persisted. Also 2026-09-08 offline fixture parse |
+| CPCB CAAQMS | `connectors/cpcb` | replay | none public | NO — CPCB has no free API; live ground stations go through OpenAQ |
+| **OpenAQ** | `connectors/openaq` | live + replay | `AEROPULSE_OPENAQ_API_KEY` | NO in this environment (empty key → `NOT_CONFIGURED`). Replay fixture verified. Never silent-fixtures under a live banner |
+| NASA FIRMS | `connectors/firms` | live + replay | `AEROPULSE_FIRMS_MAP_KEY` | NO in this environment (empty key → `NOT_CONFIGURED`). `live_capable=true` |
+| IMD | `connectors/imd` | **disabled** | none | Fixture + contract kept. Yaml `enabled: false`; Open-Meteo already emits `meteo.v1` for the same sites |
 | Sentinel-5P | `connectors/sentinel5p` | replay (raster) | Copernicus | NO — requires Copernicus account |
 | MODIS MAIAC | `connectors/modis` | replay (raster) | Earthdata | NO — requires Earthdata login |
 | CAMS | `connectors/cams` | replay (raster) | ADS | NO — requires ADS key |
@@ -23,9 +24,8 @@
 | ICAR/KRISHI | `connectors/icar` | replay (geo asset) | — | NO |
 | Industry/OCEMS | `connectors/industry` | replay (geo asset) | — | NO |
 | OSM | `connectors/osm` | replay (geo asset) | — | NO |
-| **OpenAQ** | **none** | — | API key (`401` without) | **MISSING** — LLD §9 lists it |
 | **ERA5** | **none** | — | CDS key | **MISSING** — LLD §9 lists it |
-| **Population** | `fixtures/population` + `/api/v1/risk/areas` | reference fixture; provider adapter boundary | REFERENCE ONLY | **Integrated plumbing; replace fixture with licensed WorldPop/Census extract before operations** |
+| **Population** | `fixtures/population` + `/api/v1/risk/areas` | reference fixture | REFERENCE ONLY | Integrated plumbing; replace with licensed WorldPop/Census before operations |
 
 Live mode is opt-in: `AEROPULSE_CONNECTOR_MODE` defaults to `replay`, so a test run can never silently reach the network. A unit test pins that default.
 

@@ -4,11 +4,8 @@ import { useDataMode } from '../../context/DataModeContext'
 /**
  * Marks a screen that stays on demo data even while the app is in live mode.
  *
- * Two surfaces need this and both for concrete reasons: the API has no
- * citizen-report list route, and `graph.v1` carries lineage edges without
- * the layout coordinates this hand-drawn diagram needs. Without the notice a
- * reader on "Live" would take a curated illustration for real lineage, which
- * is exactly the substitution the rest of this work exists to prevent.
+ * Unused. Citizen reports and the evidence graph are live; keep this component
+ * only if a future screen is genuinely demo-only while the header says Live.
  */
 export function DemoOnlyNotice({ reason }: { reason: string }) {
   const { mode } = useDataMode()

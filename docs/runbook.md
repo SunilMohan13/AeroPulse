@@ -15,7 +15,14 @@ uv run aeropulse-api
 docker compose -f infrastructure/docker/compose.yaml up --build
 ```
 
-SQL migrations `0001`–`0003` load on first Postgres volume. Wipe `timescale-data` if schema is stale.
+SQL migrations `0001`–`0007` are idempotent. Init scripts still run on first
+volume create. The `migrate` Compose service re-applies the same files on every
+`up`, so an existing `timescale-data` volume picks up `alert` and
+`source_health` columns without a wipe.
+
+The connector is a scheduled loop (`restart: unless-stopped`), not a one-shot job.
+There is no `--profile connectors`. Worker Prometheus text is at
+`http://127.0.0.1:9090/metrics`.
 
 Replay without Kafka (stdout envelopes):
 
@@ -29,7 +36,7 @@ uv run aeropulse-connector
 uv run python scripts/export_openapi.py
 ```
 
-Writes `docs/openapi/openapi.v1.json`.
+Writes `docs/openapi/openapi.v1.json`. Bruno collection: `bruno/aeropulse` (keep in sync with that spec).
 
 ## JWT
 

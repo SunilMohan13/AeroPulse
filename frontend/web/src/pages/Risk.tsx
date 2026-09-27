@@ -7,7 +7,7 @@ import { fetchRiskAreas, fetchTotalExposure } from '../services/riskService'
 import { PopulationRiskBars } from '../components/charts/PopulationRiskBars'
 import { formatPopulation } from '../utils/format'
 import { useDataMode } from '../context/DataModeContext'
-import { FallbackBanner, ModeContextNote } from '../components/common/Provenance'
+import { FallbackBanner, MaybeValue, ModeContextNote } from '../components/common/Provenance'
 
 export function Risk() {
   const { mode } = useDataMode()
@@ -116,13 +116,26 @@ export function Risk() {
           <CardBody>
             <div className="grid grid-cols-2 gap-4">
               {[
-                { label: 'Children', count: '840K' },
-                { label: 'Elderly', count: '620K' },
-                { label: 'Hospitals', count: '142' },
-                { label: 'Schools', count: '1,240' },
+                { label: 'Children', field: 'children' },
+                { label: 'Elderly', field: 'elderly' },
+                { label: 'Hospitals', field: 'hospitals' },
+                { label: 'Schools', field: 'schools' },
               ].map((item) => (
                 <div key={item.label} className="rounded border border-border p-3 text-center">
-                  <p className="text-2xl font-mono font-bold">{item.count}</p>
+                  <p className="text-2xl font-mono font-bold">
+                    {isLive ? (
+                      <MaybeValue
+                        field={item.field}
+                        unavailable={['children', 'elderly', 'hospitals', 'schools']}
+                        reason="The API does not serve sensitive-population counts."
+                        value="—"
+                      />
+                    ) : (
+                      { Children: '840K', Elderly: '620K', Hospitals: '142', Schools: '1,240' }[
+                        item.label
+                      ]
+                    )}
+                  </p>
                   <p className="text-xs text-text-muted">{item.label}</p>
                 </div>
               ))}
@@ -132,12 +145,10 @@ export function Risk() {
             </p>
             {isLive && (
               <p className="mt-2 text-xs text-amber-400/80">
-                The counts above are demo figures. No API route supplies sensitive-population
-                breakdowns, so they do not change in live mode. The ranked areas and the exposure
-                total above <em>are</em> live, from{' '}
-                <code className="font-mono">/api/v1/risk/areas</code> — but its population layer
-                ships as a fixture licensed <code className="font-mono">replace-before-production</code>,
-                so treat the headcounts as structurally correct and not yet operationally sourced.
+                Sensitive-population counts are not on the API, so they render as unavailable.
+                Ranked areas and the exposure total above are live from{' '}
+                <code className="font-mono">/api/v1/risk/areas</code> — its population layer ships
+                licensed <code className="font-mono">replace-before-production</code>.
               </p>
             )}
           </CardBody>

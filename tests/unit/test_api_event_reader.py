@@ -77,7 +77,9 @@ def test_timescale_reader_reconstructs_all_event_contracts() -> None:
         "SELECT count(*) FROM pollution_event": [(1,)],
         "SELECT payload FROM pollution_event WHERE status": [(payload,)],
         "SELECT payload FROM pollution_event WHERE event_id": [(payload,)],
-        "FROM event_evidence": [("evd_1", "cpcb_anomaly", "obs_1", "grid_a", "High PM2.5", 0.9)],
+        "FROM event_evidence": [
+            ("evd_1", "cpcb_anomaly", "obs_1", "grid_a", "High PM2.5", 0.9, NOW)
+        ],
         "FROM forecast_value": [
             (NOW, "grid_a", "grid_a", 0, 180.0, 0.9, "wind-advection-0.1", False),
             (NOW, "grid_a", "grid_b", 3, 160.0, 0.8, "wind-advection-0.1", False),
@@ -98,6 +100,7 @@ def test_timescale_reader_reconstructs_all_event_contracts() -> None:
     assert events == [_event()]
     assert event == _event()
     assert evidence[0].evidence_id == "evd_1"
+    assert evidence[0].created_at == NOW
     assert forecast is not None
     assert forecast.horizons == [3]
     assert [cell.grid_id for cell in forecast.grid_predictions] == ["grid_a", "grid_b"]

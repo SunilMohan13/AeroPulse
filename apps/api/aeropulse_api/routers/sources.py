@@ -2,96 +2,25 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
-import yaml
 from aeropulse_auth.jwt import Role, TokenClaims
-from aeropulse_connector_cams import CamsConnector
-from aeropulse_connector_cpcb import CpcbConnector
-from aeropulse_connector_firms import FirmsConnector
-from aeropulse_connector_imd import ImdConnector
-from aeropulse_connector_modis import ModisConnector
+from aeropulse_connector_app.registry import SPECS_BY_ID
 from aeropulse_connector_sdk.base import DataConnector
-from aeropulse_connector_sentinel5p import Sentinel5PConnector
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from aeropulse_api.deps import get_claims, require
+from aeropulse_api.source_health_store import (
+    SourceHealthReader,
+    SourceHealthRow,
+    get_source_health_reader,
+)
+from aeropulse_api.source_registry import registry_by_id, registry_items, repo_root
 
 router = APIRouter(prefix="/api/v1/sources", tags=["sources"])
 
-_SOURCES: dict[str, dict] = {
-    "cpcb": {
-        "source_id": "cpcb",
-        "provider": "CPCB",
-        "connector_id": "cpcb_caaqms",
-        "display_name": "CPCB CAAQMS",
-        "data_type": "air_quality",
-        "enabled": True,
-        "status": "replay",
-        "schema_version": "observation.v1",
-    },
-    "firms": {
-        "source_id": "firms",
-        "provider": "NASA",
-        "connector_id": "firms_viirs",
-        "display_name": "NASA FIRMS VIIRS",
-        "data_type": "active_fire",
-        "enabled": True,
-        "status": "replay",
-        "schema_version": "fire_observation.v1",
-    },
-    "imd": {
-        "source_id": "imd",
-        "provider": "IMD",
-        "connector_id": "imd_weather",
-        "display_name": "IMD Weather",
-        "data_type": "weather",
-        "enabled": True,
-        "status": "replay",
-        "schema_version": "meteo.v1",
-    },
-    "sentinel5p": {
-        "source_id": "sentinel5p",
-        "provider": "Copernicus",
-        "connector_id": "sentinel5p",
-        "display_name": "Sentinel-5P",
-        "data_type": "satellite_gas",
-        "enabled": True,
-        "status": "replay",
-        "schema_version": "raster.v1",
-    },
-    "modis": {
-        "source_id": "modis",
-        "provider": "NASA",
-        "connector_id": "modis_maiac",
-        "display_name": "MODIS MAIAC AOD",
-        "data_type": "aod",
-        "enabled": True,
-        "status": "replay",
-        "schema_version": "raster.v1",
-    },
-    "cams": {
-        "source_id": "cams",
-        "provider": "ECMWF",
-        "connector_id": "cams",
-        "display_name": "CAMS composition",
-        "data_type": "composition_forecast",
-        "enabled": True,
-        "status": "replay",
-        "schema_version": "raster.v1",
-    },
-    "population": {
-        "source_id": "population",
-        "provider": "Reference fixture / WorldPop-compatible adapter",
-        "connector_id": "population_density",
-        "display_name": "Population density",
-        "data_type": "population_density",
-        "enabled": True,
-        "status": "reference",
-        "schema_version": "population-density.v1",
-    },
-}
+#: In-memory overlay for POST/PUT used by tests. Yaml remains the source of
+#: truth for the running connector; this never writes sources.yaml.
+_OVERRIDES: dict[str, dict] = {}
 
 
 class SourceWrite(BaseModel):
@@ -114,61 +43,84 @@ class BackfillRequest(BaseModel):
     bbox: list[float] | None = None
 
 
-def _repo_root() -> Path:
-    """Return the project root for fixture-backed connector health checks."""
-    for candidate in (Path("/app"), Path(".")):
-        if (candidate / "fixtures").exists() and (candidate / "config" / "sources.yaml").exists():
-            return candidate
-    return Path(".")
+def reset_source_overrides() -> None:
+    """Clear test overlays (called from API test fixtures)."""
+    _OVERRIDES.clear()
+
+
+def _telemetry(health: SourceHealthRow | None) -> dict:
+    """Nullable health fields. Never invent a freshness from enabled=true."""
+    if health is None:
+        return {
+            "last_success_at": None,
+            "latency_ms": None,
+            "records_per_run": None,
+            "error": None,
+            "processing_mode": None,
+            "quality_score": None,
+            "error_rate": None,
+        }
+    return {
+        "last_success_at": health.last_success_at.isoformat() if health.last_success_at else None,
+        "latency_ms": health.latency_ms,
+        "records_per_run": health.records_per_run,
+        "error": health.last_error,
+        "processing_mode": health.processing_mode,
+        "quality_score": health.quality_score,
+        "error_rate": health.error_rate,
+    }
+
+
+def _merged_items(health_by_id: dict[str, SourceHealthRow]) -> list[dict]:
+    """Yaml registry, then test overlays, then nullable telemetry."""
+    items = {item["source_id"]: dict(item) for item in registry_items()}
+    for source_id, overlay in _OVERRIDES.items():
+        base = items.get(source_id, {"source_id": source_id, "status": "registered"})
+        items[source_id] = {**base, **overlay}
+    merged: list[dict] = []
+    for item in items.values():
+        health = health_by_id.get(item["source_id"])
+        row = {**item, **_telemetry(health)}
+        if health is not None:
+            row["status"] = health.status
+        merged.append(row)
+    return merged
+
+
+def _known(health_by_id: dict[str, SourceHealthRow]) -> dict[str, dict]:
+    return {item["source_id"]: item for item in _merged_items(health_by_id)}
 
 
 def _source_connector(source_id: str) -> DataConnector | None:
-    """Instantiate a connector for a registered source when the fixture is present."""
-    root = _repo_root()
-    config_path = root / "config" / "sources.yaml"
-    fixture_path: Path | None = None
-    try:
-        raw = yaml.safe_load(config_path.read_text()) if config_path.exists() else {}
-        sources = (raw or {}).get("sources", []) if isinstance(raw, dict) else []
-        for source in sources:
-            if isinstance(source, dict) and source.get("id") == source_id and source.get("fixture"):
-                fixture_path = root / source["fixture"]
-                break
-    except (OSError, yaml.YAMLError):
-        fixture_path = None
-
-    if source_id == "cpcb":
-        return CpcbConnector(fixture_path)
-    if source_id == "firms":
-        return FirmsConnector(fixture_path)
-    if source_id == "imd":
-        return ImdConnector(fixture_path)
-    if source_id == "sentinel5p":
-        return Sentinel5PConnector(fixture_path)
-    if source_id == "modis":
-        return ModisConnector(fixture_path)
-    if source_id == "cams":
-        return CamsConnector(fixture_path)
-    return None
+    """Instantiate a connector from SOURCE_SPECS when the fixture is present."""
+    spec = SPECS_BY_ID.get(source_id)
+    if spec is None:
+        return None
+    return spec.build(repo_root() / "fixtures")
 
 
 @router.get("")
 def list_sources(
     _claims: TokenClaims = Depends(get_claims),
+    health: SourceHealthReader = Depends(get_source_health_reader),
     limit: int | None = Query(default=None, ge=1, le=500, description="Max items to return"),
     offset: int = Query(default=0, ge=0, description="Items to skip"),
 ) -> dict:
-    """List registered data sources."""
-    items = list(_SOURCES.values())
+    """List registered data sources with nullable connector telemetry."""
+    items = _merged_items(health.latest())
     total = len(items)
     page = items[offset : offset + limit] if limit is not None else items[offset:]
     return {"items": page, "total": total, "limit": limit, "offset": offset}
 
 
 @router.get("/{source_id}")
-def get_source(source_id: str, _claims: TokenClaims = Depends(get_claims)) -> dict:
+def get_source(
+    source_id: str,
+    _claims: TokenClaims = Depends(get_claims),
+    health: SourceHealthReader = Depends(get_source_health_reader),
+) -> dict:
     """Return a single source or 404."""
-    source = _SOURCES.get(source_id)
+    source = _known(health.latest()).get(source_id)
     if not source:
         raise HTTPException(status_code=404, detail="Source not found")
     return source
@@ -182,7 +134,7 @@ def create_source(
     """Register a source. Secrets must be referenced by ``auth_ref`` only."""
     record = body.model_dump()
     record["status"] = "registered"
-    _SOURCES[body.source_id] = record
+    _OVERRIDES[body.source_id] = record
     return record
 
 
@@ -192,12 +144,13 @@ def update_source(
     body: SourceWrite,
     _claims: TokenClaims = Depends(require(Role.ADMIN)),
 ) -> dict:
-    """Update source configuration."""
-    if source_id not in _SOURCES:
+    """Update source configuration (in-memory overlay; does not edit yaml)."""
+    known = {**registry_by_id(), **_OVERRIDES}
+    if source_id not in known:
         raise HTTPException(status_code=404, detail="Source not found")
     record = body.model_dump()
     record["status"] = "updated"
-    _SOURCES[source_id] = record
+    _OVERRIDES[source_id] = record
     return record
 
 
@@ -207,14 +160,15 @@ def test_source(
     _claims: TokenClaims = Depends(require(Role.ADMIN, Role.OPERATOR)),
 ) -> dict:
     """Run a connector health check using the actual fixture-backed connector."""
-    if source_id not in _SOURCES:
+    known = {**registry_by_id(), **_OVERRIDES}
+    if source_id not in known:
         raise HTTPException(status_code=404, detail="Source not found")
 
     connector = _source_connector(source_id)
     if connector is None:
         return {
             "source_id": source_id,
-            "connector_id": _SOURCES[source_id]["connector_id"],
+            "connector_id": known[source_id].get("connector_id", source_id),
             "healthy": True,
             "mode": "replay",
             "message": "configured",
@@ -238,7 +192,8 @@ def backfill_source(
     _claims: TokenClaims = Depends(require(Role.ADMIN, Role.OPERATOR)),
 ) -> dict:
     """Run fixture replay for a source with processing_mode=BACKFILL."""
-    if source_id not in _SOURCES:
+    known = {**registry_by_id(), **_OVERRIDES}
+    if source_id not in known:
         raise HTTPException(status_code=404, detail="Source not found")
     from pathlib import Path
 

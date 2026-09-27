@@ -66,9 +66,9 @@ export function EventDetail() {
     enabled: queriesEnabled,
   })
   const { data: history = [] } = useQuery({
-    queryKey: ['observedHistory', mode],
-    queryFn: fetchObservedHistory,
-    // A missing route is permanent; retrying just delays the banner.
+    queryKey: ['observedHistory', event?.gridIds?.[0], mode],
+    queryFn: () => fetchObservedHistory(event?.gridIds?.[0]),
+    enabled: queriesEnabled && (mode === 'demo' || Boolean(event?.gridIds?.[0])),
     retry: false,
   })
   const { data: forecast = [] } = useQuery({
@@ -203,7 +203,7 @@ export function EventDetail() {
               <p className="mt-2 text-xs text-text-muted">
                 {history.length > 0
                   ? 'Solid line is observed ground data. Dashed line is the model forecast; the gap between them widens with horizon.'
-                  : 'Dashed line is the model forecast. No observed series is drawn: no endpoint returns a per-cell PM2.5 history.'}
+                  : 'Dashed line is the model forecast. No observed PM2.5 series was returned for this cell.'}
               </p>
             </CardBody>
           </Card>

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime
 from typing import Any
 
 from aeropulse_contracts.alert import Alert
@@ -404,20 +405,56 @@ class TimescaleRepository:
             cur.execute(sql, (source_id, json.dumps(payload), error))
         self.conn.commit()
 
-    def upsert_source_health(self, source_id: str, records: int, status: str = "HEALTHY") -> None:
-        """Upsert source_health after a successful run."""
+    def upsert_source_health(
+        self,
+        source_id: str,
+        records: int,
+        status: str = "HEALTHY",
+        *,
+        latency_ms: int | None = None,
+        error: str | None = None,
+        processing_mode: str | None = None,
+    ) -> None:
+        """Upsert connector run health. Failures keep the previous success time."""
+        success = status in {"HEALTHY", "REPLAY", "REPLAY_EXHAUSTED"}
+        stamp = datetime.now(UTC) if success else None
         sql = """
-        INSERT INTO source_health (source_id, status, last_success_at, last_record_at, records_per_run, updated_at)
-        VALUES (%s, %s, now(), now(), %s, now())
+        INSERT INTO source_health (
+            source_id, status, last_success_at, last_record_at, records_per_run,
+            latency_ms, last_error, processing_mode, updated_at
+        )
+        VALUES (
+            %(source_id)s, %(status)s, %(last_success_at)s, %(last_record_at)s,
+            %(records)s, %(latency_ms)s, %(error)s, %(processing_mode)s, now()
+        )
         ON CONFLICT (source_id) DO UPDATE SET
             status = EXCLUDED.status,
-            last_success_at = EXCLUDED.last_success_at,
-            last_record_at = EXCLUDED.last_record_at,
+            last_success_at = COALESCE(EXCLUDED.last_success_at, source_health.last_success_at),
+            last_record_at = COALESCE(EXCLUDED.last_record_at, source_health.last_record_at),
             records_per_run = EXCLUDED.records_per_run,
+            latency_ms = EXCLUDED.latency_ms,
+            last_error = EXCLUDED.last_error,
+            processing_mode = EXCLUDED.processing_mode,
             updated_at = EXCLUDED.updated_at
         """
         with self.conn.cursor() as cur:
-            cur.execute(sql, (source_id, status, records))
+            try:
+                cur.execute(
+                    sql,
+                    {
+                        "source_id": source_id,
+                        "status": status,
+                        "last_success_at": stamp,
+                        "last_record_at": stamp,
+                        "records": records,
+                        "latency_ms": latency_ms,
+                        "error": error,
+                        "processing_mode": processing_mode,
+                    },
+                )
+            except Exception:
+                self.conn.rollback()
+                raise
         self.conn.commit()
 
     def upsert_checkpoint(self, source_id: str, cursor: str) -> None:
@@ -437,8 +474,12 @@ class TimescaleRepository:
         """Return the last saved cursor for a source, if any."""
         sql = "SELECT cursor FROM connector_checkpoint WHERE source_id = %(source_id)s"
         with self.conn.cursor() as cur:
-            cur.execute(sql, {"source_id": source_id})
-            row = cur.fetchone()
+            try:
+                cur.execute(sql, {"source_id": source_id})
+                row = cur.fetchone()
+            except Exception:
+                self.conn.rollback()
+                raise
         return row[0] if row else None
 
     def upsert_alert(self, alert: Alert) -> None:

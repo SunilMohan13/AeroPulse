@@ -13,8 +13,9 @@ exist. However, notebook artifact directories are empty, so no notebook model is
 
 The API's two-registry mismatch is partially fixed: `/api/v1/models` now includes filesystem
 registry records alongside deterministic serving baselines, with truthful `runtime_role`, stage and
-artifact availability. Worker inference still uses the deterministic baselines; shadow serving and
-notebook bundle export remain open.
+artifact availability. Worker inference still uses the deterministic baselines for served
+predictions. **Shadow scoring is implemented** (§11.6): challengers write `shadow_prediction` after
+the served answer exists and cannot affect it. Notebook bundle export remains open.
 
 ---
 
@@ -50,13 +51,13 @@ Conversely, one apparent strength is illusory: **LLD §64's own implementation c
 
 | LLD | Requirement | Implementation | Status | Gap / action |
 |---|---|---|---|---|
-| §41 | Docker Compose runtime | `infrastructure/docker/compose.yaml` — 8 services, healthchecks, mem limits, named volumes | PASS | — |
-| §7.1 | Connector SDK: base, contracts, retry, rate_limit, checkpoint, health | `libs/connector_sdk/` — `base.py`, `contracts.py`, `retry.py`, `circuit.py`, `quality.py`; **`rate_limit.py` added this pass** | PARTIAL | `checkpoint.py` still absent; `FetchRequest.cursor` exists but no connector reads it |
-| §7.2 | Source registry | `config/sources.yaml` | INCORRECT | **The runner never reads this file.** `apps/connector/.../runner.py` hardcodes its job list. Registry is decorative |
+| §41 | Docker Compose runtime | `infrastructure/docker/compose.yaml` — api/worker/connector/web + Timescale/Redpanda/Redis/MinIO, `migrate` one-shot, drift-monitor | PASS | Init scripts run on first volume; `migrate` reapplies `0001`–`0007` on every `up` |
+| §7.1 | Connector SDK: base, contracts, retry, rate_limit, checkpoint, health | `libs/connector_sdk/` plus runner checkpoint via Timescale `connector_checkpoint` | PARTIAL | No standalone `checkpoint.py`; runner reads/writes `FetchRequest.cursor` |
+| §7.2 | Source registry | `config/sources.yaml` + `SOURCE_SPECS`; runner skips `enabled: false`; `GET /sources` joins yaml + specs + `source_health` | PASS | **[FIXED]** Runner and list API both read yaml |
 | §8 | Canonical versioned contracts | `libs/contracts/` — `observation.v1`, `meteo.v1`, `fire.v1`, `raster.v1`, `grid-features.v1`, `event.v1`, `forecast.v1` | PASS | Genuine strength: `extra=forbid`, `schema_version` on every record |
-| §9 | 15-source integration matrix | 12 connectors plus a population-density adapter boundary | PARTIAL | Population risk plumbing is integrated with a versioned reference fixture; replace it with a licensed WorldPop/Census extract before operations. OpenAQ and ERA5 remain absent |
+| §9 | 15-source integration matrix | 12 connectors plus OpenAQ + population-density adapter | PARTIAL | OpenAQ connector exists (live when key set). ERA5 still absent. Population is a licensed `replace-before-production` fixture |
 | §10 | 19 Kafka topics, DLQ, retry topics, schema registry | `libs/common/.../topics.py` defines 19; `aiokafka` producer/consumer real | PARTIAL | **Only 4 of 19 topics are produced or consumed.** DLQ is a Postgres table (`connector_dead_letter`), not the declared `aero.dlq.*` topic. Redpanda exposes a schema registry port that no code uses |
-| §11 | Immutable raw object layer | `libs/common/.../objects.py` `put_raw_json` | INCORRECT | **Silently no-ops without credentials**: returns a synthetic `s3://` URI without writing (`objects.py:32-33`), and swallows all exceptions (`:55-57`). `provenance.raw_object_uri` therefore points at nothing in the default configuration |
+| §11 | Immutable raw object layer | `libs/common/.../objects.py` `put_raw_json` | PARTIAL | Compose injects local MinIO keys; without credentials it still returns a logical `s3://` URI and logs `objects.raw_copy_not_stored` |
 | §12.2 | ~1 km grid, no lat/lon rounding | `libs/geospatial/grid.py` — H3 res 8 (~0.74 km²) | PASS | LLD §12.2 permits "H3 or an equivalent deterministic grid"; ADR-0002 records it |
 | §13 | 8 Timescale hypertables | 3 migrations create all of them | PARTIAL → **[FIXED 2026-09-09]** | ~~`grid_feature` and `grid_prediction` are never written to by any code.~~ Now written by `TimescaleRepository.upsert_grid_feature`/`upsert_grid_prediction`, called from `_persist_intelligence` for every processed cell. Verified against a live TimescaleDB container, not just unit tests |
 | §12.3 | PostGIS for boundaries, stations, geometries | Extension created; `grid_cell.geometry` column exists | DECLARED-UNUSED | No code populates or queries any geometry column |
@@ -69,7 +70,7 @@ Conversely, one apparent strength is illusory: **LLD §64's own implementation c
 | LLD | Requirement | Implementation | Status | Gap / action |
 |---|---|---|---|---|
 | §16 | Quality rule engine: range, temporal, sensor, spatial | `libs/connector_sdk/quality.py`, applied in `apps/worker/.../pipeline.py:104-113` | PASS | Connectors emit a placeholder `quality_score=1.0` which the worker then overwrites — correct, but the placeholder is misleading in isolation |
-| §16.2 | Configurable weighted quality score | `quality.py` | PARTIAL | Weights are hardcoded, not configuration-driven as §16.2 requires |
+| §16.2 | Configurable weighted quality score | `quality.py` + `AEROPULSE_QUALITY_WEIGHTS` | PASS | **[FIXED 2026-09-09]** |
 | §17.2 | Lags 1/3/6/12/24h, rolling mean/max, rate of change, historical percentile | Was 1h/3h only. **This pass added 6h, 24h lags and 6h/24h trailing means** | PARTIAL | Rolling max, rate of change and historical percentile still absent |
 | §15 | Canonical grid feature model | `GridFeature` (`grid-features.v1`) | PARTIAL | Satellite group **now populated** (AOD wired this pass). Agriculture, industry, urban and exposure groups remain permanent nulls because no connector supplies them |
 | §39 | Idempotency | SHA-256 `dedup_key` (`hashing.py`) + `ON CONFLICT (dedup_key, time) DO NOTHING` | PASS | Genuine strength |
@@ -89,7 +90,7 @@ Conversely, one apparent strength is illusory: **LLD §64's own implementation c
 | §19 | "Avoid random splits" | No splits existed | `temporal_split`, `spatial_split`, `seasonal_split`; no random split is reachable | PASS |
 | §20 | Offline Parquet + online features, same definitions | Two divergent definitions (notebooks vs serving) | **`aeropulse_contracts.feature_spec` is now the single source both import** | PASS |
 | §45 | Metrics: RMSE/MAE/R²/calibration/F1/false-alert/skill-vs-baseline | None computed anywhere in the packages | `libs/ml/evaluation.py` computes all of these | PASS |
-| §46 | Drift monitoring (PSI/KS, prediction and error drift) | `/api/v1/drift` computes bounded PSI/KS for feature/prediction/source-count signals | PARTIAL (2026-09-14) | Minimum-sample gates implemented; scheduled alerts and error drift await orchestration and delayed ground truth |
+| §46 | Drift monitoring (PSI/KS, prediction and error drift) | `/api/v1/drift` plus hourly `aeropulse-drift-monitor` Compose service | PARTIAL (2026-09-16) | Scheduled PSI/KS logs exist; error drift still needs delayed ground truth; no external pager |
 | §33.2 | ML metrics: inference latency, throughput | — | Timings reported by `aeropulse-ml predict`; no continuous metric | PARTIAL |
 
 **Estimator family deviation:** LLD §18.1 names LightGBM/XGBoost. This implementation uses scikit-learn `HistGradientBoosting*` — the same gradient-boosted-histogram algorithm family. Reason: LightGBM requires a system `libomp` that is absent on the target machine (verified: `/opt/homebrew/opt/libomp/lib/libomp.dylib` does not exist on this arm64 host), whereas scikit-learn wheels bundle their own OpenMP. The estimator is one constructor call per trainer, so switching back is a one-line change.
@@ -101,12 +102,12 @@ Conversely, one apparent strength is illusory: **LLD §64's own implementation c
 | §25 | REST API: map, events, sources, copilot, citizen | 26 routes, `/api/v1`, Pydantic validation, OpenAPI 3.1 exported | PASS | — |
 | §25 | Responses expose prediction, confidence, model_version, feature_version, evidence, grid | Present on `event.v1` / `forecast.v1` | PASS | Genuine strength |
 | §43 | API p95 < 500 ms | Not measured under load against real data | NOT VERIFIED | `tests/load/test_health_load.py` exercises `/health` only |
-| — | API reads persisted state | Timescale readers serve events/evidence/latest forecast/latest graph, grid features/predictions, and every map layer including persisted raster footprints | **PARTIAL [P0 FIXED 2026-09-14]** | Frontend consumes several persisted paths; live satellite acquisition remains replay-only and some UI domains remain demo-backed |
-| §26 | UI: 11 screens | 9 pages exist in `frontend/web` | PARTIAL | Live adapters now cover events, sources, event evidence/forecast/graph, grid, fire, weather, citizen reports, copilot, risk areas, and industry assets when `VITE_API_TOKEN` is configured. Population values remain reference-fixture data |
-| §21.3 | Four separate confidences | Four fields exist on `event.v1` | PARTIAL | Only `detection_confidence` and `source_confidence` are computed. `forecast_confidence` and `impact_confidence` are hardcoded `0.0` (`engine.py:102,186`) despite the forecast module computing its own per-cell confidence |
-| §33 | OpenTelemetry + SigNoz | `libs/observability/telemetry.py` initialises a real TracerProvider | PARTIAL | **No OTLP endpoint is set in compose, so traces export nowhere by default.** SigNoz is absent (self-documented in `docs/architecture.md:31`) |
-| §33.2 | Custom metrics (ingestion, quality, ML, API counters/histograms) | Prometheus API request counters/latency histogram/in-flight gauge | PARTIAL (2026-09-14) | Ingestion, quality and ML domain metrics plus collector/dashboards remain |
-| §33.1 | `trace_id` on every log record | structlog JSON with service fields | PARTIAL | **No `trace_id` binding exists**; no span-context processor |
+| — | API reads persisted state | Timescale readers serve events/evidence/latest forecast/latest graph, grid features/predictions/history, map layers, sources telemetry, citizen list | **PASS (2026-09-27)** | Live satellite acquisition remains replay-only. Live UI must not substitute demo values |
+| §26 | UI: 11 screens | 9 pages in `frontend/web` with Demo/Live | PARTIAL | Live adapters cover events, sources, evidence, forecast, graph, grid, fire, weather, citizen, copilot, risk, industry. Demographics/actions stay "—" |
+| §21.3 | Four separate confidences | Wired in `detect.py` | PARTIAL | **[FIXED 2026-09-09]** forecast/impact confidence are no longer hardcoded 0; not calibrated |
+| §33 | OpenTelemetry + SigNoz | TracerProvider; OTLP only if `AEROPULSE_OTEL_EXPORTER_OTLP_ENDPOINT` is set | PARTIAL | Default Compose has no collector. SigNoz out of this pass |
+| §33.2 | Custom metrics | API `/metrics` plus worker `:9090/metrics` domain counters | PARTIAL (2026-09-27) | Counters increment; no OTLP export or operator dashboard |
+| §33.1 | `trace_id` on every log record | Bound from the active OTel span | PASS | When no span is active the field is absent |
 | §35.1 | Identity + RBAC | HS256 JWT, 7 roles, `require_roles` | PARTIAL-BY-DESIGN | Dev-only by explicit decision (ADR-0003). OIDC deferred |
 | §35.2 | Secrets hygiene | All credentials via `os.getenv`; `.gitignore` covers `.env`, `*.pem`, `*.key` | PASS | **Verified: no real credential in the tree or in git history.** Only labelled dev placeholders |
 | §50 | Connector test framework: unit, contract, replay, failure | 25 test files; contract tests per connector | PASS | Failure-injection tests were thin; **reliability tests added this pass** |
@@ -446,16 +447,16 @@ failure path would make it unreachable whenever the backend is healthy.
 ADR-0003) and `VITE_DEFAULT_DATA_MODE`. All three are wired in `infrastructure/docker/compose.yaml`;
 `frontend/web/.env.example` documents them.
 
-**Three screens stay on demo data in live mode** because the API cannot serve them, and each
-says so on screen rather than passing curated data off as live. These are now the concrete
-backend gaps the UI work surfaced:
+Live-mode honesty (2026-09-27): citizen reports list, source-health telemetry, and
+per-cell observed history are API-backed. The Evidence graph uses a client radial
+layout because `graph.v1` still has no x/y. Remaining presentation gaps:
 
 | Gap | Effect | Closed by |
 |---|---|---|
-| No `GET /api/v1/citizen/reports` | The Citizen screen cannot enumerate reports | A list route with the standard `items`/`total`/`limit`/`offset` shape |
-| `graph.v1` has no layout coordinates | The Evidence graph cannot be drawn from live lineage | Coordinates on the contract, or a client-side force layout |
-| No per-cell observed-history route | The forecast chart's observed leg stays scripted | A history endpoint, or deriving from `grid-features` by cell and time |
-| `GET /api/v1/sources` is a registry, not a health feed | Freshness, latency, quality and record counts read "unknown" | Telemetry fields on the source route |
+| ~~No `GET /api/v1/citizen/reports`~~ | **FIXED** — paginated list | — |
+| `graph.v1` has no layout coordinates | Live graph uses a client radial layout; contract still has no x/y | Coordinates on the contract |
+| ~~No per-cell observed-history route~~ | **FIXED** — `GET /api/v1/grid-features/{grid_id}/history` | Empty series is valid, not a silent demo substitute |
+| ~~`GET /api/v1/sources` is a registry, not a health feed~~ | **FIXED** — yaml + `SOURCE_SPECS` + nullable `source_health` | Telemetry is null until a connector run persists |
 | `event.v1` carries no recommended actions or population-at-risk | Both render as "—" with a reason | Product decision on whether the API should own either |
 
 **Two defects this pass introduced and caught by running it:** `At Risk: 0.0M people` (a null
@@ -468,3 +469,15 @@ database stopped, `/health` returns 200 while the storage routes return 503; the
 data and names each endpoint and reason in a banner. With the API stopped entirely, the Live
 toggle disables itself with the reason and a restored "live" session choice reconciles back to
 demo, so the header can never claim Live while every panel is on a fallback.
+
+## 13. 2026-09-27 addendum — wiring and live honesty
+
+Verified on the Compose replay stack plus one Open-Meteo live HTTP cycle (no OpenAQ/FIRMS keys).
+
+- `GET /api/v1/sources` is yaml + `SOURCE_SPECS` + nullable `source_health`.
+- `GET /api/v1/grid-features/{grid_id}/history` and paginated `GET /api/v1/citizen/reports`.
+- `explain-event` uses Timescale `EventReader`.
+- Compose `migrate` reapplies `0001`–`0007` on existing volumes.
+- Bruno collection at `bruno/aeropulse` includes history, hazard, peak, map hazard, and list `limit`/`offset`.
+- Demo/Live click-through: Live does not paint the Punjab episode. Evidence `Invalid Date` is fixed in tree (`created_at` + formatter guard); rebuild web/api images to see it in Compose.
+

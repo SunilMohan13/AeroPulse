@@ -4,6 +4,7 @@ import { defaultWind } from '../data/mockWind'
 import { mockIndustries } from '../data/mockPopulation'
 import type { GridCell, FireObservation, WindObservation, IndustrySite } from '../types'
 import { liveAirQuality, liveFires, liveIndustries, liveWeather } from '../api/live'
+import { ApiError } from '../api/client'
 import { resolve } from './resolve'
 
 const delay = (ms = 100) => new Promise((r) => setTimeout(r, ms))
@@ -40,7 +41,16 @@ export async function fetchFires(hourOffset = 0, intensity = 1): Promise<FireObs
       await delay(80)
       return getFiresAt(hourOffset, intensity)
     },
-    liveFires,
+    async () => {
+      if (hourOffset !== 0) {
+        throw new ApiError(
+          'live fire observations are the latest detections; they are not time-scrubbed',
+          404,
+          '/api/v1/map/fire',
+        )
+      }
+      return liveFires()
+    },
   )
 }
 

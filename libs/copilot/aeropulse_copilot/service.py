@@ -16,6 +16,7 @@ implementation set it true whenever an env var was present, with no call.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from inspect import signature
 from typing import Any, Protocol
 
 from aeropulse_observability.logging import get_logger
@@ -124,7 +125,7 @@ class CopilotService:
             A :class:`CopilotAnswer` whose ``llm_used`` reflects reality.
         """
         if not self.llm_enabled:
-            return self._deterministic(question, "no Gemini credential configured")
+            return self._deterministic(question, "no Gemini credential configured", ctx)
 
         assert self._gemini is not None
         try:
@@ -150,12 +151,13 @@ class CopilotService:
                 return self._deterministic(
                     question,
                     "the model produced figures that did not match any tool result",
+                    ctx,
                 )
         except GeminiUnavailableError as exc:
-            return self._deterministic(question, str(exc))
+            return self._deterministic(question, str(exc), ctx)
         except Exception as exc:
             logger.exception("copilot.gemini_failed")
-            return self._deterministic(question, f"Gemini request failed: {exc}")
+            return self._deterministic(question, f"Gemini request failed: {exc}", ctx)
 
         return CopilotAnswer(
             answer=attempt.text,
@@ -167,7 +169,9 @@ class CopilotService:
             model=attempt.model,
         )
 
-    def _deterministic(self, question: str, reason: str) -> CopilotAnswer:
+    def _deterministic(
+        self, question: str, reason: str, ctx: ToolContext | None = None
+    ) -> CopilotAnswer:
         """Answer without a model, saying plainly that none was used."""
         logger.info("copilot.deterministic", reason=reason)
         if self._fallback is None:
@@ -180,7 +184,7 @@ class CopilotService:
                 limitations=[*BASE_LIMITATIONS, f"Language model not used: {reason}."],
                 degraded_reason=reason,
             )
-        result = self._fallback(question)
+        result = self._call_fallback(question, ctx)
         answer = getattr(result, "answer", None) or str(result)
         return CopilotAnswer(
             answer=answer,
@@ -193,6 +197,19 @@ class CopilotService:
             ],
             degraded_reason=reason,
         )
+
+    def _call_fallback(self, question: str, ctx: ToolContext | None) -> Any:
+        """Invoke a one- or two-argument fallback without breaking older tests."""
+        fallback = self._fallback
+        if fallback is None:
+            raise TypeError("CopilotService has no deterministic fallback")
+        try:
+            params = signature(fallback).parameters
+        except (TypeError, ValueError):
+            return fallback(question)
+        if len(params) >= 2:
+            return fallback(question, ctx)
+        return fallback(question)
 
 
 def ledger_to_evidence(ledger: ToolLedger) -> list[dict[str, str]]:

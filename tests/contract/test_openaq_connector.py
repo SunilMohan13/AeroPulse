@@ -100,6 +100,15 @@ def test_source_record_id_is_stable_and_unique(normalized: list[Any]) -> None:
     assert ids == repeat
 
 
+def test_live_start_time_drops_observations_before_the_window(connector: OpenAqConnector) -> None:
+    """FetchRequest.start_time is a lower bound, not a decorative field."""
+    connector._window_start = datetime(2099, 1, 1, tzinfo=UTC)
+    dropped: list[Any] = []
+    for raw in connector._fetch_fixture():
+        dropped.extend(connector.normalize(raw))
+    assert dropped == []
+
+
 def test_observed_at_is_timezone_aware_utc(normalized: list[Any]) -> None:
     assert all(o.observed_at.tzinfo is not None for o in normalized)
     assert all(o.observed_at.utcoffset() == timedelta(0) for o in normalized)

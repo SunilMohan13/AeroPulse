@@ -101,6 +101,23 @@ class CycleResult:
         return [run for run in self.runs if run.status is status]
 
 
+def _persist_health(repo: Any | None, run: SourceRun) -> None:
+    """Write one SourceRun to source_health when a Timescale repo is available."""
+    if repo is None or not hasattr(repo, "upsert_source_health"):
+        return
+    try:
+        repo.upsert_source_health(
+            run.source_id,
+            run.records,
+            run.status.value,
+            latency_ms=run.latency_ms,
+            error=run.error,
+            processing_mode=run.mode,
+        )
+    except Exception:
+        logger.warning("connector.health.persist_failed", source_id=run.source_id)
+
+
 def _checkpoint_repository() -> Any | None:
     """Return the Timescale-backed checkpoint repository when configured."""
     settings = get_settings()
@@ -208,6 +225,7 @@ def run_cycle(
     sources_config: Path = DEFAULT_SOURCES_CONFIG,
     specs: tuple[SourceSpec, ...] = SOURCE_SPECS,
     overlap_seconds: int | None = None,
+    repo: Any | None = None,
 ) -> CycleResult:
     """Run every enabled source once and publish what they produce.
 
@@ -218,12 +236,14 @@ def run_cycle(
         sources_config: Path to `config/sources.yaml`.
         specs: Source registry; overridable for tests.
         overlap_seconds: Rewind applied to a live watermark before fetching.
+        repo: Checkpoint/health repository. Tests inject a fake; production
+            opens Timescale when ``AEROPULSE_DATABASE_URL`` is set.
 
     Returns:
         A :class:`CycleResult` with one :class:`SourceRun` per source.
     """
     enabled = _enabled_source_ids(sources_config)
-    repo = _checkpoint_repository()
+    repo = repo if repo is not None else _checkpoint_repository()
     overlap = (
         overlap_seconds
         if overlap_seconds is not None
@@ -233,18 +253,20 @@ def run_cycle(
 
     for spec in specs:
         if enabled is not None and spec.source_id not in enabled:
-            result.runs.append(SourceRun(spec.source_id, SourceStatus.DISABLED))
+            run = SourceRun(spec.source_id, SourceStatus.DISABLED)
+            _persist_health(repo, run)
+            result.runs.append(run)
             continue
-        result.runs.append(
-            _run_source(
-                spec,
-                fixtures_root,
-                publish,
-                processing_mode=processing_mode,
-                repo=repo,
-                overlap_seconds=overlap,
-            )
+        run = _run_source(
+            spec,
+            fixtures_root,
+            publish,
+            processing_mode=processing_mode,
+            repo=repo,
+            overlap_seconds=overlap,
         )
+        _persist_health(repo, run)
+        result.runs.append(run)
 
     logger.info("connector.cycle.completed", **result.counts())
     return result

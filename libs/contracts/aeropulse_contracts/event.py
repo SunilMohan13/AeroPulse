@@ -40,6 +40,7 @@ class EventEvidence(BaseModel):
     grid_id: str | None = None
     summary: str
     quality_score: float | None = Field(default=None, ge=0.0, le=1.0)
+    created_at: datetime | None = None
 
 
 class EventConfidence(BaseModel):
