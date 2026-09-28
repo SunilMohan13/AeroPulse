@@ -170,13 +170,13 @@ Today, all frontend services under `frontend/web/src/services/` call **mock data
 
 CORS in `apps/api/aeropulse_api/app.py` currently allows only localhost:
 
-```python
+```text
 allow_origins=["http://127.0.0.1:5173", "http://localhost:5173"],
 ```
 
 Add your Netlify URL:
 
-```python
+```text
 allow_origins=[
     "http://127.0.0.1:5173",
     "http://localhost:5173",
