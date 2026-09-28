@@ -34,28 +34,31 @@ def _result(model_name: str, metrics: dict[str, Any]) -> TrainingResult:
 # --- pm25 estimator ---
 
 
+def _estimator_pass_metrics() -> dict[str, Any]:
+    return {
+        "temporal": {"evaluated": True, "skill_vs_baseline": 0.43, "r2": 0.97},
+        "spatial": {"evaluated": True, "skill_vs_baseline": 0.31, "r2": 0.8},
+        "seasonal": {"evaluated": True, "skill_vs_baseline": 0.18, "r2": 0.7},
+    }
+
+
 def test_estimator_passes_with_positive_skill() -> None:
-    result = _result(
-        "pm25_estimator",
-        {"temporal": {"evaluated": True, "skill_vs_baseline": 0.43, "r2": 0.97}},
-    )
+    result = _result("pm25_estimator", _estimator_pass_metrics())
     assert evaluate_promotion_gate(result) == []
 
 
 def test_estimator_blocked_when_it_loses_to_persistence() -> None:
-    result = _result(
-        "pm25_estimator",
-        {"temporal": {"evaluated": True, "skill_vs_baseline": -0.05, "r2": 0.5}},
-    )
+    metrics = _estimator_pass_metrics()
+    metrics["temporal"]["skill_vs_baseline"] = -0.05
+    result = _result("pm25_estimator", metrics)
     failures = evaluate_promotion_gate(result)
     assert any("skill vs persistence" in f for f in failures)
 
 
 def test_estimator_blocked_on_negative_r2() -> None:
-    result = _result(
-        "pm25_estimator",
-        {"temporal": {"evaluated": True, "skill_vs_baseline": 0.2, "r2": -0.3}},
-    )
+    metrics = _estimator_pass_metrics()
+    metrics["temporal"]["r2"] = -0.3
+    result = _result("pm25_estimator", metrics)
     failures = evaluate_promotion_gate(result)
     assert any("R2" in f for f in failures)
 
@@ -63,6 +66,17 @@ def test_estimator_blocked_on_negative_r2() -> None:
 def test_estimator_blocked_when_holdout_not_evaluable() -> None:
     result = _result("pm25_estimator", {"temporal": {"evaluated": False, "reason": "too small"}})
     assert any("not evaluable" in f for f in evaluate_promotion_gate(result))
+
+
+def test_estimator_blocked_when_seasonal_holdout_declines() -> None:
+    """A 3-day fixture spans one month; that must not reach PRODUCTION."""
+    metrics = _estimator_pass_metrics()
+    metrics["seasonal"] = {
+        "evaluated": False,
+        "reason": "single month in data (2026-09); seasonal holdout not evaluable",
+    }
+    failures = evaluate_promotion_gate(_result("pm25_estimator", metrics))
+    assert any("seasonal holdout was not evaluable" in f for f in failures)
 
 
 # --- anomaly detector ---
@@ -206,10 +220,7 @@ def test_failure_reasons_are_recorded_on_the_record(registry: ModelRegistry) -> 
 
 
 def test_passing_model_reaches_production(registry: ModelRegistry) -> None:
-    result = _result(
-        "pm25_estimator",
-        {"temporal": {"evaluated": True, "skill_vs_baseline": 0.4, "r2": 0.9}},
-    )
+    result = _result("pm25_estimator", _estimator_pass_metrics())
     record, failures = register_result(result, registry, {}, frame=_frame(), promote=True)
     assert failures == []
     assert record.stage is ModelStage.PRODUCTION
@@ -230,9 +241,6 @@ def test_force_overrides_the_gate_but_keeps_the_warning(registry: ModelRegistry)
 
 
 def test_no_promotion_requested_leaves_model_in_training(registry: ModelRegistry) -> None:
-    result = _result(
-        "pm25_estimator",
-        {"temporal": {"evaluated": True, "skill_vs_baseline": 0.4, "r2": 0.9}},
-    )
+    result = _result("pm25_estimator", _estimator_pass_metrics())
     record, _ = register_result(result, registry, {}, frame=_frame(), promote=False)
     assert record.stage is ModelStage.TRAINING

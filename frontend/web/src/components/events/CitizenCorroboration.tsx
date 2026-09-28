@@ -14,7 +14,7 @@ export function CitizenCorroboration({ eventId }: { eventId: string }) {
   })
 
   const linked = reports.filter((r) => r.relatedEventId === eventId)
-  const primary = linked[0] ?? reports.find((r) => r.status === 'CORROBORATED')
+  const primary = linked[0]
 
   if (!primary) return null
 

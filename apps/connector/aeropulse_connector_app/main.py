@@ -35,8 +35,19 @@ CYCLE_TIMEOUT_SECONDS = 600.0
 
 
 def _fixtures_root() -> Path:
-    """Resolve the fixtures directory inside the image or the working tree."""
-    return Path("/app") if Path("/app/fixtures").exists() else Path.cwd()
+    """Resolve the fixtures directory inside the image or the working tree.
+
+    ``SourceSpec.fixture_rel`` is ``cpcb/stations.json``, so this must be the
+    ``fixtures/`` directory itself, not its parent. ``/app/fixtures`` exists
+    in the image because the Dockerfile copies that tree there.
+    """
+    image = Path("/app/fixtures")
+    if image.is_dir():
+        return image
+    local = Path.cwd() / "fixtures"
+    if local.is_dir():
+        return local
+    return Path.cwd()
 
 
 def _metadata_intervals() -> dict[str, int]:

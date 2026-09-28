@@ -32,6 +32,43 @@ def list_grid_features(
     }
 
 
+@router.get("/grid-features/{grid_id}/history")
+def grid_feature_history(
+    grid_id: str,
+    _claims: TokenClaims = Depends(get_claims),
+    reader: GridReader = Depends(get_grid_reader),
+    start: datetime | None = Query(default=None),
+    end: datetime | None = Query(default=None),
+    limit: int = Query(default=48, ge=1, le=500),
+) -> dict:
+    """Return observed PM2.5 for one cell as a compact series.
+
+    ``hour`` is relative to the newest sample (0 = latest). Points without
+    PM2.5 are omitted rather than invented from a single latest value.
+    """
+    items, _total = reader.list_features(grid_id, start, end, limit, 0)
+    observed = [item for item in items if item.pm25 is not None]
+    if not observed:
+        return {"items": [], "total": 0, "limit": limit, "offset": 0, "grid_id": grid_id}
+    newest = max(item.timestamp for item in observed)
+    observed.sort(key=lambda item: item.timestamp)
+    series = [
+        {
+            "time": item.timestamp.isoformat(),
+            "hour": round((item.timestamp - newest).total_seconds() / 3600),
+            "pm25": item.pm25,
+        }
+        for item in observed
+    ]
+    return {
+        "items": series,
+        "total": len(series),
+        "limit": limit,
+        "offset": 0,
+        "grid_id": grid_id,
+    }
+
+
 @router.get("/grid-features/{grid_id}/latest")
 def latest_grid_feature(
     grid_id: str,

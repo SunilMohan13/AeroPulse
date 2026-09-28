@@ -84,6 +84,7 @@ class Settings(BaseSettings):
     # The in-memory snapshot feeding detection is rebuilt from observations
     # held in process. Without a window it grows forever under a scheduler.
     worker_snapshot_hours: int = Field(default=48, ge=1)
+    worker_metrics_port: int = Field(default=9090, ge=1, le=65535)
 
 
 @lru_cache(maxsize=1)

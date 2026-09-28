@@ -3,6 +3,7 @@
 Base URL (local): `http://127.0.0.1:8000`
 
 Interactive: `GET /docs` (Swagger UI), machine contract: `GET /openapi.json` and `docs/openapi/openapi.v1.json`.
+Bruno collection: `bruno/aeropulse` (local env, same paths).
 
 ## Auth
 
@@ -19,8 +20,7 @@ VIEWER may GET map/events/sources. ADMIN/OPERATOR may POST sources and backfill.
 
 Unauthenticated: `GET /health`, `GET /ready`, `GET /openapi.json`.
 
-Prometheus scrape: unauthenticated `GET /metrics`. It exports API request counts, duration buckets,
-and in-flight requests using low-cardinality route-template labels.
+Prometheus scrape: unauthenticated `GET /metrics` on the API, and worker domain counters at `http://127.0.0.1:9090/metrics`. API metrics use low-cardinality route-template labels.
 
 ## Map (`/api/v1/map`)
 
@@ -47,7 +47,7 @@ but unavailable database returns 503 rather than silently returning an empty lis
 | --- | --- |
 | `GET /` | `?status=ACTIVE` filter; `?limit=&offset=` pagination (added 2026-09-09; `limit` omitted = no limit, response adds `total`/`limit`/`offset`) |
 | `GET /{id}` | `event.v1` |
-| `GET /{id}/evidence` | Evidence list |
+| `GET /{id}/evidence` | Evidence list; optional `created_at` (render missing clocks as "—") |
 | `GET /{id}/forecast` | Latest persisted forecast generation as `forecast.v1`; `horizon_hours=12` convenience field |
 | `GET /{id}/graph` | Latest persisted `graph.v1` edge snapshot (Timescale lineage, not Arango) |
 
@@ -55,7 +55,11 @@ Missing event → 404. Forecast/graph are **not** 501 when the event exists in t
 
 ## Sources
 
-`GET /api/v1/sources` (`?limit=&offset=` pagination, added 2026-09-09), `GET /{id}`, `POST /` (ADMIN), `POST /{id}/backfill` (ADMIN/OPERATOR) runs fixture replay with `processing_mode=BACKFILL`.
+`GET /api/v1/sources` (`?limit=&offset=`). Rows come from `config/sources.yaml` joined with
+`SOURCE_SPECS` and nullable `source_health` telemetry (`last_success_at`, `latency_ms`,
+`records_per_run`, `error`, `processing_mode`). Missing DB leaves telemetry null. IMD is listed
+`enabled: false` because yaml disables it. `GET /{id}`, `POST /` (ADMIN, in-memory overlay),
+`POST /{id}/backfill` (ADMIN/OPERATOR) runs fixture replay with `processing_mode=BACKFILL`.
 
 ## Models
 
@@ -74,6 +78,7 @@ These authenticated routes require `AEROPULSE_DATABASE_URL`; missing/unavailable
 | Path | Filters / response |
 |---|---|
 | `GET /api/v1/grid-features` | `grid_id`, ISO-8601 `start`/`end`, `limit` (1–500), `offset`; returns `grid-features.v1` items |
+| `GET /api/v1/grid-features/{grid_id}/history` | Compact `{time, hour, pm25}` series; `hour` is relative to the newest sample; empty when no PM2.5 |
 | `GET /api/v1/grid-features/{grid_id}/latest` | Latest persisted feature vector or 404 |
 | `GET /api/v1/grid-predictions` | `grid_id`, `model_version`, ISO-8601 `start`/`end`, `limit`, `offset`; returns `prediction.v1` items |
 | `GET /api/v1/grid-predictions/{grid_id}/latest` | Optional `model_version`; latest persisted prediction or 404 |
@@ -122,11 +127,13 @@ are persisted.
 
 ## Copilot (`/api/v1/copilot`)
 
-`POST /query`, `/investigate`, `/explain-event`. Response is `copilot.v1`. `llm_used` is always `false` in this build: numbers are copied from stored events. Missing event → answer states not found; no invented PM2.5.
+`POST /query`, `/investigate`, `/explain-event`. Response is `copilot.v1`. `llm_used` is always `false` in this build: numbers are copied from stored events. Missing event → answer states not found; no invented PM2.5. `explain-event` reads Timescale when `AEROPULSE_DATABASE_URL` is set.
 
 ## Citizen (`/api/v1/citizen`)
 
-`POST /reports`, `POST /reports/{id}/media`, `GET /reports/{id}`. Reports stay `moderation=pending`, `cv_class=unknown`. They never open a HIGH event.
+`GET /reports` (`?limit=&offset=`), `POST /reports`, `POST /reports/{id}/media`, `GET /reports/{id}`.
+List shape is `items`/`total`/`limit`/`offset`. Reports stay `moderation=pending`, `cv_class=unknown`.
+They never open a HIGH event.
 
 ## Alerts and risk
 

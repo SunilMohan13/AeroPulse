@@ -2,12 +2,12 @@
 
 Evidence-fused environmental intelligence for the Punjab–Haryana–Delhi NCR corridor.
 
-This repository implements **Phases 1–4 of the LLD (backend only)** plus a trained ML layer: connectors, quality, H3 grid, event engine, evidence lineage, OpenAPI 3, and four models trained on live data with a gated model registry. The MapLibre UI is owned separately.
+This repository implements **Phases 1–4 of the LLD** plus a trained ML layer and a MapLibre UI with Demo/Live modes: connectors, quality, H3 grid, event engine, evidence lineage, OpenAPI 3, and six models trained on live data with a gated model registry.
 
 ## Architecture (this pass)
 
 ```text
-Connector replay (CPCB, FIRMS, IMD)  +  LIVE Open-Meteo (no credential)
+Connector replay (CPCB, FIRMS, satellite/geo fixtures)  +  LIVE Open-Meteo / OpenAQ / FIRMS (when keys are set)
         → canonical contracts (observation.v1 / meteo.v1 / raster.v1)
         → quality + H3 grid
         → grid features (shared feature spec, point-in-time safe)
@@ -74,15 +74,19 @@ Published on localhost only:
 | MinIO console | <http://127.0.0.1:9001> |
 | Redis | `127.0.0.1:6380` (mapped off the default 6379 to avoid host conflicts) |
 
+HTTP checks: open `bruno/aeropulse` (local env). Set `token`, then `eventId`/`gridId` from list responses.
+
 The API exposes Prometheus text metrics at `GET /metrics` (request counts, latency histogram, and
-in-flight requests). Route labels use FastAPI templates rather than concrete IDs.
+in-flight requests). Route labels use FastAPI templates rather than concrete IDs. The worker
+exposes the same process metrics plus domain counters at `http://127.0.0.1:9090/metrics`.
 
-Optional connector profile: `--profile connectors`.
+The connector is a scheduled loop (`restart: unless-stopped`). Each source runs on
+`interval_seconds` from `config/sources.yaml`. There is no `--profile connectors`.
 
-Verified 2026-09-09: all 7 services (`timescaledb`, `redpanda`, `redis`, `minio`, `api`, `worker`,
-`web`) come up healthy from a clean `up --build`. `connector` is a one-shot replay job: it runs one
-cycle and exits 0 with `restart: "no"`, preventing repeated fixture ingestion. See
-`docs/AeroPulse_Production_Readiness.md` for the container fixes that made this true.
+Live FIRMS and OpenAQ need free keys in `.env` (`AEROPULSE_FIRMS_MAP_KEY`, `AEROPULSE_OPENAQ_API_KEY`).
+Compose interpolates those into the connector `environment:` block. Local MinIO
+credentials are set in `compose.yaml` so `put_raw_json` can write. See
+`docs/AeroPulse_Production_Readiness.md` for the container history.
 
 ## Adding a source
 
@@ -185,9 +189,10 @@ narrative, and the UI marks each gap rather than filling it:
 |---|---|---|
 | Population at risk | live, with a caveat | `/api/v1/risk/areas` supplies real headcounts, but its population layer ships as a fixture licensed `replace-before-production` |
 | Recommended actions | explained absence | No API route supplies them |
-| Source freshness / latency / quality | `unknown` | `/api/v1/sources` is a registry, not a health feed |
+| Source freshness / latency / quality | live when a connector run has persisted `source_health`; otherwise `unknown` | `GET /api/v1/sources` joins yaml registry with nullable telemetry |
 | Citizen reports | live, with a caveat | Reports are real; no CV model runs, so every one is `cv_class=unknown`, `moderation=pending` |
-| Evidence graph | demo data, labelled | `graph.v1` has no layout coordinates for this diagram |
+| Evidence graph | live radial layout | `graph.v1` still has no x/y; the UI places vertices |
+| Observed PM2.5 history | live series when grid features exist | `GET /api/v1/grid-features/{grid_id}/history` |
 | Hazard / peak | `baseline` badge | Both models are withheld by the promotion gate |
 
 Population coverage is corridor-urban only: five Delhi-to-Karnal cells. A point in Punjab
@@ -195,10 +200,8 @@ resolves no reference cell and correctly reports `population_measured: false` ra
 stretching a nearest neighbour 200 km. Replacing the fixture with a licensed WorldPop or Census
 extract closes this.
 
-Where a live call fails, the UI serves demo data **and names the endpoint and reason in a
-banner**. It never substitutes silently — verified by stopping the database with the API up:
-health returns 200, the storage routes return 503, and the banner reads
-`risk-areas — backend storage unavailable (503) — showing demo data`.
+Where a live call fails, the UI **names the endpoint and reason in a banner** and does not
+substitute demo data.
 
 **Known not working:** nothing in the UI writes to the API; it is read-only. Event, evidence,
 forecast, graph, grid-feature, grid-prediction, and model-catalog APIs now read persisted/runtime

@@ -64,7 +64,7 @@
           "sources"
         ],
         "summary": "List Sources",
-        "description": "List registered data sources.",
+        "description": "List registered data sources with nullable connector telemetry.",
         "operationId": "list_sources_api_v1_sources_get",
         "security": [
           {
@@ -283,7 +283,7 @@
           "sources"
         ],
         "summary": "Update Source",
-        "description": "Update source configuration.",
+        "description": "Update source configuration (in-memory overlay; does not edit yaml).",
         "operationId": "update_source_api_v1_sources__source_id__put",
         "security": [
           {
@@ -827,7 +827,7 @@
           "map"
         ],
         "summary": "Forecast",
-        "description": "Return latest persisted advection forecast points as GeoJSON.",
+        "description": "Return persisted advection forecast points as GeoJSON.\n\nArgs:\n    limit: Maximum features.\n    horizon_hours: Return only this horizon. Omit for every horizon.\n        The map timeline uses this so scrubbing forward shows the\n        forecast for that hour instead of redrawing the present.",
         "operationId": "forecast_api_v1_map_forecast_get",
         "security": [
           {
@@ -845,6 +845,24 @@
               "minimum": 1,
               "default": 500,
               "title": "Limit"
+            }
+          },
+          {
+            "name": "horizon_hours",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "maximum": 48,
+                  "minimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Horizon Hours"
             }
           },
           {
@@ -1580,6 +1598,118 @@
                   "type": "object",
                   "additionalProperties": true,
                   "title": "Response List Grid Features Api V1 Grid Features Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/grid-features/{grid_id}/history": {
+      "get": {
+        "tags": [
+          "grid-intelligence"
+        ],
+        "summary": "Grid Feature History",
+        "description": "Return observed PM2.5 for one cell as a compact series.\n\n``hour`` is relative to the newest sample (0 = latest). Points without\nPM2.5 are omitted rather than invented from a single latest value.",
+        "operationId": "grid_feature_history_api_v1_grid_features__grid_id__history_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "grid_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Grid Id"
+            }
+          },
+          {
+            "name": "start",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Start"
+            }
+          },
+          {
+            "name": "end",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "End"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 500,
+              "minimum": 1,
+              "default": 48,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Grid Feature History Api V1 Grid Features  Grid Id  History Get"
                 }
               }
             }
@@ -2384,7 +2514,7 @@
           "copilot"
         ],
         "summary": "Copilot Query",
-        "description": "Answer from the event store. Does not invent sensor readings.",
+        "description": "Answer a question using tool lookups over live intelligence.",
         "operationId": "copilot_query_api_v1_copilot_query_post",
         "security": [
           {
@@ -2425,9 +2555,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true,
-                  "title": "Response Copilot Query Api V1 Copilot Query Post"
+                  "$ref": "#/components/schemas/CopilotResponse"
                 }
               }
             }
@@ -2451,7 +2579,7 @@
           "copilot"
         ],
         "summary": "Copilot Investigate",
-        "description": "Same retrieval path as query (investigate intent).",
+        "description": "Same grounded path as query, kept for the investigate intent.",
         "operationId": "copilot_investigate_api_v1_copilot_investigate_post",
         "security": [
           {
@@ -2492,9 +2620,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true,
-                  "title": "Response Copilot Investigate Api V1 Copilot Investigate Post"
+                  "$ref": "#/components/schemas/CopilotResponse"
                 }
               }
             }
@@ -2518,7 +2644,7 @@
           "copilot"
         ],
         "summary": "Copilot Explain",
-        "description": "Explain one event using stored evidence, forecast, and confidence.",
+        "description": "Explain one event from stored evidence, forecast and confidence.\n\nDeterministic by design: this endpoint restates what the event engine\nrecorded, so there is nothing for a model to add and no reason to pay\nfor one. Reads the same EventReader as query/investigate (Timescale when\nconfigured), not the in-memory seed.",
         "operationId": "copilot_explain_api_v1_copilot_explain_event_post",
         "security": [
           {
@@ -2559,9 +2685,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true,
-                  "title": "Response Copilot Explain Api V1 Copilot Explain Event Post"
+                  "$ref": "#/components/schemas/CopilotResponse"
                 }
               }
             }
@@ -2659,6 +2783,39 @@
         ],
         "parameters": [
           {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "maximum": 500,
+                  "minimum": 1
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Max items to return",
+              "title": "Limit"
+            },
+            "description": "Max items to return"
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Items to skip",
+              "default": 0,
+              "title": "Offset"
+            },
+            "description": "Items to skip"
+          },
+          {
             "name": "authorization",
             "in": "header",
             "required": false,
@@ -2707,7 +2864,7 @@
           "citizen"
         ],
         "summary": "Attach Media",
-        "description": "Attach a media object URI (placeholder bytes). CV is not run.",
+        "description": "Attach a photo (multipart) or a JSON filename stub. Does not run a CV model.",
         "operationId": "attach_media_api_v1_citizen_reports__report_id__media_post",
         "security": [
           {
@@ -2741,16 +2898,6 @@
             }
           }
         ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/MediaBody"
-              }
-            }
-          }
-        },
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -2855,7 +3002,7 @@
           "alerts"
         ],
         "summary": "List Alerts",
-        "description": "List alerts generated from HIGH/CRITICAL events.\n\nArgs:\n    _claims: Authenticated caller.\n    limit: Maximum alerts to return. Omitting it returns all of them,\n        which reproduces the previous response exactly.\n    offset: Alerts to skip.\n\nReturns:\n    ``items``/``total``/``limit``/``offset``, matching the convention the\n    other collection endpoints follow.",
+        "description": "List alerts generated from HIGH/CRITICAL events, newest first.\n\nReads persisted alerts when Timescale has them and falls back to the\nseeded in-memory store otherwise. It previously read the API's own\nin-process store unconditionally, which nothing populates \u2014 so this\nendpoint returned an empty list in every deployment.\n\nArgs:\n    _claims: Authenticated caller.\n    reader: Request-scoped alert reader.\n    limit: Maximum alerts to return. Omitting it returns all of them.\n    offset: Alerts to skip.\n\nReturns:\n    ``items``/``total``/``limit``/``offset``, matching the convention the\n    other collection endpoints follow.",
         "operationId": "list_alerts_api_v1_alerts_get",
         "security": [
           {
@@ -3267,12 +3414,98 @@
         "title": "BackfillRequest",
         "description": "Historical replay window (LLD \u00a738)."
       },
+      "CopilotConfidence": {
+        "properties": {
+          "detection": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detection"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
+          },
+          "forecast": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Forecast"
+          },
+          "overall": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Overall"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "CopilotConfidence",
+        "description": "Split confidence copied from the event, never invented."
+      },
+      "CopilotGrounding": {
+        "properties": {
+          "grounded": {
+            "type": "boolean",
+            "title": "Grounded",
+            "default": true
+          },
+          "numbers_checked": {
+            "type": "integer",
+            "title": "Numbers Checked",
+            "default": 0
+          },
+          "ungrounded_values": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array",
+            "title": "Ungrounded Values"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "CopilotGrounding",
+        "description": "Verdict from the numeric grounding check.\n\n``grounded`` false must never reach a user: the service falls back to\ndeterministic retrieval instead."
+      },
       "CopilotQuery": {
         "properties": {
           "question": {
             "type": "string",
+            "maxLength": 2000,
             "minLength": 1,
             "title": "Question"
+          },
+          "history": {
+            "items": {
+              "$ref": "#/components/schemas/CopilotTurn"
+            },
+            "type": "array",
+            "maxItems": 20,
+            "title": "History"
           }
         },
         "type": "object",
@@ -3280,7 +3513,154 @@
           "question"
         ],
         "title": "CopilotQuery",
-        "description": "Natural-language question. Only retrieved evidence is used."
+        "description": "Natural-language question, optionally with conversation history."
+      },
+      "CopilotResponse": {
+        "properties": {
+          "schema_version": {
+            "type": "string",
+            "const": "copilot.v2",
+            "title": "Schema Version",
+            "default": "copilot.v2"
+          },
+          "answer": {
+            "type": "string",
+            "title": "Answer"
+          },
+          "observed_facts": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Observed Facts"
+          },
+          "predicted_conditions": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Predicted Conditions"
+          },
+          "likely_sources": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Likely Sources"
+          },
+          "confidence": {
+            "$ref": "#/components/schemas/CopilotConfidence"
+          },
+          "evidence": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Evidence"
+          },
+          "recommended_actions": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Recommended Actions"
+          },
+          "limitations": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Limitations"
+          },
+          "llm_used": {
+            "type": "boolean",
+            "title": "Llm Used",
+            "default": false
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
+          "tool_calls": {
+            "items": {
+              "$ref": "#/components/schemas/CopilotToolCall"
+            },
+            "type": "array",
+            "title": "Tool Calls"
+          },
+          "grounding": {
+            "$ref": "#/components/schemas/CopilotGrounding"
+          },
+          "degraded_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Degraded Reason"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "answer"
+        ],
+        "title": "CopilotResponse",
+        "description": "Structured copilot answer. Empty lists mean no retrieved evidence."
+      },
+      "CopilotToolCall": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "arguments": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Arguments"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "title": "CopilotToolCall",
+        "description": "One tool the copilot consulted to answer.\n\nSurfaced so a reader can see what was actually looked up rather than\ntrusting the prose. The old UI faked this with a scripted spinner naming\nfour sources regardless of what ran."
+      },
+      "CopilotTurn": {
+        "properties": {
+          "role": {
+            "type": "string",
+            "pattern": "^(user|assistant)$",
+            "title": "Role"
+          },
+          "text": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Text"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "role",
+          "text"
+        ],
+        "title": "CopilotTurn",
+        "description": "One prior message, so a follow-up question has context."
       },
       "ExplainBody": {
         "properties": {
@@ -3309,23 +3689,6 @@
         "type": "object",
         "title": "HTTPValidationError"
       },
-      "MediaBody": {
-        "properties": {
-          "filename": {
-            "type": "string",
-            "title": "Filename",
-            "default": "photo.jpg"
-          },
-          "content_type": {
-            "type": "string",
-            "title": "Content Type",
-            "default": "image/jpeg"
-          }
-        },
-        "type": "object",
-        "title": "MediaBody",
-        "description": "Logical media attach; bytes go to MinIO when available."
-      },
       "ReportCreate": {
         "properties": {
           "lat": {
@@ -3343,7 +3706,7 @@
           "observation_type": {
             "type": "string",
             "title": "Observation Type",
-            "default": "unknown"
+            "default": "photo"
           },
           "notes": {
             "anyOf": [
@@ -3363,7 +3726,7 @@
           "lon"
         ],
         "title": "ReportCreate",
-        "description": "Citizen observation. cv_class stays unknown until CV ships."
+        "description": "Citizen observation. cv_class is a notes keyword heuristic, not a CV model."
       },
       "SourceWrite": {
         "properties": {

@@ -30,6 +30,7 @@ class _RecordingWriter:
         self.events: list[str] = []
         self.features: list[GridFeature] = []
         self.predictions: list[GridPrediction] = []
+        self.health: list[tuple] = []
 
     def upsert_air_quality(self, observation: object) -> bool:
         return True
@@ -61,6 +62,9 @@ class _RecordingWriter:
     def upsert_grid_prediction(self, prediction: GridPrediction) -> None:
         self.predictions.append(prediction)
 
+    def upsert_source_health(self, *args: object, **kwargs: object) -> None:
+        self.health.append((args, kwargs))
+
 
 def _ingest(repo: InMemoryRepository, payload: dict) -> None:
     if "measurement" in payload:
@@ -89,6 +93,7 @@ def test_persist_intelligence_flushes_grid_features_and_predictions() -> None:
     assert writer.features, "expected grid_feature rows to be flushed"
     assert len(writer.features) == len(snapshot.event_store.latest_features)
     assert len(writer.predictions) == len(snapshot.event_store.latest_predictions)
+    assert writer.health == [], "connector runs own source_health; worker must not attribute CPCB"
 
 
 def test_persist_intelligence_is_noop_when_writer_has_no_upsert_event() -> None:

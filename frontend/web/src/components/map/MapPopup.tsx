@@ -5,6 +5,7 @@ import { ScientificBadge } from '../common/Badge'
 import { formatNumber, formatTimeIST } from '../../utils/format'
 import { getBandLabel } from '../../utils/aqi'
 import { distanceKm } from '../../utils/geo'
+import { toRegion } from '../../api/adapters'
 import { useHeroEventId } from '../../hooks/useHeroEventId'
 import { heroEventPath } from '../../utils/heroEvent'
 import { copilotQuestionForCell, evidenceForCell } from './mapCellEvidence'
@@ -70,7 +71,7 @@ export function MapPopup({
         <div className="space-y-2 text-sm">
           <ScientificBadge label="OBSERVED" />
           <p className="text-xs text-text-muted">
-            Punjab · {formatTimeIST(fire.timestamp)} IST
+            {toRegion(fire.lat, fire.lon)} · {formatTimeIST(fire.timestamp)} IST
           </p>
           <Row label="Fire Radiative Power" value={`${fire.frp.toFixed(0)} MW`} />
           <Row label="Confidence" value={`${Math.round(fire.confidence * 100)}%`} />

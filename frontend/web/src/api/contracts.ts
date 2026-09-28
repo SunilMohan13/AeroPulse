@@ -41,6 +41,7 @@ export interface ApiEvidence {
   grid_id: string | null
   summary: string
   quality_score: number | null
+  created_at?: string | null
 }
 
 /** `grid-features.v1` */
@@ -162,6 +163,14 @@ export interface ApiSource {
   enabled: boolean
   status: string
   schema_version: string
+  live_capable?: boolean
+  last_success_at?: string | null
+  latency_ms?: number | null
+  records_per_run?: number | null
+  error?: string | null
+  processing_mode?: string | null
+  quality_score?: number | null
+  error_rate?: number | null
 }
 
 /** One item of `GET /api/v1/models` */

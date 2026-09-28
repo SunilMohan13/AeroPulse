@@ -120,6 +120,7 @@ SOURCE_SPECS: tuple[SourceSpec, ...] = (
         source_id="firms",
         factory=FirmsConnector,
         fixture_rel="firms/fires.json",
+        live_capable=True,
         credential_setting="firms_map_key",
     ),
     SourceSpec(source_id="imd", factory=ImdConnector, fixture_rel="imd/weather.json"),

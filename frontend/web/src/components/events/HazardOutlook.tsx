@@ -29,6 +29,7 @@ export function HazardOutlook({ className }: { className?: string }) {
   const exceeding = peakCells.filter((c) => c.exceedsThreshold).length
   const topPeak = peakCells[0]
   const degraded = hazard?.provenance?.degraded ?? true
+  const calibrated = hazardCells[0]?.calibrated ?? false
   const hazardByCell = new Map(hazardCells.map((c) => [c.gridId, c.hazardScore]))
 
   return (
@@ -145,7 +146,7 @@ export function HazardOutlook({ className }: { className?: string }) {
           <ul className="space-y-1 text-[11px] text-amber-200/80">
             <li>
               The score is a <strong>ranking</strong>, not a probability.{' '}
-              <CalibrationNote calibrated={false} /> — 0.80 does not mean an 80% chance. It
+              <CalibrationNote calibrated={calibrated} /> — 0.80 does not mean an 80% chance. It
               saturates at 1.00 once a cell is already above the threshold, which is why cells are
               ranked by projected peak instead.
             </li>
@@ -210,7 +211,9 @@ export function HazardKpi() {
       <p className="font-mono text-3xl font-bold">{atRisk}</p>
       <div className="flex items-center gap-1.5">
         <p className="text-[10px] text-text-muted">cells at risk</p>
-        <StatusBadge variant="warning">baseline</StatusBadge>
+        <StatusBadge variant="warning">
+          {hazard?.provenance?.degraded === false ? 'model' : 'baseline'}
+        </StatusBadge>
       </div>
     </div>
   )

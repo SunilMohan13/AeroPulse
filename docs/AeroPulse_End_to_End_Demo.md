@@ -176,9 +176,12 @@ docker compose -f infrastructure/docker/compose.yaml up --build
 | Web | http://127.0.0.1:5173 |
 | MinIO console | http://127.0.0.1:9001 |
 
-Optional connector workers: `--profile connectors`.
+The connector is a scheduled loop in the same Compose file (`restart: unless-stopped`). There is
+no `--profile connectors`. Existing Timescale volumes pick up later SQL via the `migrate` service.
 
-**Read §5 first.** Under Compose the API serves an empty event list regardless of what the worker does.
+Bruno: open `bruno/aeropulse`, set `token`, run the `local` environment. Set `eventId`/`gridId` from list responses.
+
+**Read §5 first.** Under Compose the API reads Timescale when `AEROPULSE_DATABASE_URL` is set.
 
 ---
 
@@ -187,14 +190,14 @@ Optional connector workers: `--profile connectors`.
 Stated plainly so that nothing here is oversold.
 
 1. **[FIXED 2026-09-14] The event API is database-backed.** Actual fixture input was verified through connector -> Kafka -> worker -> TimescaleDB -> authenticated event/evidence/forecast/graph endpoints. AQ/fire/weather/forecast/grid map routes and persisted satellite footprints are connected too.
-  The frontend now consumes live events, sources, event evidence/forecasts, and grid/fire/weather map data when `VITE_API_TOKEN` is configured; other screens retain demo fallback data.
-2. **The frontend is partially live, not fully live.** `VITE_API_BASE` and `VITE_API_TOKEN` are read by the frontend API client. Event, source, evidence, forecast, grid, fire, weather, evidence graph, citizen reports, copilot, risk-area, and industry services use authenticated API responses when available. Population values are reference-fixture data until a licensed provider extract is configured.
+  The frontend consumes live events, sources (with nullable health telemetry), evidence, forecasts, observed PM2.5 history, grid/fire/weather map data, the evidence graph (client radial layout), citizen reports, copilot, risk areas, and industry when `VITE_API_TOKEN` is configured. Failed live calls are named in `FallbackBanner`; they do not substitute demo data.
+2. **The frontend is live-honest, not fully feature-complete.** `VITE_API_BASE` and `VITE_API_TOKEN` are read by the frontend API client. Population counts stay reference-fixture data until a licensed extract is configured. Recommended actions and per-district demographics are unavailable in Live, not filled from Demo.
 3. **[FIXED 2026-09-14] Features and predictions are persisted and queryable.** Four authenticated
 list/latest endpoints return the canonical contracts from TimescaleDB. Drift consumers remain open.
 4. **Three of four models do not serve.** By design — they failed their gates. Fixing them is calibration work (anomaly threshold, per-horizon forecast promotion) and a data problem (source labels).
 5. **Air quality here is model output, not ground truth.** Open-Meteo is CAMS-derived. It validates the pipeline; it does not validate accuracy against CPCB stations. Every artifact records this caveat.
-6. **Every keyed source is unverified.** No credential exists in this environment: OpenAQ returns `401`, FIRMS requires a `MAP_KEY`. Those connectors remain fixture replays marked `NOT VERIFIED — requires <credential>`.
-7. **Partial drift/observability**: on-demand feature/prediction PSI+KS and API Prometheus HTTP metrics exist. Scheduled drift alerts, delayed-label error drift, Redis caching, worker/ML metrics, collector export and dashboards remain absent.
+6. **Keyed live sources are unverified without operator keys.** Empty OpenAQ/FIRMS keys report `NOT_CONFIGURED` and publish nothing. Open-Meteo live HTTP was verified 2026-09-27 (one cycle, 2600 records). Compose default stays `replay`.
+7. **Partial observability:** API `/metrics` and worker `:9090/metrics` exist. Redis is in Compose and unused as a cache. Default OTLP export, dashboards, and error-drift paging remain absent. Hourly PSI/KS runs as `aeropulse-drift-monitor`.
 
 ---
 

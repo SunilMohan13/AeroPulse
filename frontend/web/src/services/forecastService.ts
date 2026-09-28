@@ -1,7 +1,7 @@
 import { getForecastSeries, mockForecast, mockObservedHistory } from '../data/mockForecast'
 import type { ForecastPoint } from '../types'
 import { ApiError } from '../api/client'
-import { liveForecast } from '../api/live'
+import { liveForecast, liveObservedHistory } from '../api/live'
 import { resolve } from './resolve'
 
 const delay = (ms = 80) => new Promise((r) => setTimeout(r, ms))
@@ -9,15 +9,12 @@ const delay = (ms = 80) => new Promise((r) => setTimeout(r, ms))
 /**
  * Observed PM2.5 leading up to detection.
  *
- * No API route returns a per-cell observed history as a series; the closest
- * is `/api/v1/grid-features` filtered by cell and time, which the forecast
- * chart would have to re-derive. Left on the demo series until a history
- * endpoint exists, rather than faking one from a single latest value.
+ * Live reads `GET /api/v1/grid-features/{grid_id}/history`. An empty series
+ * is a real answer (no PM2.5 yet), not a missing route.
  */
-export async function fetchObservedHistory(): Promise<{ hour: number; pm25: number }[]> {
-  // Routed through resolve() so the absence is recorded as a fallback and
-  // FallbackBanner names it. Returning [] directly made the observed series
-  // disappear from the chart in Live with nothing on screen to explain why.
+export async function fetchObservedHistory(
+  gridId?: string,
+): Promise<{ hour: number; pm25: number }[]> {
   return resolve(
     'observed-history',
     async () => {
@@ -25,13 +22,14 @@ export async function fetchObservedHistory(): Promise<{ hour: number; pm25: numb
       return mockObservedHistory
     },
     async () => {
-      // 404, not 0: the backend is reachable, the route does not exist.
-      // Status 0 would render as "backend unreachable", which is wrong.
-      throw new ApiError(
-        'no endpoint returns a per-cell observed PM2.5 series',
-        404,
-        '/api/v1/grid-features (series)',
-      )
+      if (!gridId) {
+        throw new ApiError(
+          'this event has no grid cell, so there is no observed PM2.5 series',
+          404,
+          '/api/v1/grid-features/{grid_id}/history',
+        )
+      }
+      return liveObservedHistory(gridId)
     },
   )
 }

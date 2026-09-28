@@ -27,6 +27,9 @@ export function Sources() {
   const { data: sources = [] } = useQuery({ queryKey: ['sources', mode], queryFn: fetchSources })
   const [selected, setSelected] = useState<SourceHealth | null>(null)
 
+  const hasTelemetry = sources.some(
+    (s) => s.freshnessMinutes !== null || s.latencySec !== null || s.recordsToday !== null,
+  )
   const delayed = sources.find((s) => s.status === 'Delayed')
 
   return (
@@ -35,17 +38,16 @@ export function Sources() {
         <h1 className="text-xl font-semibold">Source Health</h1>
         <p className="text-sm text-text-secondary">Data ingestion observability</p>
         <ModeContextNote className="pt-1" />
-        {mode === 'live' && (
+        {mode === 'live' && !hasTelemetry && (
           <p className="pt-1 text-xs text-amber-400/80">
-            These sources are configured and switched on, but nothing yet measures how fresh
-            each feed is — so freshness and quality read as unknown rather than as a guess.
-            <AdvancedOnly>
-              {' '}
-              <span className="text-text-muted">
-                <code className="font-mono">GET /api/v1/sources</code> is a registry, not a health
-                feed: no freshness, latency, quality or record counts.
-              </span>
-            </AdvancedOnly>
+            These sources are configured, but no connector run has been persisted yet — so
+            freshness and latency read as unknown rather than as a guess.
+          </p>
+        )}
+        {mode === 'live' && hasTelemetry && (
+          <p className="pt-1 text-xs text-text-muted">
+            Freshness and latency come from the last connector run stored in{' '}
+            <code className="font-mono">source_health</code>.
           </p>
         )}
       </div>

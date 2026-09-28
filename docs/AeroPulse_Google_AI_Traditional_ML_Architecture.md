@@ -15,7 +15,10 @@ The architecture separates:
 
 ## Codebase review and integration status (2026-09-13)
 
-This document is a target architecture, not the current runtime. The repository currently has a
+This document is a target architecture, not the current runtime. Implemented state:
+`docs/architecture.md`, `AGENTS.md`, `docs/api.md`. Copilot LLM and Vertex remain out of this pass.
+
+The repository currently has a
 deterministic, evidence-grounded Copilot API with `llm_used=false`; no Gemini SDK call is wired into
 the request path. That is intentional until the following prerequisites are satisfied:
 

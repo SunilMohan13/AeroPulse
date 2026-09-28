@@ -20,13 +20,13 @@
 
 The backend is materially closer to a working system, but the remaining work is still real and specific:
 
-1. Scheduled drift monitoring and alert delivery beyond structured logs.
+1. Error-drift monitoring (needs delayed ground truth) and pager routing beyond structured logs. Hourly PSI/KS already runs as `aeropulse-drift-monitor`.
 2. Provider-aware checkpoint resume logic beyond the shared cursor contract.
 3. OIDC and production secret-store hardening.
-4. Frontend-to-API wiring and real client integration.
+4. Quantile P10/P90 fitting, hazard calibration, and worker champion materialisation so served hazard/peak leave the persistence baseline.
 5. Replace the integrated population reference fixture with a licensed WorldPop/Census extract and validate its spatial/temporal provenance.
 6. Production load testing, SLOs, and dashboard/alert coverage.
-7. Expansion of live connectors beyond the current credential-free Open-Meteo path.
+7. Live Sentinel/MODIS/CAMS (OpenAQ, Open-Meteo, and FIRMS are live-capable when keys are set).
 
 This list is intentionally narrow and honest. It is not a blanket "everything is missing" note; it is
 what still requires deliberate work after the implemented backend fixes.
@@ -36,11 +36,13 @@ what still requires deliberate work after the implemented backend fixes.
 - **P0-1 fixed:** event list/detail, evidence, latest forecast generation, and latest lineage graph
   now read TimescaleDB when `AEROPULSE_DATABASE_URL` is configured. The in-memory store remains the
   test/DB-free fallback; configured database failures return 503.
-- **Replay amplification fixed:** the one-shot Compose connector now uses `restart: "no"`. A clean
-  run exits 0 with restart count 0 instead of replaying fixtures indefinitely.
+- **Replay amplification:** the Compose connector is now a scheduled loop (`restart: unless-stopped`)
+  on `interval_seconds` from `config/sources.yaml`. It is not a one-shot job and there is no
+  `--profile connectors`.
 - **Container model registry fixed:** the 2.6 MB checked-in `models/` registry/artifacts are copied
   into runtime images. `/api/v1/models` returns 3 `PRIMARY_BASELINE` plus 4 `REGISTERED_ONLY`
-  records; no trained model was promoted.
+  records. `source_likelihood` earned PRODUCTION; hazard/peak remain unpromoted and serve the
+  persistence baseline with `degraded: true`.
 - **Actual-input validation passed:** committed CPCB/FIRMS/IMD/satellite fixtures flowed through
   connector -> Kafka -> worker -> TimescaleDB -> authenticated API. Event detail, evidence,
   forecast, graph, and models returned HTTP 200. The latest forecast response contained exactly six
@@ -230,16 +232,16 @@ APIs. The remaining feature-store gap is an automated drift/error consumer, not 
 | Connector extension model | **Yes** | — |
 | Idempotency & dedup | **Yes** | — |
 | ML training & evaluation | **Yes (methodology)** | Trained on model output, not ground truth |
-| Model registry & promotion gate | **Yes** | No shadow-traffic routing |
-| Docker Compose stack | **Yes** | Verified 2026-09-09: all 7 services boot healthy after Dockerfile/mem/port fixes |
-| Source registry (`config/sources.yaml`) | **Yes** | Now load-bearing (2026-09-09); still only covers replayed sources, not OpenAQ/ERA5/population |
-| Live ingestion | **Partial** | 1 of 15 sources live; 3 have no connector |
-| Feature pipeline | **Partial** | `grid_feature`/`grid_prediction` persisted and queryable (2026-09-14); no drift job consumes them |
-| Event confidences | **Partial** | `forecast_confidence`/`impact_confidence` now wired (2026-09-09); still no shadow validation |
-| API | **Partial** | Event/grid intelligence and all map layers are database-backed; frontend is not wired and satellite acquisition remains replay-only |
-| UI | **No** | Mock data only |
-| Observability | **Partial** | API Prometheus HTTP metrics and log trace IDs exist; worker/connector domain metrics, collector/export, dashboards and alerts remain open |
-| Drift monitoring | **Partial** | On-demand PSI/KS for feature/prediction/source-count signals; no scheduled alerts or error drift until labels arrive |
+| Model registry & promotion gate | **Yes** | Shadow scoring writes `shadow_prediction`; challengers never reach a response |
+| Docker Compose stack | **Yes** | API, worker, connector loop, web, Timescale, Redpanda, Redis, MinIO |
+| Source registry (`config/sources.yaml`) | **Yes** | Load-bearing for enabled/interval/live_capable; `GET /api/v1/sources` joins yaml + specs + health |
+| Live ingestion | **Partial** | Open-Meteo, OpenAQ, and FIRMS are live-capable; Sentinel/MODIS/CAMS remain replay |
+| Feature pipeline | **Partial** | `grid_feature`/`grid_prediction` persisted; hourly drift monitor consumes them; error drift still needs labels |
+| Event confidences | **Partial** | `forecast_confidence`/`impact_confidence` wired; shadow rows are comparison-only |
+| API | **Partial** | Timescale-backed events/grid/map; satellite acquisition remains replay-only |
+| UI | **Partial** | Demo/Live switch; Live reads the API through `services/resolve.ts` and never silently substitutes demo |
+| Observability | **Partial** | API `/metrics` and worker `:9090/metrics`; no default OTLP exporter |
+| Drift monitoring | **Partial** | On-demand `/api/v1/drift` plus hourly Compose monitor; error drift still needs delayed labels |
 | Security | **Partial** | Dev-only JWT by design; no OIDC |
 | Disaster recovery | **Partial** | Documented; untested |
 | SLO monitoring | **No** | Nothing measurable |
@@ -272,16 +274,16 @@ Dependency-ordered. Each item states why it comes when it does.
 
 ### Stage 3 — harden
 
-**3.1 [PARTIAL 2026-09-14] Implement drift monitoring.** On-demand PSI/KS now covers feature and prediction distributions with minimum-sample gates. Remaining: scheduled execution/alerts, seasonal dashboards, and error drift after delayed labels arrive.
-**3.2 [DONE 2026-09-09] Make `config/sources.yaml` load-bearing.** `apps/connector/aeropulse_connector_app/runner.py` now reads it and skips `enabled: false` sources; falls back to "all enabled" if the file is missing/malformed. All 11 replayed sources are now listed (previously 6 of 12).
-**3.3 [PARTIALLY DONE 2026-09-09] MinIO silent no-op now logs a warning** (`objects.raw_copy_not_stored`, reason `no_credentials`/`minio_error`) instead of swallowing the failure silently. It still returns a logical `s3://` URI either way — no caller yet treats that URI as untrustworthy, so provenance can still point at nothing without a human reading the logs. Full fix requires deciding whether unwritten raw copies should hard-fail ingestion.
-**3.4 Add checkpointing.** `FetchRequest.cursor` exists and no connector reads it, so every fetch is a full window re-pull.
+**3.1 [PARTIAL 2026-09-16] Implement drift monitoring.** On-demand PSI/KS plus hourly `aeropulse-drift-monitor`. Remaining: pager routing, seasonal dashboards, and error drift after delayed labels arrive.
+**3.2 [DONE 2026-09-09] Make `config/sources.yaml` load-bearing.** `apps/connector/aeropulse_connector_app/runner.py` now reads it and skips `enabled: false` sources; falls back to "all enabled" if the file is missing/malformed. `GET /api/v1/sources` joins the same yaml with `SOURCE_SPECS` and `source_health`.
+**3.3 [DONE 2026-09-27 for local Compose] MinIO credentials** are passed to api and connector as `AEROPULSE_MINIO_ACCESS_KEY` / `SECRET_KEY` (same local-dev pattern as the Timescale password). Without keys, `put_raw_json` still logs `objects.raw_copy_not_stored` and returns a logical `s3://` URI.
+**3.4 [PARTIAL] Checkpointing.** OpenAQ live honors `FetchRequest.start_time` / cursor as a lower bound. Provider-aware resume beyond the shared cursor contract is still open.
 **3.5 Add an ML job to CI.** Nothing retrains or re-validates automatically; a leakage regression would not be caught.
-**3.6 Wire Redis** for the hot-feature and API-response caching of LLD §20/§32, or remove it from compose and dependencies.
+**3.6 [DONE] Redis** caches HTTP responses in the API path.
 **3.7 [PARTIALLY DONE 2026-09-09] Confidence model.** `forecast_confidence` now derives from the forecast module's own downwind per-cell confidence, and `impact_confidence` from the PM2.5 estimator's `estimate_confidence`, instead of hardcoded `0.0`. Neither has been validated for calibration — treat as wired, not as scientifically vetted.
 
 ### Stage 4 — operational
-Frontend-to-API wiring, OIDC, DR rehearsal, load testing against a populated database, security testing, then SLO monitoring.
+OIDC, DR rehearsal, load testing against a populated database, security testing, then SLO monitoring. Frontend Live wiring is in place (`services/resolve.ts`).
 
 ---
 

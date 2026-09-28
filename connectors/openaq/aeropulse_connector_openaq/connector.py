@@ -124,6 +124,7 @@ class OpenAqConnector(DataConnector):
         self.max_locations = max_locations
         self._client = client
         self._max_age_hours = max_age_hours
+        self._window_start: datetime | None = None
 
     @property
     def client(self) -> LiveHttpClient:
@@ -205,8 +206,10 @@ class OpenAqConnector(DataConnector):
     def fetch(self, request: FetchRequest) -> Iterator[RawRecord]:
         """Yield one raw record per monitor location."""
         if not self.is_live():
+            self._window_start = None
             yield from self._fetch_fixture()
             return
+        self._window_start = request.start_time
         yield from self._fetch_live()
 
     def _fetch_fixture(self) -> Iterator[RawRecord]:
@@ -335,6 +338,9 @@ class OpenAqConnector(DataConnector):
                 observed_at=observed_at.isoformat(),
                 max_age_hours=self.max_age_hours,
             )
+            return None
+        window_start = getattr(self, "_window_start", None)
+        if window_start is not None and observed_at < window_start:
             return None
 
         return Observation(

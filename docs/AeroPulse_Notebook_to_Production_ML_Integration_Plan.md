@@ -939,18 +939,18 @@ introduced and then caught:
    broken React list reconciliation. Renumbered, with a duplicate-key check across every demo
    dataset.
 
-### 15.4 Three screens stay on demo data in live mode, and say so
+### 15.4 Live screens that used to stay on demo data
 
-Not oversight — each is blocked by a missing API capability, and each renders a notice naming
-it rather than passing curated data off as live:
+Live-mode honesty (2026-09-27): citizen reports list, source-health telemetry, and
+the forecast observed-history leg are API-backed. Remaining presentation gaps:
 
-| Screen | Blocker | Closed by |
+| Screen | Status | Closed by |
 |---|---|---|
-| Citizen Intelligence | No list route; only `POST /reports`, `POST /reports/{id}/media`, `GET /reports/{id}` | `GET /api/v1/citizen/reports` with the standard list shape |
-| Evidence graph | `graph.v1` carries lineage edges without layout coordinates for the hand-laid diagram | Coordinates on the contract, or a client-side force layout |
-| Forecast observed-history leg | No per-cell observed series route | A history endpoint, or deriving it from `grid-features` by cell and time |
+| Citizen Intelligence | **FIXED** — paginated `GET /api/v1/citizen/reports` | — |
+| Evidence graph | Live radial layout; `graph.v1` still has no x/y | Coordinates on the contract |
+| Forecast observed-history leg | **FIXED** — `GET /api/v1/grid-features/{grid_id}/history` | Empty series is valid |
 
-The live **evidence list** on an event's detail page *is* wired; only the graph view is not.
+The live **evidence list** on an event's detail page *is* wired. The graph view uses a client radial layout because `graph.v1` still has no x/y.
 
 ### 15.5 Demo data enhanced
 

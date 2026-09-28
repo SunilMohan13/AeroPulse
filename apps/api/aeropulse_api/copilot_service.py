@@ -15,7 +15,6 @@ from aeropulse_common.settings import get_settings
 from aeropulse_copilot import CopilotService, GeminiCopilot, ToolContext
 from aeropulse_intelligence.copilot import query_store
 
-from aeropulse_api.event_store import current_store
 from aeropulse_api.hazard_store import hazard_cells, peak_forecasts
 
 
@@ -39,13 +38,19 @@ def build_tool_context(grid_reader, map_reader, event_reader) -> ToolContext:
     )
 
 
-def _deterministic_fallback(question: str):
+def _deterministic_fallback(question: str, ctx: ToolContext | None = None):
     """Pre-Gemini behaviour, kept as the degradation path.
 
-    Retrieval over the event store. Narrow, but it never invents a number,
-    which is the property that matters when the model is unavailable.
+    Retrieval over the same event reader the REST routes use. Narrow, but it
+    never invents a number, which is the property that matters when the model
+    is unavailable.
     """
-    return query_store(current_store(), question)
+    events = ctx.events if ctx is not None else None
+    if events is None:
+        from aeropulse_intelligence.engine import EventStore
+
+        events = EventStore()
+    return query_store(events, question)
 
 
 @lru_cache(maxsize=1)

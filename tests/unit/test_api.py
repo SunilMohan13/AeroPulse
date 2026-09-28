@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 from aeropulse_api.app import create_app
 from aeropulse_api.event_store import reset_event_store
+from aeropulse_api.routers.sources import reset_source_overrides
 from aeropulse_auth.jwt import Role, encode_token
 from aeropulse_common.settings import Settings, get_settings
 from aeropulse_ml.registry import ModelRecord, ModelRegistry, ModelStage
@@ -16,6 +17,7 @@ from fastapi.testclient import TestClient
 def client() -> TestClient:
     get_settings.cache_clear()
     reset_event_store()
+    reset_source_overrides()
     return TestClient(create_app())
 
 
@@ -59,10 +61,60 @@ def test_viewer_can_list_sources(client: TestClient, settings: Settings) -> None
     assert response.status_code == 200
     body = response.json()
     ids = {item["source_id"] for item in body["items"]}
-    assert {"cpcb", "firms", "imd", "sentinel5p", "modis", "cams"} <= ids
+    assert {"cpcb", "firms", "imd", "openaq", "openmeteo"} <= ids
+    imd = next(item for item in body["items"] if item["source_id"] == "imd")
+    assert imd["enabled"] is False
+    openaq = next(item for item in body["items"] if item["source_id"] == "openaq")
+    assert openaq["enabled"] is True
+    assert openaq["live_capable"] is True
+    assert openaq["last_success_at"] is None
+    assert openaq["latency_ms"] is None
     assert body["total"] == len(body["items"])
     assert body["limit"] is None
     assert body["offset"] == 0
+
+
+def test_source_list_joins_connector_health(settings: Settings) -> None:
+    """GET /sources is a registry plus nullable telemetry, not a parallel dict."""
+    from datetime import UTC, datetime
+
+    from aeropulse_api.routers.sources import get_source_health_reader
+    from aeropulse_api.source_health_store import SourceHealthRow
+
+    class _FakeHealth:
+        def latest(self) -> dict[str, SourceHealthRow]:
+            return {
+                "openaq": SourceHealthRow(
+                    source_id="openaq",
+                    status="HEALTHY",
+                    last_success_at=datetime(2026, 9, 27, 12, 0, tzinfo=UTC),
+                    records_per_run=12,
+                    latency_ms=340,
+                    last_error=None,
+                    processing_mode="live",
+                )
+            }
+
+    get_settings.cache_clear()
+    reset_event_store()
+    reset_source_overrides()
+    app = create_app()
+    app.dependency_overrides[get_source_health_reader] = lambda: _FakeHealth()
+    try:
+        client = TestClient(app)
+        response = client.get("/api/v1/sources", headers=_auth(settings, Role.VIEWER))
+    finally:
+        app.dependency_overrides.pop(get_source_health_reader, None)
+
+    assert response.status_code == 200
+    openaq = next(item for item in response.json()["items"] if item["source_id"] == "openaq")
+    assert openaq["status"] == "HEALTHY"
+    assert openaq["records_per_run"] == 12
+    assert openaq["latency_ms"] == 340
+    assert openaq["last_success_at"] is not None
+    imd = next(item for item in response.json()["items"] if item["source_id"] == "imd")
+    assert imd["enabled"] is False
+    assert imd["latency_ms"] is None
 
 
 def test_source_health_uses_real_connector_status(client: TestClient, settings: Settings) -> None:
@@ -185,6 +237,7 @@ def test_openapi_includes_forecast_and_graph(client: TestClient) -> None:
     assert "/api/v1/map/forecast" in paths
     assert "/api/v1/copilot/explain-event" in paths
     assert "/api/v1/citizen/reports" in paths
+    assert "/api/v1/grid-features/{grid_id}/history" in paths
     assert "/api/v1/alerts" in paths
     assert "/api/v1/risk" in paths
 
@@ -240,7 +293,12 @@ def test_citizen_report_round_trip(client: TestClient, settings: Settings) -> No
     listed = client.get("/api/v1/citizen/reports", headers=headers)
     assert listed.status_code == 200
     assert listed.json()["total"] >= 1
+    assert listed.json()["offset"] == 0
     assert any(item["report_id"] == report_id for item in listed.json()["items"])
+    paged = client.get("/api/v1/citizen/reports?limit=1&offset=0", headers=headers)
+    assert paged.status_code == 200
+    assert paged.json()["limit"] == 1
+    assert len(paged.json()["items"]) == 1
 
 
 def test_citizen_photo_upload_is_processed(client: TestClient, settings: Settings) -> None:

@@ -51,10 +51,11 @@ Code nodes are current. Run `/graphify --update` and allow the doc subagents to 
 | ML | `libs/ml/aeropulse_ml/` | `train`, `inference`, `evaluation`, `parity`, `registry`, `shadow`, `drift`, `drift_monitor`, `cli` |
 | Connector SDK | `libs/connector_sdk/aeropulse_connector_sdk/` | `DataConnector` base, `live_http`, `circuit`, `rate_limit`, `retry` |
 | Other libs | `libs/` | `auth` (HS256 JWT), `geospatial` (H3 grid, population), `observability` (structlog/OTel), `common` (errors) |
-| Connectors | `connectors/<source>/` | 12 sources: bhuvan, cams, cpcb, firms, icar, imd, industry, insat, modis, openmeteo, osm, sentinel5p |
+| Connectors | `connectors/<source>/` | 13 packages: bhuvan, cams, cpcb, firms, icar, imd, industry, insat, modis, openaq, openmeteo, osm, sentinel5p |
 | Frontend | `frontend/web/src/` | `api/client.ts` (one HTTP client), `services/resolve.ts` (one demo/live branch), `pages`, `components`, `hooks`, `data/mock*.ts` |
+| Bruno | `bruno/aeropulse/` | HTTP collection mirroring OpenAPI (`local` env) |
 | Notebooks | `AeroPulse_ML_Notebooks/` | `anomaly_detector`, `pm25_estimator`, `propagation_forecast`, `source_likelihood` — each with a `*_toolkit.py` |
-| Migrations | `infrastructure/db/migrations/` | `0001_init` → `0005_shadow_prediction` |
+| Migrations | `infrastructure/db/migrations/` | `0001_init` → `0007_source_health_run` |
 | Tests | `tests/unit`, `tests/contract`, `tests/load` | Contract tests pin connector output shapes |
 
 ## Which document answers what
@@ -63,7 +64,7 @@ Code nodes are current. Run `/graphify --update` and allow the doc subagents to 
 |---|---|
 | Conventions, ML rules, frontend rules, honest backlog | **`AGENTS.md`** — canonical, read before changing anything |
 | System architecture + ADR index | `docs/architecture.md`, `docs/adr/0001`–`0006` |
-| Endpoint shapes, auth | `docs/api.md`, `docs/openapi/` |
+| Endpoint shapes, auth | `docs/api.md`, `docs/openapi/`, `bruno/aeropulse/` |
 | Payload schemas per source | `docs/data-contracts.md` |
 | Adding a source | `docs/AeroPulse_Connector_Integration.md` |
 | ML design / MLOps / notebook→prod | `docs/AeroPulse_ML_Architecture.md`, `docs/AeroPulse_MLOps_Architecture.md`, `docs/AeroPulse_Notebook_to_Production_ML_Integration_Plan.md` |

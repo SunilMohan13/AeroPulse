@@ -24,7 +24,7 @@ from pydantic import BaseModel, Field
 
 from aeropulse_api.copilot_service import build_tool_context, get_copilot_service
 from aeropulse_api.deps import get_claims
-from aeropulse_api.event_store import current_store, get_event_reader
+from aeropulse_api.event_store import get_event_reader
 from aeropulse_api.grid_store import get_grid_reader
 from aeropulse_api.map_store import get_map_reader
 
@@ -101,12 +101,15 @@ def copilot_investigate(
 
 @router.post("/explain-event", response_model=CopilotResponse)
 def copilot_explain(
-    body: ExplainBody, _claims: TokenClaims = Depends(get_claims)
+    body: ExplainBody,
+    _claims: TokenClaims = Depends(get_claims),
+    events=Depends(get_event_reader),
 ) -> CopilotResponse:
     """Explain one event from stored evidence, forecast and confidence.
 
     Deterministic by design: this endpoint restates what the event engine
     recorded, so there is nothing for a model to add and no reason to pay
-    for one.
+    for one. Reads the same EventReader as query/investigate (Timescale when
+    configured), not the in-memory seed.
     """
-    return explain_event(current_store(), body.event_id)
+    return explain_event(events, body.event_id)

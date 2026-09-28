@@ -92,7 +92,8 @@ class TimescaleEventReader:
 
     def get_evidence(self, event_id: str) -> list[EventEvidence]:
         sql = """
-        SELECT evidence_id, evidence_type, observation_id, grid_id, summary, quality_score
+        SELECT evidence_id, evidence_type, observation_id, grid_id, summary,
+               quality_score, created_at
         FROM event_evidence WHERE event_id = %s ORDER BY created_at, evidence_id
         """
         with self.connection.cursor() as cursor:
@@ -105,6 +106,7 @@ class TimescaleEventReader:
                     grid_id=row[3],
                     summary=row[4],
                     quality_score=row[5],
+                    created_at=row[6],
                 )
                 for row in cursor.fetchall()
             ]

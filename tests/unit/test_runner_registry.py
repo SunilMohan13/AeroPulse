@@ -243,6 +243,40 @@ def test_disabled_source_is_skipped_and_reported(tmp_path: Path) -> None:
     assert result.counts()["stub"] == 0
 
 
+def test_cycle_persists_source_health_from_the_run() -> None:
+    """The runner owns source_health; the worker must not attribute every batch to CPCB."""
+
+    class _Repo:
+        def __init__(self) -> None:
+            self.rows: list[tuple] = []
+
+        def get_checkpoint(self, source_id: str) -> str | None:
+            return None
+
+        def upsert_checkpoint(self, source_id: str, cursor: str) -> None:
+            return None
+
+        def upsert_source_health(self, source_id: str, records: int, status: str, **kwargs) -> None:
+            self.rows.append((source_id, records, status, kwargs))
+
+    repo = _Repo()
+    spec = _spec(StubConnector([_aq()]), source_id="healthy")
+
+    result = run_cycle(
+        Path("fixtures"),
+        lambda _t, _e: None,
+        sources_config=NO_CONFIG,
+        specs=(spec,),
+        repo=repo,
+    )
+
+    assert result.runs[0].status is SourceStatus.REPLAY
+    assert repo.rows[0][0] == "healthy"
+    assert repo.rows[0][1] == 1
+    assert repo.rows[0][2] == "REPLAY"
+    assert repo.rows[0][3]["processing_mode"] == "replay"
+
+
 def test_cycle_reports_the_newest_observation_for_the_watermark() -> None:
     spec = _spec(StubConnector([_aq(), _weather()]))
 
@@ -266,6 +300,29 @@ def test_registry_covers_every_configured_source() -> None:
     assert configured <= set(SPECS_BY_ID), f"unregistered: {configured - set(SPECS_BY_ID)}"
 
 
+def test_firms_is_live_capable() -> None:
+    """YAML live_capable: true is load-bearing only if SOURCE_SPECS agrees."""
+    assert SPECS_BY_ID["firms"].live_capable is True
+    assert SPECS_BY_ID["firms"].credential_setting == "firms_map_key"
+
+
+def test_yaml_live_capable_agrees_with_source_specs() -> None:
+    """A yaml/registry split would replay FIRMS under a live banner."""
+    import yaml
+
+    config = yaml.safe_load(Path("config/sources.yaml").read_text())
+    yaml_live = {
+        row["id"]: bool(row.get("live_capable", False))
+        for row in config["sources"]
+        if row["id"] in SPECS_BY_ID
+    }
+    for source_id in ("openaq", "openmeteo", "firms"):
+        assert yaml_live[source_id] is True
+        assert SPECS_BY_ID[source_id].live_capable is True
+    assert yaml_live["imd"] is False
+    assert SPECS_BY_ID["imd"].live_capable is False
+
+
 def test_fire_contract_routes_to_the_fire_topic() -> None:
     fire = FireObservation(
         observation_id="fire_1",
@@ -279,3 +336,15 @@ def test_fire_contract_routes_to_the_fire_topic() -> None:
         provenance=Provenance(provider="Stub", connector_version="1.0.0"),
     )
     assert topic_for(fire) == OBSERVATION_FIRE
+
+
+def test_fixtures_root_points_at_the_fixtures_directory(tmp_path: Path, monkeypatch) -> None:
+    """Image copies fixtures to /app/fixtures; SourceSpec joins cpcb/stations.json onto that."""
+    from aeropulse_connector_app.main import _fixtures_root
+
+    fixtures = tmp_path / "fixtures"
+    fixtures.mkdir()
+    monkeypatch.chdir(tmp_path)
+    if Path("/app/fixtures").is_dir():
+        pytest.skip("running inside an image that already has /app/fixtures")
+    assert _fixtures_root() == fixtures

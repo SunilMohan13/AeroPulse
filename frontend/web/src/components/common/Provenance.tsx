@@ -167,15 +167,14 @@ export function ModeContextNote({ className }: { className?: string }) {
   return (
     <p className={cn('text-xs text-text-muted', className)}>
       <span className="font-medium text-emerald-300">Live</span> — readings come from the
-      AeroPulse service. It is replaying a recorded Punjab episode rather than ingesting from
-      CPCB and FIRMS right now, so treat the figures as a rehearsal of the real feed.
+      AeroPulse API and TimescaleDB when the worker has persisted them. Demo values are not
+      substituted. Empty charts and "—" mean the API had nothing for that field.
       {advanced ? (
         <>
           {' '}
           <span className="text-text-muted">
-            API <span className="font-mono">{apiBase || '/api'}</span>; Timescale holds no fused
-            events, so the event routes answer from the replay seed and the connector workers are
-            not running.
+            API <span className="font-mono">{apiBase || '/api'}</span>. Connector mode and
+            ingested sources determine whether figures are replay fixtures or live upstreams.
           </span>
         </>
       ) : null}

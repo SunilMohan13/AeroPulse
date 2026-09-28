@@ -164,6 +164,7 @@ export function toPollutionEvent(event: ApiEvent, feature?: ApiGridFeature): Pol
   const pm25 = feature?.pm25 ?? feature?.pm25_estimate ?? 0
   const point = parsePointWkt(event.geometry)
   if (!feature) unavailable.push('pm25', 'pm10', 'aqi', 'sourceLikelihood')
+  if (feature && feature.pm10 == null) unavailable.push('pm10')
   if (!feature && !point) unavailable.push('lat', 'lon')
 
   const lat = feature?.center_lat ?? point?.lat ?? 0
@@ -202,6 +203,7 @@ export function toPollutionEvent(event: ApiEvent, feature?: ApiGridFeature): Pol
     sourceLikelihood: toSourceLikelihood(feature?.source_likelihood ?? null),
     // No API field supplies these. An empty list renders as "not provided".
     recommendedActions: [],
+    gridIds: event.grid_ids,
     provenance: {
       mode: 'live',
       modelVersion: event.model_versions.join(', ') || null,
@@ -237,7 +239,7 @@ export function toEvidenceItem(item: ApiEvidence, eventId: string): EvidenceItem
     category: item.evidence_type.replace(/_/g, ' '),
     source: item.evidence_type.split('_')[0].toUpperCase(),
     observation: item.summary,
-    time: '',
+    time: item.created_at ?? '',
     confidence: pct(quality),
     supports: eventId,
     strength: quality >= 0.8 ? 'Strong' : quality >= 0.5 ? 'Moderate' : 'Weak',
@@ -382,26 +384,43 @@ export function toPeakForecastCell(cell: ApiPeakForecast): PeakForecastCell | nu
   }
 }
 
+function healthStatus(source: ApiSource): SourceHealth['status'] {
+  const measured = (source.status || '').toUpperCase()
+  if (measured === 'HEALTHY' || measured === 'REPLAY' || measured === 'REPLAY_EXHAUSTED') {
+    return 'Healthy'
+  }
+  if (measured === 'DEGRADED' || measured === 'CIRCUIT_OPEN' || measured === 'FIXTURE_MISSING') {
+    return 'Degraded'
+  }
+  if (measured === 'NOT_CONFIGURED') return 'Offline'
+  if (measured === 'DISABLED' || source.enabled === false) return 'Disabled'
+  return source.enabled ? 'Registered' : 'Disabled'
+}
+
+function minutesSince(iso: string | null | undefined): number | null {
+  if (!iso) return null
+  const ms = Date.now() - new Date(iso).getTime()
+  if (!Number.isFinite(ms)) return null
+  return Math.max(0, Math.round(ms / 60_000))
+}
+
 /**
  * Source registry entry to the UI's health row.
  *
- * `GET /api/v1/sources` is a *registry*, not a health feed: it has no
- * freshness, latency, error rate or record count. Those UI columns therefore
- * read as unknown in live mode rather than showing the demo's figures.
+ * Telemetry is nullable. A registry-only response (no last_success_at) still
+ * reads as unknown rather than inventing demo freshness.
  */
 export function toSourceHealth(source: ApiSource): SourceHealth {
   return {
     id: source.source_id,
     name: source.display_name || source.provider,
-    // `enabled` is a registry flag, not a health signal. Calling a source
-    // "Healthy" on the strength of it asserts a freshness we never measured.
-    status: source.enabled ? 'Registered' : 'Disabled',
-    freshnessMinutes: null,
-    quality: null,
-    recordsToday: null,
-    lastIngestion: null,
-    latencySec: null,
-    errorRate: null,
+    status: healthStatus(source),
+    freshnessMinutes: minutesSince(source.last_success_at),
+    quality: source.quality_score ?? null,
+    recordsToday: source.records_per_run ?? null,
+    lastIngestion: source.last_success_at ?? null,
+    latencySec: source.latency_ms == null ? null : source.latency_ms / 1000,
+    errorRate: source.error_rate ?? null,
     connector: `${source.connector_id} · ${source.status}`,
   }
 }
@@ -485,22 +504,22 @@ export function toEvidenceGraph(graph: ApiGraph): { nodes: EvidenceNode[]; edges
 
 /** Build a timeline from evidence plus the event clock when one is known. */
 export function toTimeline(items: EvidenceItem[], detectedAt?: string): TimelineEvent[] {
-  const events: TimelineEvent[] = items.map((item, index) => ({
-    id: item.id,
-    time: item.time
-      ? new Date(item.time).toLocaleTimeString('en-IN', {
-          hour: '2-digit',
-          minute: '2-digit',
-          hour12: false,
-          timeZone: 'Asia/Kolkata',
-        })
-      : `${String(8 + Math.floor(index / 3)).padStart(2, '0')}:${String(32 + index * 3).padStart(2, '0')}`.slice(
-          0,
-          5,
-        ),
-    label: item.observation,
-    icon: item.category.toLowerCase().includes('fire') ? 'fire' : 'alert',
-  }))
+  const events: TimelineEvent[] = items.map((item) => {
+    const clock = item.time || detectedAt
+    return {
+      id: item.id,
+      time: clock
+        ? new Date(clock).toLocaleTimeString('en-IN', {
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: false,
+            timeZone: 'Asia/Kolkata',
+          })
+        : '—',
+      label: item.observation,
+      icon: item.category.toLowerCase().includes('fire') ? 'fire' : 'alert',
+    }
+  })
   if (detectedAt && events.length === 0) {
     events.push({
       id: 'detected',
@@ -530,7 +549,7 @@ export function stationToGridCell(
     lat,
     lon,
     pm25,
-    pm10: Math.round(pm25 * 1.28),
+    pm10: 0,
     no2: 0,
     aqi: getAqiFromPm25(pm25),
     population: 0,

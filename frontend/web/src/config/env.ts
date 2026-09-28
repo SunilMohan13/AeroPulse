@@ -45,6 +45,6 @@ export const DEFAULT_DATA_MODE = (raw.VITE_DEFAULT_DATA_MODE === 'live' ? 'live'
   | 'demo'
   | 'live'
 
-/** Request timeout. Long enough for a cold Timescale query, short enough that
- *  a hung backend degrades to demo rather than freezing the UI. */
+/** Request timeout. Long enough for a cold Timescale query. A hung backend
+ *  fails the Live request; it does not swap in demo data. */
 export const API_TIMEOUT_MS = 8000
