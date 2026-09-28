@@ -41,7 +41,9 @@ _LOCAL_UI_ORIGINS = [
     "http://localhost:4173",
     "https://aeropulse-india.netlify.app",
 ]
-_NETLIFY_ORIGIN = re.compile(r"https://[a-z0-9-]+\.netlify\.app")
+# Netlify and Render both mint a subdomain per site. Allow the pattern so a
+# new deploy does not need its exact URL baked into this list.
+_HOSTED_UI_ORIGIN = re.compile(r"https://[a-z0-9-]+\.(?:netlify\.app|onrender\.com)")
 
 
 def _cors_origins(settings) -> list[str]:
@@ -63,7 +65,7 @@ def _allowed_request_origin(origin: str | None, settings) -> str | None:
         return None
     if origin in _cors_origins(settings):
         return origin
-    if _NETLIFY_ORIGIN.fullmatch(origin):
+    if _HOSTED_UI_ORIGIN.fullmatch(origin):
         return origin
     return None
 
@@ -204,7 +206,7 @@ def create_app() -> FastAPI:
     app.add_middleware(
         CORSMiddleware,
         allow_origins=_cors_origins(settings),
-        allow_origin_regex=_NETLIFY_ORIGIN.pattern,
+        allow_origin_regex=_HOSTED_UI_ORIGIN.pattern,
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
