@@ -64,7 +64,7 @@ class Settings(BaseSettings):
     # Gemini powers the copilot only. The event path stays deterministic.
     # Server-side only: never expose this to the browser bundle.
     gemini_api_key: SecretStr | None = None
-    gemini_model: str = "gemini-3.6-flash"
+    gemini_model: str = "gemini-3.8-flash"
     copilot_prompt_version: str = "v1"
 
     oidc_jwks_url: str | None = None

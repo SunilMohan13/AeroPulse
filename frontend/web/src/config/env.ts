@@ -28,7 +28,7 @@ export const API_BASE = (raw.VITE_API_BASE ?? raw.VITE_API_URL ?? '').replace(/\
  *    print(encode_token('ui', [Role.VIEWER]))"`
  * and put it in `frontend/web/.env.local` as `VITE_API_TOKEN=...`.
  *
- * This is a dev-mode HS256 token by explicit decision (ADR-0003). It is not a
+ * This is a development HS256 token. It is not a
  * production auth story and must not become one — a token compiled into a
  * browser bundle is readable by anyone who loads the page.
  */

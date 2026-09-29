@@ -20,7 +20,7 @@ Two leakage defects found in the notebook track are fixed structurally here:
   threshold re-derivation rather than source attribution.
 
 Neither model is trained on validated ground truth. Both are weak-supervision
-baselines and are reported as such; see ``docs/AeroPulse_ML_Architecture.md``.
+baselines and are reported as such; see ``docs/architecture.md``.
 """
 
 from __future__ import annotations

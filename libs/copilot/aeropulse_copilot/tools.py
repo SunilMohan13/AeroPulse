@@ -17,6 +17,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any, Protocol
 
+from aeropulse_contracts.event import EventStatus
 from aeropulse_geospatial.gazetteer import Place, known_places, resolve_place
 from aeropulse_geospatial.grid import neighbors
 from aeropulse_intelligence.geometry import haversine_km
@@ -65,7 +66,9 @@ class MapReaderLike(Protocol):
 class EventReaderLike(Protocol):
     """The subset of the API's event reader the tools need."""
 
-    def list_events(self, status: str | None, limit: int, offset: int) -> tuple[list[Any], int]: ...
+    def list_events(
+        self, status: EventStatus | None, limit: int, offset: int
+    ) -> tuple[list[Any], int]: ...
 
     def get_event(self, event_id: str) -> Any: ...
 
@@ -369,6 +372,24 @@ def get_hazard_outlook(place: str, *, ctx: ToolContext) -> dict[str, Any]:
     }
 
 
+def _event_status(status: str | EventStatus | None) -> tuple[EventStatus | None, str | None]:
+    """Turn a model-supplied status string into the enum the reader expects.
+
+    The event reader reads ``status.value``. A raw ``ACTIVE`` string crashes
+    that lookup, so the tool converts here and reports an unknown value as a
+    tool error the model can read.
+    """
+    if status is None or (isinstance(status, str) and not status.strip()):
+        return None, None
+    if isinstance(status, EventStatus):
+        return status, None
+    try:
+        return EventStatus(str(status).strip().upper()), None
+    except ValueError:
+        allowed = ", ".join(member.value for member in EventStatus)
+        return None, f"Unknown event status {status!r}. Use one of: {allowed}."
+
+
 def list_active_events(status: str | None = None, *, ctx: ToolContext) -> dict[str, Any]:
     """Return current pollution events the system has detected.
 
@@ -380,7 +401,10 @@ def list_active_events(status: str | None = None, *, ctx: ToolContext) -> dict[s
     """
     if ctx.events is None:
         return {"status": "unavailable", "reason": "no event reader configured"}
-    events, total = ctx.events.list_events(status, 20, 0)
+    wanted, error = _event_status(status)
+    if error is not None:
+        return {"status": "bad_arguments", "name": "list_active_events", "detail": error}
+    events, total = ctx.events.list_events(wanted, 20, 0)
     return {
         "status": "ok",
         "total": total,
