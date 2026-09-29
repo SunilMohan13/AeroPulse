@@ -152,7 +152,7 @@ services:
       # Copilot only. Server-side: this must never reach the web bundle.
       # Absent means the copilot degrades to deterministic retrieval.
       AEROPULSE_GEMINI_API_KEY: ${AEROPULSE_GEMINI_API_KEY:-}
-      AEROPULSE_GEMINI_MODEL: ${AEROPULSE_GEMINI_MODEL:-gemini-3.6-flash}
+      AEROPULSE_GEMINI_MODEL: ${AEROPULSE_GEMINI_MODEL:-gemini-3.8-flash}
     ports:
       - "127.0.0.1:8000:8000"
     depends_on:

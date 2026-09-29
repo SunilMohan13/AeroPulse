@@ -68,7 +68,7 @@ class GeminiCopilot:
         self,
         *,
         api_key: str | None = None,
-        model: str = "gemini-3.6-flash",
+        model: str = "gemini-3.8-flash",
         client: Any | None = None,
         prompt_version: str = "v1",
     ) -> None:

@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>AeroPulse — runtime walkthrough</title>
-  <meta name="description" content="Interactive walkthrough of the AeroPulse Compose runtime: ingest, scoring, where models run, and the Live UI." />
+  <title>AeroPulse — how it works</title>
+  <meta name="description" content="Click through how AeroPulse ingests data, scores pollution events, and what the operator map actually shows." />
   <meta name="theme-color" content="#0061FF" />
   <style>
     :root {
@@ -203,8 +203,8 @@
   <div class="app">
     <header>
       <div class="brand">
-        <h1>AeroPulse runtime walkthrough</h1>
-        <p>Operator + architect briefing · Compose as of 27 Sep 2026 · running stack, not the LLD target</p>
+        <h1>How AeroPulse works</h1>
+        <p>Click Play, use the arrows, or tap a coloured box</p>
       </div>
       <nav class="controls" aria-label="Walkthrough">
         <button type="button" id="btn-prev" aria-label="Previous hop">← Prev</button>
@@ -221,11 +221,11 @@
     <footer>
       <span id="foot-label">Hop 1 of 15</span>
       <div class="progress" id="barwrap" role="progressbar" aria-valuemin="1" aria-valuemax="15" aria-valuenow="1" aria-label="Walkthrough progress"><i id="bar"></i></div>
-      <span>Cyan live path · Green served rules · Orange HGB (not served) · Violet copilot · runtime as of 27 Sep 2026</span>
+      <span>Cyan live path · Green served rules · Orange trained boosting (not served) · Violet copilot</span>
     </footer>
   </div>
   <noscript>
-    <p style="padding:1rem;font-family:sans-serif">This walkthrough needs JavaScript. Static notes: connector → Kafka → worker (IDW/rules) → Timescale → API → Live UI. Trained HistGradientBoosting is shadow/train only. Copilot is the only LLM surface.</p>
+    <p style="padding:1rem;font-family:sans-serif">This walkthrough needs JavaScript. Static notes: connector → bus → worker (IDW/rules) → database → API → Live UI. Trained boosting is shadow/train only. Copilot is the only language-model surface.</p>
   </noscript>
 
   <script>
@@ -236,31 +236,31 @@
         t: "Briefing",
         kicker: "Scope",
         title: "How to read this walkthrough",
-        lede: "Fifteen hops from ingest to the operator UI. Use Play, the arrow keys, or click a coloured box. Cyan moving arrows are the live serving path. Green boxes are the rules that actually answer. Orange is trained sklearn HGB (not what the user sees). Violet is the copilot LLM.",
+        lede: "Fifteen hops from ingest to the operator UI. Use Play, the arrow keys, or click a coloured box. Cyan moving arrows are the live serving path. Green boxes are the rules that actually answer. Orange is trained gradient boosting (not what the operator sees). Violet is the copilot.",
         left: {
           h: "How to present",
-          html: "<ol><li>Start on <strong>LLD</strong> for the Compose packing.</li><li>Open <strong>Flowchart</strong> and follow one observation.</li><li>Stop on <strong>Models</strong> so nobody confuses IDW with HistGradientBoosting.</li></ol>"
+          html: "<ol><li>Start on <strong>Stack</strong> for how Compose is packed.</li><li>Open <strong>Flowchart</strong> and follow one observation.</li><li>Stop on <strong>Models</strong> so IDW is not confused with trained gradient boosting.</li></ol>"
         },
         right: {
           h: "Out of this runtime",
-          html: "<p><span class='tag never'>Not here</span> LightGBM, ArangoDB client, live Sentinel/MODIS/CAMS HTTP, citizen CV, OIDC, SigNoz, MLflow, quantile P10/P90 fitting, hazard calibration.</p><p style='margin-top:.6rem'>Companion: <code>docs/architecture.md</code>, <code>AeroPulse_India_Low_Level_Design.md</code>, <code>AGENTS.md</code>.</p>"
+          html: "<p><span class='tag never'>Not here</span> live Sentinel / MODIS / CAMS HTTP, citizen computer vision, OIDC, MLflow, calibrated hazard probabilities, quantile P10/P90 fitting.</p>"
         }
       },
       {
         id: "lld",
         n: "01",
-        t: "LLD",
+        t: "Stack",
         kicker: "Deployment",
-        title: "Logical LLD packed into Compose",
-        lede: "LLD lists many logical services; this runtime ships three app containers (connector, worker, api) plus web, Timescale+PostGIS, Redpanda, MinIO, Redis, migrate, and drift-monitor. Click a box to open that hop.",
+        title: "Logical services packed into Compose",
+        lede: "This runtime ships three app containers (connector, worker, API) plus web, Timescale, Redpanda, MinIO, Redis, migrate, and drift-monitor. Click a box to open that hop.",
         diagram: "deploy",
         left: {
-          h: "Packing (LLD §322)",
-          html: "<ul><li>Connectors stay one process with yaml + APScheduler.</li><li>Quality, H3, Phase 3, persist, and shadow live in the worker.</li><li>API is read-only over Timescale. Copilot is a library inside the API process, not a fourth container.</li></ul>"
+          h: "Packing",
+          html: "<ul><li>Connectors stay one process with a yaml registry and a scheduler.</li><li>Quality, grid, scoring, persist, and shadow live in the worker.</li><li>The API is read-only over Timescale. Copilot is inside the API process, not a fourth container.</li></ul>"
         },
         right: {
           h: "Trust boundaries",
-          html: "<ul><li>Contracts: <code>libs/contracts</code> — extra=forbid.</li><li>No LLM in <code>libs/intelligence</code> (ADR-0007).</li><li>Pickle artifacts only from <code>AEROPULSE_MODEL_DIR</code>.</li><li>JWT HS256 in Compose; OIDC is later.</li></ul>"
+          html: "<ul><li>Canonical contracts only — extra fields are forbidden.</li><li>No language model on detection or scoring.</li><li>Trained artifacts stay deployment-controlled.</li><li>JWT in Compose; OIDC is later.</li></ul>"
         }
       },
       {
@@ -273,11 +273,11 @@
         diagram: "flow",
         left: {
           h: "What this chart is not",
-          html: "<ul><li>Not 19 Kafka topics — worker consumes four.</li><li>Not per-message detection on live volume — DetectionTrigger batches.</li><li>Not HGB on the event path — IDW + rules.</li></ul>"
+          html: "<ul><li>Not 19 bus topics — the worker consumes four.</li><li>Not per-message detection on live volume — scoring is batched.</li><li>Not trained boosting on the event path — IDW + rules.</li></ul>"
         },
         right: {
-          h: "Happy path latency (local)",
-          html: "<p>Event list p95 ~16 ms on a populated DB (2026-09-14). Connector replay cycle is seconds; Open-Meteo live fetch is tens of seconds. Worker metrics on <code>:9090</code>.</p>"
+          h: "What you can watch",
+          html: "<p>Worker metrics are on <code>:9090</code>. Replay stays on this machine. A live Open-Meteo fetch waits on that service.</p>"
         }
       },
       {
@@ -286,14 +286,14 @@
         t: "Connector",
         kicker: "Ingest",
         title: "Scheduled fetch, not a one-shot job",
-        lede: "APScheduler in the connector container. Each source has its own interval_seconds from config/sources.yaml. enabled: false really skips — IMD is off because Open-Meteo already emits meteo.v1 for the same sites.",
+        lede: "Each source has its own interval. Disabled sources are skipped — IMD is off because Open-Meteo already emits weather for the same sites.",
         left: {
           h: "What runs",
-          html: "<ul><li><code>main.py</code> starts the loop.</li><li><code>SOURCE_SPECS</code> ∩ yaml registry.</li><li><code>runner.run_source</code> builds <code>FetchRequest</code>.</li><li>Replay fixtures by default; <code>AEROPULSE_CONNECTOR_MODE=live</code> for Open-Meteo (no key), OpenAQ/FIRMS when keys exist.</li><li>Missing key → <code>NOT_CONFIGURED</code>, zero records — never a silent fixture under a live banner.</li></ul>"
+          html: "<ul><li>A scheduler loop, not a one-shot job.</li><li>Yaml registry intersected with built-in source specs.</li><li>Replay fixtures by default; live HTTP for Open-Meteo (no key), OpenAQ and FIRMS when keys exist.</li><li>Missing key → not configured, zero records — never a silent fixture under a live banner.</li></ul>"
         },
         right: {
-          h: "Code",
-          html: "<div class='paths'><code>apps/connector/aeropulse_connector_app/main.py</code><code>registry.py</code><code>runner.py</code><code>config/sources.yaml</code><code>connectors/&lt;source&gt;/</code></div>"
+          h: "Operator note",
+          html: "<p>Compose interpolates live keys from the repository <code>.env</code> when you pass <code>--env-file .env</code>.</p>"
         }
       },
       {
@@ -301,15 +301,15 @@
         n: "04",
         t: "Normalize",
         kicker: "Contracts",
-        title: "Source JSON dies at normalize()",
-        lede: "Each connector implements DataConnector and returns Observation, FireObservation, MeteorologicalObservation, or RasterObservation. Topic is derived from the contract, not the source id — Open-Meteo can emit both AQ and weather.",
+        title: "Source JSON dies at normalize",
+        lede: "Each connector returns a canonical observation. Topic follows the contract, not the source id — Open-Meteo can emit both air quality and weather.",
         left: {
           h: "Envelope",
-          html: "<ul><li><code>KafkaEnvelope</code> + processing mode live|replay.</li><li><code>topic_for(obs)</code> picks the Kafka topic.</li><li>A <code>SourceRun</code> (status, records, latency, error, mode) is written to <code>source_health</code>.</li></ul>"
+          html: "<ul><li>Live or replay mode is stamped on the envelope.</li><li>The bus topic is chosen from the contract type.</li><li>A health row (status, records, latency, error, mode) is written for the Sources UI.</li></ul>"
         },
         right: {
-          h: "Code",
-          html: "<div class='paths'><code>libs/connector_sdk</code><code>libs/contracts</code><code>runner.topic_for</code></div>"
+          h: "Why it matters",
+          html: "<p>Provider shapes never reach the worker or the UI. One source may emit several topics.</p>"
         }
       },
       {
@@ -318,14 +318,14 @@
         t: "MinIO",
         kicker: "Raw store",
         title: "Dump for replay and audit — not serving",
-        lede: "put_raw_json writes s3://aeropulse/raw/<source>/…. The MapLibre UI never reads this bucket. Compose uses the local MinIO image tag and injects the same local-dev keys the minio service uses.",
+        lede: "Raw provider payloads go to object storage for replay and audit. The map never reads this bucket.",
         left: {
           h: "Why it is here",
-          html: "<ul><li>Keep provider payloads off Kafka.</li><li>Reconnect a live source without losing the original JSON.</li></ul>"
+          html: "<ul><li>Keep provider payloads off the event bus.</li><li>Reconnect a live source without losing the original JSON.</li></ul>"
         },
         right: {
-          h: "Code",
-          html: "<div class='paths'><code>aeropulse_common.objects.put_raw_json</code><code>infrastructure/docker/compose.yaml</code> (minio service)</div>"
+          h: "Serving",
+          html: "<p>Operators never see this store. Only the connector writes it.</p>"
         }
       },
       {
@@ -334,14 +334,14 @@
         t: "Kafka",
         kicker: "Bus",
         title: "Four topics the worker actually consumes",
-        lede: "Redpanda in Compose. Worker group aeropulse-worker. Names in topics.py beyond these four are unused in this runtime.",
+        lede: "Redpanda in Compose. The worker consumes four observation streams. Extra topic names in the codebase are unused in this runtime.",
         left: {
           h: "Consumed",
-          html: "<ul><li><code>aero.observation.air_quality</code></li><li><code>aero.observation.fire</code></li><li><code>aero.observation.weather</code></li><li><code>aero.observation.raster</code></li></ul>"
+          html: "<ul><li>Air quality</li><li>Fire</li><li>Weather</li><li>Raster</li></ul>"
         },
         right: {
-          h: "Code",
-          html: "<div class='paths'><code>libs/common/aeropulse_common/topics.py</code><code>worker.main AIOKafkaConsumer</code></div>"
+          h: "Volume",
+          html: "<p>Detection is batched so live volume does not rebuild the snapshot per message.</p>"
         }
       },
       {
@@ -350,31 +350,31 @@
         t: "Worker",
         kicker: "Persist",
         title: "Quality-gate, H3, Timescale — then maybe detect",
-        lede: "_handle validates the payload, maps lat/lon → H3 r8, runs quality, upserts. Duplicates skip. Detection is batched: DetectionTrigger fires on interval or max_batch so live volume does not rebuild the snapshot per Kafka record.",
+        lede: "Each record is validated, mapped to a 1 km cell, quality-gated, and upserted. Duplicates skip. Detection runs on a batch trigger so live volume does not re-score per message.",
         left: {
-          h: "Tables written here",
-          html: "<ul><li><code>air_quality_observation</code></li><li>fire / weather / raster tables</li><li>Dedup keys from source_id + record + time</li></ul>"
+          h: "Written here",
+          html: "<ul><li>Air-quality, fire, weather, and raster observations</li><li>Dedup on source, record, and time</li></ul>"
         },
         right: {
-          h: "Code",
-          html: "<div class='paths'><code>apps/worker/aeropulse_worker/main.py</code> <code>_handle</code><code>pipeline.process_air_quality</code><code>geospatial.grid.to_grid_id</code><code>db.TimescaleRepository</code></div>"
+          h: "Then",
+          html: "<p>If the batch is due, scoring opens or updates events. If not, the worker waits.</p>"
         }
       },
       {
         id: "score",
         n: "08",
         t: "Scoring",
-        kicker: "Phase 3",
-        title: "process_snapshot — the only event factory",
-        lede: "run_detection builds FeatureSnapshot from the in-memory window and calls process_snapshot. Click a step in the scoring core. This package has no LLM and no sklearn.",
+        kicker: "Scoring",
+        title: "Scoring snapshot — the only event factory",
+        lede: "The worker builds a feature snapshot from the in-memory window and scores every cell with PM2.5. Click a step. This path has no language model and no trained pickle.",
         scoring: true,
         left: {
           h: "Per cell with PM2.5",
-          html: "<p>Ground stations beat model-derived sources for the same cell-hour (<code>MODEL_DERIVED_SOURCES</code>) so Open-Meteo CAMS cannot overwrite CPCB.</p>"
+          html: "<p>Ground stations beat model-derived sources for the same cell-hour, so Open-Meteo CAMS cannot overwrite a CPCB or OpenAQ station.</p>"
         },
         right: {
-          h: "Code",
-          html: "<div class='paths'><code>pipeline.run_detection</code><code>libs/intelligence/.../detect.py</code> <code>process_snapshot</code></div>"
+          h: "Honesty",
+          html: "<p>Inverse-distance weighting (IDW), quantile anomaly, rule likelihoods, wind advection. Trained gradient boosting is not on this path.</p>"
         }
       },
       {
@@ -383,30 +383,30 @@
         t: "Shadow",
         kicker: "MLOps",
         title: "Challengers run after the served answer exists",
-        lede: "_persist_intelligence writes events, evidence, graphs, forecasts, grid features, predictions, alerts. Then _score_shadow. A SHADOW/CANARY pickle cannot delay, change, or fail the API response. Failures are swallowed.",
+        lede: "Events, evidence, graphs, forecasts, grid features, predictions, and alerts are written first. Then shadow scoring. A challenger cannot delay, change, or fail the API response. Failures are swallowed.",
         left: {
           h: "If no challenger",
-          html: "<p>Normal Compose: <code>worker.shadow.no_challengers</code>. Nothing to see; that is success.</p>"
+          html: "<p>Normal Compose has nothing to shadow. That is success.</p>"
         },
         right: {
-          h: "Code",
-          html: "<div class='paths'><code>main._persist_intelligence</code><code>main._score_shadow</code><code>aeropulse_ml.shadow.ShadowScorer</code><code>shadow_prediction</code> table</div>"
+          h: "Isolation",
+          html: "<p>Shadow rows never appear in an operator HTTP body.</p>"
         }
       },
       {
         id: "timescale",
         n: "10",
         t: "Timescale",
-        kicker: "SoT",
+        kicker: "Database",
         title: "The API’s source of truth",
-        lede: "When AEROPULSE_DATABASE_URL is set (Compose), EventReader and grid/map/source stores read Postgres. Existing volumes skip initdb; the migrate job reapplies 0001–0007 idempotently.",
+        lede: "When a database URL is set (Compose), the API reads Postgres. Existing volumes skip first-boot init; the migrate job reapplies schema idempotently.",
         left: {
           h: "Intelligence rows",
-          html: "<ul><li>events, evidence (<code>created_at</code>), graphs, forecasts</li><li><code>grid_feature</code> / <code>grid_prediction</code></li><li><code>source_health</code>, alerts, optional shadow rows</li></ul>"
+          html: "<ul><li>Events, evidence, graphs, forecasts</li><li>Grid features and grid predictions</li><li>Source health, alerts, optional shadow rows</li></ul>"
         },
         right: {
-          h: "Code",
-          html: "<div class='paths'><code>infrastructure/db/migrations/</code><code>compose migrate service</code><code>apps/api/.../event_store.py</code></div>"
+          h: "Fallback",
+          html: "<p>Without a database URL the API uses an in-memory test double. Compose always has a URL.</p>"
         }
       },
       {
@@ -414,15 +414,15 @@
         n: "11",
         t: "API",
         kicker: "Serve",
-        title: "Read-only FastAPI /api/v1",
-        lede: "HS256 JWT in development. Hazard and peak are computed on read from persisted grid_feature — persistence rule, degraded: true. They do not joblib.load a champion.",
+        title: "Read-only operator API",
+        lede: "JWT in development. Hazard and peak are computed on read from persisted grid features — a persistence rule, labelled degraded. They do not load a trained champion.",
         left: {
-          h: "Routers",
-          html: "<ul><li>events, evidence, forecast, graph</li><li>grid-features (+ history), grid-predictions, grid-hazard, grid-peak</li><li>map layers, sources, citizen, alerts, risk, models, copilot, drift</li></ul>"
+          h: "Routes",
+          html: "<ul><li>Events, evidence, forecast, graph</li><li>Grid features (plus history), predictions, hazard, peak</li><li>Map layers, sources, citizen, alerts, risk, models, copilot, drift</li></ul>"
         },
         right: {
-          h: "Code",
-          html: "<div class='paths'><code>apps/api/aeropulse_api/app.py</code><code>routers/</code><code>hazard_store.baseline_hazard</code><code>bruno/aeropulse</code></div>"
+          h: "Honesty",
+          html: "<p>Every prediction states its version. Uncalibrated hazard is a ranking, not a probability.</p>"
         }
       },
       {
@@ -431,14 +431,14 @@
         t: "UI",
         kicker: "Operator",
         title: "Demo is a product. Live is the API.",
-        lede: "Vite on :5173. Every service call goes through resolve(). Demo answers only from mock*.ts. Live answers only from the API. A failed Live call is named in FallbackBanner — never a silent Punjab episode while the header says Live.",
+        lede: "Every Live call goes through one branch. Demo answers only from the scripted episode. Live answers only from the API. A failed Live call is named in a banner — never a silent Punjab episode while the header says Live.",
         left: {
           h: "Honesty rules",
-          html: "<ul><li>No recommended actions / population headcount / source telemetry in Live unless the API has them — else “—”.</li><li>Hazard 0.80 is a ranking, not 80% probability (<code>calibrated: false</code>).</li><li>mode is in every React Query key.</li></ul>"
+          html: "<ul><li>No recommended actions unless the API has them — else “—”.</li><li>Hazard 0.80 is a ranking, not an 80% chance, until calibrated.</li><li>Demo and Live caches are keyed separately.</li></ul>"
         },
         right: {
-          h: "Code",
-          html: "<div class='paths'><code>frontend/web/src/services/resolve.ts</code><code>api/client.ts</code><code>VITE_API_TOKEN</code></div>"
+          h: "Ports",
+          html: "<p>UI on 5173. API on 8000. Demo needs neither.</p>"
         }
       },
       {
@@ -451,11 +451,11 @@
         ml: true,
         left: {
           h: "Layer A — served",
-          html: "<p><code>libs/intelligence</code>: IDW, quantile anomaly, rule likelihoods, wind advection. No pickle.</p>"
+          html: "<p>IDW, quantile anomaly, rule likelihoods, wind advection. No trained pickle on the event path.</p>"
         },
         right: {
           h: "Layers B and C",
-          html: "<p><span class='tag off'>B</span> sklearn HistGradientBoosting in <code>aeropulse_ml.train</code> — CLI. Feature names only in <code>feature_spec.py</code> (<code>ml-features-2.0.0</code>). Promotion gate must beat persistence/majority.</p><p style='margin-top:.5rem'><span class='tag off'>C</span> Copilot LLM in <code>libs/copilot</code> only. Numbers from tools + grounding. No Gemini key → <code>llm_used=false</code>.</p>"
+          html: "<p><span class='tag off'>B</span> Trained gradient boosting via the ML CLI. Promotion must beat persistence or majority class on honest holdouts.</p><p style='margin-top:.5rem'><span class='tag off'>C</span> Copilot is the only language-model surface. Numbers from tools plus grounding. No key → language model not used.</p>"
         }
       },
       {
@@ -467,11 +467,11 @@
         lede: "These share Compose but do not create pollution events.",
         left: {
           h: "Loops",
-          html: "<ul><li>Sources UI — yaml + last <code>source_health</code>.</li><li>Risk — WorldPop fixture, five corridor cells; Punjab unmeasured.</li><li>Drift monitor — hourly PSI/KS. Error drift needs delayed labels first.</li><li>Citizen reports — paginated; no CV model.</li></ul>"
+          html: "<ul><li>Sources UI — registry plus last health row.</li><li>Risk — five corridor cells; Punjab unmeasured until a licensed population extract exists.</li><li>Drift monitor — hourly distribution checks. Error drift needs delayed labels first.</li><li>Citizen reports — paginated; no computer-vision model.</li></ul>"
         },
         right: {
           h: "Follow on a laptop",
-          html: "<ul><li><code>docker compose -f infrastructure/docker/compose.yaml up --build</code></li><li>API :8000/docs · UI :5173 · worker :9090/metrics</li><li>Train (does not switch the worker off IDW): <code>uv run aeropulse-ml train --model all --promote</code></li></ul>"
+          html: "<ul><li>Compose up from the repository (pass <code>--env-file .env</code>).</li><li>API docs on 8000 · UI on 5173 · worker metrics on 9090</li><li>Training a model does not switch the worker off IDW.</li></ul>"
         }
       }
     ];
@@ -479,50 +479,50 @@
     const SCORE = {
       precedence: {
         h: "Ground over CAMS",
-        p: "MODEL_DERIVED_SOURCES in snapshot.py. Open-Meteo air quality is CAMS-derived model output. For the same cell-hour, a CPCB/OpenAQ station wins. Otherwise sensor_coverage and the served PM2.5 silently become model output.",
-        paths: ["snapshot.MODEL_DERIVED_SOURCES", "detect.py ranking tuple"]
+        p: "Open-Meteo air quality is CAMS-derived model output. For the same cell-hour, a CPCB or OpenAQ station wins. Otherwise coverage and served PM2.5 silently become model output.",
+        paths: []
       },
       features: {
-        h: "build_features → grid-features-0.5.0",
-        p: "One grid-hour vector: PM, wind, fire, quality, upwind fire score. Training and serving both import names from feature_spec.py. Changing the set bumps ML_FEATURE_VERSION.",
-        paths: ["intelligence/features.py", "contracts/feature_spec.py"]
+        h: "Grid-hour features",
+        p: "One vector per cell-hour: PM, wind, fire, quality, upwind fire. Training and serving share one named feature set. Changing the set invalidates stale artifacts.",
+        paths: []
       },
       idw: {
-        h: "estimate_pm25 → baseline-idw-0.1",
-        p: "Inverse-distance weighting of station PM2.5 onto the cell center, max 80 km, power 2. AOD is never treated as surface PM2.5. This is what grid_prediction stores today — not HistGradientBoosting.",
-        paths: ["intelligence/estimator.py"]
+        h: "IDW PM2.5",
+        p: "Inverse-distance weighting of station PM2.5 onto the cell center, max 80 km. AOD is never treated as surface PM2.5. This is what is stored today — not trained gradient boosting.",
+        paths: []
       },
       anomaly: {
-        h: "detect_anomaly → quantile-baseline-0.1",
-        p: "History quantile, or 100 µg/m³ absolute trigger when history is short (fixture demo). Low quality_score cannot trigger. Trained anomaly_detector stays off this path until promoted and wired.",
-        paths: ["intelligence/anomaly.py"]
+        h: "Quantile anomaly",
+        p: "History quantile, or an absolute trigger when history is short. Low quality cannot trigger. The trained anomaly detector stays off this path until promoted and wired.",
+        paths: []
       },
       likelihood: {
-        h: "score_sources → source-likelihood-0.1",
-        p: "Independent scores (not a softmax). Biomass and regional transport from fire + wind + PM2.5. Industrial/traffic/dust are documented priors until inventories exist.",
-        paths: ["intelligence/likelihood.py"]
+        h: "Source likelihood",
+        p: "Independent scores, not a softmax. Biomass and regional transport from fire, wind, and PM2.5. Industrial, traffic, and dust stay documented priors until inventories exist.",
+        paths: []
       },
       event: {
-        h: "evaluate_cell — state machine",
-        p: "Opens/updates/rejects a PollutionEvent. Evidence and alerts are raised into the in-process EventStore, then persisted. No LLM.",
-        paths: ["intelligence/engine.py"]
+        h: "Event state machine",
+        p: "Opens, updates, or rejects a pollution event. Evidence and alerts are raised, then persisted. No language model.",
+        paths: []
       },
       forecast: {
-        h: "forecast_event → wind-advection-0.1",
-        p: "Kinematic advection, horizons 3/6/12/24/48 h. forecast.v1 may carry p10/p90 fields; the point forecast is still this rule. cams_applied: false.",
-        paths: ["intelligence/forecast.py"]
+        h: "Wind advection",
+        p: "Kinematic advection at 3 / 6 / 12 / 24 / 48 hour horizons. Quantile bands may exist on the contract; the point forecast is still this rule. CAMS is not blended.",
+        paths: []
       },
       graph: {
-        h: "build_graph — lineage",
-        p: "graph.v1 vertices/edges. Contract has no x/y; Live UI applies a client radial layout. ArangoDB is not in this runtime.",
-        paths: ["intelligence/lineage.py"]
+        h: "Evidence lineage",
+        p: "Vertices and edges for the operator graph. The contract has no layout coordinates; Live UI applies a client radial layout. Graph database engine is not in this runtime.",
+        paths: []
       }
     };
 
     const ML = {
       pm25: {
         h: "pm25_estimator",
-        p: "Train: HistGradientBoostingRegressor. Serve today: IDW baseline-idw-0.1 on the worker. ShadowScorer can score a SHADOW/CANARY artifact after persist. Worker does not swap IDW for HGB on the event path.",
+        p: "Train: gradient boosting regressor. Serve today: IDW on the worker. A shadow artifact may score after persist. The worker does not swap IDW for the trained model on the event path.",
       },
       anomaly: {
         h: "anomaly_detector",
@@ -530,7 +530,7 @@
       },
       source: {
         h: "source_likelihood",
-        p: "Train/eval only. Event path stays likelihood.py rules. Labels are weak supervision — the feature set excludes columns the label was built from.",
+        p: "Train and evaluate only. Event path stays the likelihood rules. Labels are weak supervision — the feature set excludes columns the label was built from.",
       },
       prop: {
         h: "propagation_forecast",
@@ -626,10 +626,10 @@
       const inner = `
         <text class="lab" x="24" y="22">Upstreams (HTTP or fixture) — IMD disabled</text>
         ${box(20, 32, 200, 52, "connector", "Sources yaml", "CPCB · OpenAQ · FIRMS · Open-Meteo · …", "live")}
-        ${box(250, 32, 170, 52, "connector", "Connector", "APScheduler · normalize()", "live")}
+        ${box(250, 32, 170, 52, "connector", "Connector", "schedule · canonicalize", "live")}
         ${box(450, 32, 160, 52, "minio", "MinIO", "s3://aeropulse/raw", "store")}
         ${box(640, 32, 170, 52, "kafka", "Redpanda", "aero.observation.* ×4", "store")}
-        ${box(840, 32, 210, 52, "side", "Redis", "in Compose · unused cache", "ghost")}
+        ${box(840, 32, 210, 52, "side", "Redis", "30s read cache · fail-open", "store")}
 
         <line class="edge live" x1="220" y1="58" x2="248" y2="58"/>
         <line class="edge live" x1="420" y1="48" x2="448" y2="48"/>
@@ -637,7 +637,7 @@
 
         ${box(250, 120, 170, 58, "worker", "Worker", "IDW + rules on path", "det")}
         ${box(450, 120, 160, 58, "timescale", "Timescale", "observations + events", "store")}
-        ${box(640, 120, 170, 58, "api", "API :8000", "FastAPI /api/v1 · JWT", "live")}
+        ${box(640, 120, 170, 58, "api", "API :8000", "read-only · JWT", "live")}
         ${box(840, 120, 210, 58, "ui", "Web :5173", "Demo | Live · MapLibre", "live")}
 
         <line class="edge live" x1="725" y1="84" x2="335" y2="118"/>
@@ -648,8 +648,8 @@
         <line class="edge live" x1="530" y1="198" x2="720" y2="198"/>
         <line class="edge live" x1="720" y1="198" x2="720" y2="178"/>
 
-        ${box(250, 214, 170, 52, "shadow", "HGB shadow", "sklearn · not served", "ml")}
-        ${box(450, 214, 160, 52, "timescale", "shadow_prediction", "never in HTTP body", "store")}
+        ${box(250, 214, 170, 52, "shadow", "HGB shadow", "trained · not served", "ml")}
+        ${box(450, 214, 160, 52, "timescale", "Shadow table", "never in HTTP body", "store")}
         ${box(640, 214, 170, 52, "api", "Copilot LLM", "tools + grounding", "llm")}
         ${box(840, 214, 210, 52, "side", "drift-monitor", "hourly PSI/KS", "ghost")}
 
@@ -658,11 +658,13 @@
         <line class="edge" x1="530" y1="266" x2="530" y2="286"/>
         <line class="edge llm" x1="725" y1="266" x2="945" y2="214"/>
 
-        ${box(450, 300, 160, 52, "timescale", "migrate job", "SQL 0001–0007", "store")}
-        <text class="note" x="24" y="332">Cyan motion = live serving path. Orange = trained HGB. Violet = copilot. Green worker = IDW/rules actually answering.</text>
-        <text class="lab" x="24" y="352">Click a box → hop. LLD §5.4: no LLM on detection.</text>
+        ${box(450, 300, 160, 52, "timescale", "migrate job", "idempotent schema", "store")}
+        <text class="lab" x="24" y="314">Cyan = live serving path</text>
+        <text class="lab" x="24" y="330">Green = IDW / rules that answer</text>
+        <text class="lab" x="24" y="346">Orange = trained boosting (not served)</text>
+        <text class="note" x="24" y="362">Violet = copilot · click a box</text>
       `;
-      return wrap("LLD — Compose packing (click a component)", inner, 370);
+      return wrap("Compose packing (click a component)", inner, 380);
     }
 
     function flowSvg() {
@@ -675,11 +677,11 @@
         <line class="edge live" x1="350" y1="65" x2="378" y2="65"/>
         <line class="edge live" x1="530" y1="65" x2="558" y2="65"/>
 
-        ${box(740, 20, 150, 40, "connector", "source_health", "SourceRun row", "store")}
+        ${box(740, 20, 150, 40, "connector", "Source health", "last run", "store")}
         <line class="edge" x1="275" y1="90" x2="275" y2="110"/>
         <line class="edge" x1="275" y1="110" x2="740" y2="40"/>
 
-        ${box(20, 140, 150, 50, "worker", "5 Consume", "_handle", "live")}
+        ${box(20, 140, 150, 50, "worker", "5 Consume", "quality gate", "live")}
         ${diamond(200, 128, 150, 74, "worker", "QC pass?")}
         ${box(380, 140, 150, 50, "worker", "6 H3 + upsert", "Timescale obs", "live")}
         ${box(560, 140, 150, 50, "worker", "reject / dup", "skip detect", "ghost")}
@@ -692,9 +694,9 @@
         <text class="note" x="290" y="228">NO</text>
 
         ${diamond(20, 248, 150, 74, "worker", "batch due?")}
-        ${box(200, 260, 330, 50, "score", "7 process_snapshot", "IDW · quantile · advection", "det")}
+        ${box(200, 260, 330, 50, "score", "7 Score snapshot", "IDW · quantile · advection", "det")}
         ${box(560, 260, 150, 50, "timescale", "8 Persist intel", "events · graph · …", "store")}
-        ${box(740, 260, 150, 50, "shadow", "9 HGB shadow*", "sklearn after persist", "ml")}
+        ${box(740, 260, 150, 50, "shadow", "9 HGB shadow*", "trained after persist", "ml")}
         <line class="edge live" x1="455" y1="190" x2="95" y2="248"/>
         <line class="edge det" x1="170" y1="285" x2="198" y2="285"/>
         <line class="edge live" x1="530" y1="285" x2="558" y2="285"/>
@@ -743,32 +745,32 @@
         <line class="edge det" x1="535" y1="142" x2="548" y2="142"/>
         <line class="edge det" x1="800" y1="142" x2="813" y2="142"/>
       `;
-      return wrap("Phase 3 scoring — click a step (libs/intelligence, no sklearn)", nodes + arrows, 190);
+      return wrap("Scoring — click a step (rules, not trained boosting)", nodes + arrows, 190);
     }
 
     function mlFlowSvg() {
       const inner = `
         <text class="lab" x="24" y="22">Layer A — what the live path actually uses (no pickle)</text>
         ${box(20, 36, 200, 56, "score", "IDW + rules", "baseline-idw-0.1 served", "det")}
-        ${box(250, 36, 200, 56, "timescale", "Persist", "grid_feature / event", "store")}
+        ${box(250, 36, 200, 56, "timescale", "Persist", "features / events", "store")}
         ${box(480, 36, 200, 56, "api", "API read", "persistence-hazard degraded", "live")}
         ${box(710, 36, 200, 56, "ui", "Operator UI", "Live banner honest", "live")}
         <line class="edge det" x1="220" y1="64" x2="248" y2="64"/>
         <line class="edge live" x1="450" y1="64" x2="478" y2="64"/>
         <line class="edge live" x1="680" y1="64" x2="708" y2="64"/>
 
-        <text class="lab" x="24" y="128">Layer B — trained sklearn HGB (CLI + shadow only)</text>
-        ${box(20, 142, 200, 56, "ml", "aeropulse-ml train", "HistGradientBoosting", "ml")}
+        <text class="lab" x="24" y="128">Layer B — trained gradient boosting (CLI + shadow only)</text>
+        ${box(20, 142, 200, 56, "ml", "Train CLI", "gradient boosting", "ml")}
         ${box(250, 142, 200, 56, "ml", "Registry", "VALIDATION | SHADOW", "ml")}
-        ${box(480, 142, 200, 56, "shadow", "ShadowScorer", "after persist", "ml")}
-        ${box(710, 142, 200, 56, "timescale", "shadow_prediction", "not in HTTP body", "store")}
+        ${box(480, 142, 200, 56, "shadow", "Shadow score", "after persist", "ml")}
+        ${box(710, 142, 200, 56, "timescale", "Shadow table", "not in HTTP body", "store")}
         <line class="edge ml" x1="220" y1="170" x2="248" y2="170"/>
         <line class="edge ml" x1="450" y1="170" x2="478" y2="170"/>
         <line class="edge ml" x1="680" y1="170" x2="708" y2="170"/>
 
         <text class="lab" x="24" y="228">Layer C — copilot LLM (side path, not detection)</text>
         ${box(20, 242, 200, 56, "api", "POST explain-event", "EventReader", "llm")}
-        ${box(250, 242, 200, 56, "api", "tools.py", "numbers only from tools", "llm")}
+        ${box(250, 242, 200, 56, "api", "Tools", "numbers only from tools", "llm")}
         ${box(480, 242, 200, 56, "api", "grounding", "else deterministic", "llm")}
         ${box(710, 242, 200, 56, "ui", "Ask AeroPulse", "llm_used flag", "live")}
         <line class="edge llm" x1="220" y1="270" x2="248" y2="270"/>
@@ -811,7 +813,7 @@
       }).map(([k, label]) =>
         `<button type="button" class="chip" data-score="${k}" aria-pressed="${k === scoreKey}">${label}</button>`
       ).join("");
-      return `${chips}<div class="detail" id="score-detail"><h4>${s.h}</h4><p>${s.p}</p><div class="paths">${s.paths.map((p) => `<code>${p}</code>`).join("")}</div></div>`;
+      return `${chips}<div class="detail" id="score-detail"><h4>${s.h}</h4><p>${s.p}</p></div>`;
     }
 
     function mlPanel() {

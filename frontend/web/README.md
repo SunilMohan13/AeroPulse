@@ -1,33 +1,26 @@
-# AeroPulse web UI
+# AeroPulse map
 
-MapLibre command-center UI for Punjab–Haryana–Delhi NCR. Demo and Live are both first-class.
+The operator UI. Demo and Live are both real products.
 
-## Run
+## Demo only (no API)
 
-```bash
-cd frontend/web
-npm install
-npm run dev
-```
+1. `cd frontend/web`
+2. `npm install`
+3. `npm run dev`
+4. Open http://localhost:5173 and leave the switch on **Demo**.
 
-Open http://localhost:5173
+## Live (API on this machine)
 
-Demo needs no backend, token, or network. Live needs `VITE_API_TOKEN` in `.env.local` (see `.env.example`) and the API at `VITE_API_BASE` (empty uses the Vite proxy to `:8000`).
+1. Start the stack from the repository README (Docker Compose).
+2. Copy `.env.example` to `.env.local`.
+3. Put a viewer token in `VITE_API_TOKEN` (command is in that example file). Leave `VITE_API_BASE` empty.
+4. `npm run dev` and switch the header to **Live**.
 
-## Features
+Live never fills gaps with Demo numbers. If a call fails, a banner names it.
 
-- Dark command-center shell with a **Demo / Live** switch in the top bar
-- MapLibre GL (CARTO dark-matter) + deck.gl layers
-- 1 km pollution grid, fires, wind, forecast plume, population
-- Demo: scripted EVT-1024 Punjab agricultural-burning episode
-- Live: FastAPI `/api/v1/*` through one client (`src/api/client.ts`) and one branch (`src/services/resolve.ts`)
-- Failed live calls are named in `FallbackBanner`; they never silently substitute demo data
-- AI Copilot with evidence citations (deterministic retrieval unless a grounded LLM is configured)
-
-## Build
+## Checks
 
 ```bash
 npm run build
 npm run lint
-npm run preview
 ```

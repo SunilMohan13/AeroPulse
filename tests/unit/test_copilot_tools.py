@@ -12,6 +12,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import pytest
+from aeropulse_contracts.event import EventStatus
 from aeropulse_contracts.feature import GridFeature
 from aeropulse_copilot.grounding import validate_answer
 from aeropulse_copilot.service import CopilotService
@@ -23,6 +24,7 @@ from aeropulse_copilot.tools import (
     get_active_fires,
     get_air_quality,
     get_wind,
+    list_active_events,
 )
 
 NOW = datetime(2026, 9, 8, 6, 0, tzinfo=UTC)
@@ -94,6 +96,41 @@ def _ctx(**kwargs: Any) -> ToolContext:
 def test_cpcb_bands_use_the_indian_scale(pm25: float, band: str) -> None:
     """US EPA would call 186 'Unhealthy'; CPCB calls it Very Poor."""
     assert cpcb_band(pm25) == band
+
+
+class _RecordingEvents:
+    def __init__(self) -> None:
+        self.seen: EventStatus | None = None
+        self.called = False
+
+    def list_events(
+        self, status: EventStatus | None, limit: int, offset: int
+    ) -> tuple[list[Any], int]:
+        self.called = True
+        self.seen = status
+        return [], 7
+
+    def get_event(self, event_id: str) -> Any:
+        return None
+
+    def get_evidence(self, event_id: str) -> list[Any]:
+        return []
+
+
+def test_list_active_events_passes_an_enum_not_a_string() -> None:
+    """The Timescale reader reads status.value; a raw string crashes that lookup."""
+    reader = _RecordingEvents()
+    result = list_active_events("active", ctx=ToolContext(events=reader))
+    assert reader.seen is EventStatus.ACTIVE
+    assert result["status"] == "ok"
+    assert result["total"] == 7
+
+
+def test_list_active_events_rejects_an_unknown_status() -> None:
+    reader = _RecordingEvents()
+    result = list_active_events("OPEN", ctx=ToolContext(events=reader))
+    assert reader.called is False
+    assert result["status"] == "bad_arguments"
 
 
 # --- tools ---
